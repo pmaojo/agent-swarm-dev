@@ -1,11 +1,18 @@
 #!/bin/bash
-# Start Synapse MCP Server
+# Start Synapse with Remote Embeddings
+# Requires FastEmbed server running on port 11434
 
-SYNAPSE_BIN="/root/.openclaw/workspace/synapse"
-STORAGE_PATH="/root/.openclaw/workspace/synapse-data"
+set -e
 
-# Create storage directory
-mkdir -p "$STORAGE_PATH"
+SYNAPSE_BINARY="${SYNAPSE_BINARY:-./synapse}"
+EMBEDDING_PROVIDER="${EMBEDDING_PROVIDER:-remote}"
+EMBEDDING_API_URL="${EMBEDDING_API_URL:-http://localhost:11434/api/embeddings}"
 
-# Run in MCP mode
-exec "$SYNAPSE_BIN" --mcp
+echo "🚀 Starting Synapse (Light Mode)"
+echo "   Embedding Provider: $EMBEDDING_PROVIDER"
+echo "   Embedding URL: $EMBEDDING_API_URL"
+
+export EMBEDDING_PROVIDER
+export EMBEDDING_API_URL
+
+$SYNAPSE_BINARY "$@"
