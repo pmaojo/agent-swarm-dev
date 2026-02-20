@@ -1,3 +1,5 @@
+<img width="1024" height="572" alt="image_00b13d08-0cb7-44be-ac9b-1f37b30b2d9a" src="https://github.com/user-attachments/assets/63f9fe0b-44b7-49f4-8f5c-bd11c61edd1e" />
+
 # Agent Swarm Development System
 
 A spec-driven development system with neuro-symbolic memory using Synapse.
