@@ -1,26 +1,31 @@
 {
   "mcpServers": {
     "synapse": {
-      "command": "/root/.openclaw/workspace/synapse",
+      "command": "synapse",
       "args": ["--mcp"],
       "env": {
-        "GRAPH_STORAGE_PATH": "/root/.openclaw/workspace/synapse-data"
+        "GRAPH_STORAGE_PATH": "/data/graphs"
       },
-      "description": "Synapse Core - RDF + Vector memory (pmaojo/synapse-engine)"
+      "description": "Synapse Core - RDF + Vector memory"
+    },
+    "swarm": {
+      "command": "python3",
+      "args": ["scripts/swarm_mcp.py"],
+      "description": "Agent Swarm Control - Run agents and query memory"
     }
   },
   "tools": {
-    "query_graph": {
-      "server": "synapse",
-      "description": "Query all triples in a namespace"
+    "run_swarm": {
+      "server": "swarm",
+      "description": "Run the full agent swarm flow"
     },
-    "ingest_triple": {
-      "server": "synapse",
-      "description": "Add a triple to the knowledge graph"
+    "run_agent": {
+      "server": "swarm",
+      "description": "Run a specific agent (orchestrator, coder, reviewer, deployer)"
     },
-    "query_sparql": {
-      "server": "synapse",
-      "description": "Execute SPARQL query"
+    "query_memory": {
+      "server": "swarm",
+      "description": "Query or update Synapse memory"
     }
   }
 }
