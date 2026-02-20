@@ -69,6 +69,30 @@ User → orchestrator → (handoff) → coder → (handoff) → reviewer → (ha
          └────────── Memory (Synapse) ←────────┘
 ```
 
+## Spec-Driven Development (GSD + OpenSpec)
+
+Two frameworks for spec-driven development are integrated:
+
+### GSD (Get Shit Done)
+```bash
+npx get-shit-done-cc@latest --claude --global
+```
+- `/gsd:spec` - Generate SPEC.md
+- `/gsd:build` - Execute build
+- `/gsd:test` - Run tests
+- `/gsd:verify` - Verify implementation
+
+### OpenSpec (@fission-ai/openspec)
+```bash
+npm install -g @fission-ai/openspec@latest
+```
+- `/opsx:new <feature>` - Create new feature
+- `/opsx:ff` - Generate full planning docs
+- `/opsx:apply` - Implement tasks
+- `/opsx:archive` - Archive completed
+
+Both work with Claude Code, OpenCode, and OpenClaw via MCP.
+
 ## Synapse Integration
 
 ### Python SDK
