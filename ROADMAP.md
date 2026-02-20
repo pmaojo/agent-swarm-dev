@@ -1,5 +1,15 @@
 # Spec Driven Swarm Development - Roadmap
 
+## ✅ Completed (2026-02-20)
+
+- **Synapse Light Build**: `--no-default-features` (RAM + remote embeddings)
+- **FastEmbed Server**: Python HTTP server compatible with Ollama API
+- **gRPC Integration**: Working Python client for Synapse
+- **GitHub Actions**: Workflow for light builds
+- **GSD Integration**: Added to SKILL.md
+
+---
+
 This roadmap outlines the phases for developing and enhancing the "Spec Driven Swarm Development with Neuro-symbolic Memory" system.
 
 ## Phase 1: Foundation (Current)
@@ -9,6 +19,8 @@ This roadmap outlines the phases for developing and enhancing the "Spec Driven S
 - [x] **Memory Integration**: Integrate Synapse for basic RDF triple storage and retrieval.
 - [x] **Deployment Setup**: Configure deployment to Vercel (`scripts/deploy.sh`, `deploy/vercel.json`).
 - [x] **Basic CLI**: Create scripts for initializing projects and running agents (`scripts/init_swarm.sh`, `scripts/run_agent.sh`).
+- [x] **FastEmbed Integration**: FastEmbed Python server for remote embeddings (`scripts/embeddings_server.py`).
+- [x] **Synapse Light Mode**: Binary with RAM storage + remote embeddings.
 - [ ] **Implementation of Agents**: Move from spec files to actual Python/TS implementations.
 - [ ] **End-to-End Flow**: Connect Orchestrator to Coder and deploy to Vercel in a single command.
 
