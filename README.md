@@ -34,11 +34,17 @@ python scripts/embeddings_server.py --port 11434
 ./synapse
 ```
 
-### 3. Run Agent
+### 3. Run Swarm
 
 ```bash
-./scripts/run_agent.sh orchestrator "Create a REST API"
+# Run the full swarm flow
+python3 scripts/swarm_flow.py "Create a REST API"
+
+# Run without memory
+python3 scripts/swarm_flow.py "Create a API" --no-memory
 ```
+
+### Running Individual Agents
 
 ## Architecture
 

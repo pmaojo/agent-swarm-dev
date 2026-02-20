@@ -21,8 +21,8 @@ This roadmap outlines the phases for developing and enhancing the "Spec Driven S
 - [x] **Basic CLI**: Create scripts for initializing projects and running agents (`scripts/init_swarm.sh`, `scripts/run_agent.sh`).
 - [x] **FastEmbed Integration**: FastEmbed Python server for remote embeddings (`scripts/embeddings_server.py`).
 - [x] **Synapse Light Mode**: Binary with RAM storage + remote embeddings.
-- [ ] **Implementation of Agents**: Move from spec files to actual Python/TS implementations.
-- [ ] **End-to-End Flow**: Connect Orchestrator to Coder and deploy to Vercel in a single command.
+- [x] **Implementation of Agents**: Python implementations for all agents (orchestrator, coder, reviewer, deployer, memory).
+- [x] **End-to-End Flow**: `scripts/swarm_flow.py` connects all agents.
 
 ## Phase 2: Enhanced Capabilities
 
