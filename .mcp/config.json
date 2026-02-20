@@ -1,0 +1,26 @@
+{
+  "mcpServers": {
+    "synapse": {
+      "command": "/root/.openclaw/workspace/synapse",
+      "args": ["--mcp"],
+      "env": {
+        "GRAPH_STORAGE_PATH": "/root/.openclaw/workspace/synapse-data"
+      },
+      "description": "Synapse Core - RDF + Vector memory (pmaojo/synapse-engine)"
+    }
+  },
+  "tools": {
+    "query_graph": {
+      "server": "synapse",
+      "description": "Query all triples in a namespace"
+    },
+    "ingest_triple": {
+      "server": "synapse",
+      "description": "Add a triple to the knowledge graph"
+    },
+    "query_sparql": {
+      "server": "synapse",
+      "description": "Execute SPARQL query"
+    }
+  }
+}
