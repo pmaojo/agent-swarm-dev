@@ -2,35 +2,35 @@
 
 ## Overview
 
-Sistema de desarrollo para crear infraestructura de agentes autónomo basado en la propuesta de Anthropic para swarms, con memoria persistente via Synapse.
+Sistema de desarrollo para crear infraestructura de agentes autónomo basado en Anthropic Swarm + Synapse.
 
 ## Tech Stack
 
 - **Agentes**: Anthropic Swarm pattern
-- **Memoria**: Synapse Core (crates.io o pmaojo/synapse-engine)
+- **Memoria**: Synapse Core v0.8.5 (crates.io)
 - **Storage**: Oxigraph (RDF triple store)
 - **Embeddings**: FastEmbed local (BGE-small-ENV15)
 - **Deployment**: Vercel
 - **MCP**: Model Context Protocol
 
-## Synapse Core
+## Synapse Core v0.8.5
 
 ### Instalación
 
 ```bash
-# Desde crates.io
+# Desde crates.io (recomendado)
 cargo install synapse-core
 
 # O desde repositorio
 git clone https://github.com/pmaojo/synapse-engine.git
-cd synapse-engine/crates/synapse-core
-cargo install --path .
+cd synapse-engine
+cargo install --path crates/synapse-core
 ```
 
 ### Uso
 
 ```bash
-# gRPC server (puerto 50051)
+# gRPC server
 synapse
 
 # MCP mode
@@ -44,41 +44,24 @@ GRAPH_STORAGE_PATH=/data/graphs synapse
 
 ```bash
 pip install synapse-sdk
-
-from synapse import get_client
-client = get_client()
-client.ingest_triples([{"subject": "x", "predicate": "y", "object": "z"}])
 ```
 
 ## Componentes
 
-### Agentes
-
-1. **Orchestrator** - Coordina flujo (Anthropic Swarm)
-2. **Coder** - Genera código
-3. **Memory** - Memoria Synapse
-4. **Reviewer** - Revisa calidad
-5. **Deployer** - Despliega a Vercel
-
-## Flujo
-
-```
-User → orchestrator → coder → reviewer → deployer → URL
-         ↑                              ↓
-         └──────── Memory (Synapse) ←──┘
-```
+| Agente | Rol |
+|--------|-----|
+| Orchestrator | Coordina flujo |
+| Coder | Genera código |
+| Memory | Memoria Synapse |
+| Reviewer | Revisa calidad |
+| Deployer | Vercel |
 
 ## GitHub Actions
 
-Workflow en `.github/workflows/ci.yml` compila Synapse con embeddings:
-
-```yaml
-runs-on: ubuntu-24.04  # GLIBC 2.38
-features: local-embeddings
-```
+Workflow compila con Ubuntu 24.04 (GLIBC 2.38) + descarga embeddings automáticamente.
 
 ## Estado
 
-- [x] Repositorio limpio (zeroclaw-neurosymbolic borrado)
-- [x] Sistema configurado
-- [ ] Testing
+- [x] Sistema creado
+- [x] Repo configurado
+- [ ] Push a GitHub

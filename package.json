@@ -1,0 +1,13 @@
+{
+  "name": "agent-swarm-dev",
+  "version": "1.0.0",
+  "description": "Agent Swarm Development System with Synapse + GSD",
+  "scripts": {
+    "gsd": "get-shit-done-cc"
+  },
+  "dependencies": {
+    "get-shit-done-cc": "^latest"
+  },
+  "keywords": ["agents", "swarm", "synapse", "ai"],
+  "license": "MIT"
+}

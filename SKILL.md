@@ -81,6 +81,27 @@ client.ingest_triples([{"subject": "agent_1", "predicate": "completed", "object"
 ### MCP
 El servidor MCP (`synapse_mcp.py`) expone las tools via JSON-RPC stdio.
 
+## GSD Integration (Get Shit Done)
+
+Sistema de context engineering y spec-driven development. Útil para estructurar tareas complejas.
+
+### Comandos GSD
+- `/gsd:spec` - Generar SPEC.md desde description
+- `/gsd:build` - Ejecutar build completo
+- `/gsd:test` - Ejecutar tests
+- `/gsd:verify` - Verificar implementación vs spec
+
+### Flujo GSD
+1. **Describe** lo que quieres construir
+2. GSD extrae contexto y genera spec
+3. Claude Code ejecuta y verifica
+4. Iterar hasta correcto
+
+### Install
+```bash
+npx get-shit-done-cc@latest --claude --global
+```
+
 ## namespaces
 
 - `swarm`: Memoria del swarm

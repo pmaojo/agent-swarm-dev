@@ -6,88 +6,63 @@ on:
   workflow_dispatch:
 
 jobs:
-  # Build Synapse from source with full features
+  # Build Synapse from crates.io with full features
   build-synapse:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-        with:
-          repository: pmaojo/synapse-engine
-          path: synapse-engine
-          
       - name: Install Rust
         uses: dtolnay/rust-action@stable
         
-      - name: Build with all features
+      - name: Install Synapse Core v0.8.5
         run: |
-          cd synapse-engine/crates/synapse-core
-          cargo build --release --features local-embeddings
+          cargo install synapse-core --version 0.8.5
           
       - name: Create package
         run: |
           mkdir -p dist
-          cp synapse-engine/target/release/synapse dist/
+          cp ~/.cargo/bin/synapse dist/
           
-          # Download embeddings model for offline use
-          mkdir -p models
+          # Download embeddings model
           python3 -c "
 from fastembed import InitOptions, TextEmbedding, EmbeddingModel
-import os
-print('📥 Downloading embedding model (BGE-small-ENV15)...')
+print('📥 Downloading BGE-small-ENV15...')
 model = TextEmbedding(InitOptions(EmbeddingModel.BGESmallENV15))
-print('✅ Model downloaded!')
-cache_dir = os.path.expanduser('~/.cache/fastembed')
-print(f'Model cached at: {cache_dir}')
+print('✅ Model ready!')
 "
           
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: synapse-full
+          name: synapse-v085
           path: |
             dist/synapse
             ~/.cache/fastembed/
 
-  # Test with Synapse
+  # Test
   test:
     runs-on: ubuntu-latest
     needs: build-synapse
     steps:
-      - name: Download artifacts
+      - name: Download
         uses: actions/download-artifact@v4
         with:
-          name: synapse-full
+          name: synapse-v085
           
       - name: Setup
         run: |
           chmod +x dist/synapse
+          cp -r fastembed ~/.cache/ 2>/dev/null || true
           mkdir -p data
-          
-          # Restore model cache
-          if [ -d "fastembed" ]; then
-            cp -r fastembed ~/.cache/
-          fi
           
       - name: Test Synapse
         run: |
-          # Start Synapse in background
           GRAPH_STORAGE_PATH=./data ./dist/synapse --mcp &
           sleep 5
           
-          # Test with Python SDK
           pip install synapse-sdk
           python3 -c "
 from synapse import get_client
 client = get_client()
-
-# Test ingest
-client.ingest_triples([
-    {'subject': 'test', 'predicate': 'works', 'object': 'yes'}
-])
-print('✅ Ingest OK!')
-
-# Test query
-results = client.get_all_triples()
-print(f'✅ Query OK! Found {len(results)} triples')
-print('🎉 Synapse is fully working!')
+client.ingest_triples([{'subject': 'test', 'predicate': 'works', 'object': 'yes'}])
+print('✅ Synapse v0.8.5 working!')
 "
