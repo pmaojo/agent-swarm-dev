@@ -1,0 +1,36 @@
+name: Build Synapse v2
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+
+      - name: Clone Synapse
+        run: |
+          git clone https://github.com/synapse-engine/synapse.git
+          cd synapse
+          git checkout v0.8.5
+
+      - name: Build Synapse
+        run: |
+          cd synapse
+          cargo build --release
+
+      - name: Create package
+        run: |
+          mkdir -p dist
+          cp synapse/target/release/synapse dist/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: synapse-v085
+          path: dist/synapse
+          retention-days: 7
