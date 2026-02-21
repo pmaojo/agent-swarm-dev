@@ -6,22 +6,29 @@ on:
   workflow_dispatch:
 
 jobs:
-  # Build Synapse from crates.io with full features
+  # Build Synapse from source with full features
   build-synapse:
     runs-on: ubuntu-24.04
     steps:
       - name: Install Rust
         uses: dtolnay/rust-action@stable
-        
-      - name: Install Synapse Core v0.8.5
+
+      - name: Clone Synapse
         run: |
-          cargo install synapse-core --version 0.8.5
-          
+          git clone https://github.com/synapse-engine/synapse.git
+          cd synapse
+          git checkout v0.8.5
+
+      - name: Build Synapse
+        run: |
+          cd synapse
+          cargo build --release
+
       - name: Create package
         run: |
           mkdir -p dist
-          cp ~/.cargo/bin/synapse dist/
-          
+          cp synapse/target/release/synapse dist/
+
           # Download embeddings model
           python3 -c "
 from fastembed import InitOptions, TextEmbedding, EmbeddingModel
@@ -29,7 +36,7 @@ print('📥 Downloading BGE-small-ENV15...')
 model = TextEmbedding(InitOptions(EmbeddingModel.BGESmallENV15))
 print('✅ Model ready!')
 "
-          
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -47,18 +54,18 @@ print('✅ Model ready!')
         uses: actions/download-artifact@v4
         with:
           name: synapse-v085
-          
+
       - name: Setup
         run: |
           chmod +x dist/synapse
           cp -r fastembed ~/.cache/ 2>/dev/null || true
           mkdir -p data
-          
+
       - name: Test Synapse
         run: |
           GRAPH_STORAGE_PATH=./data ./dist/synapse --mcp &
           sleep 5
-          
+
           pip install synapse-sdk
           python3 -c "
 from synapse import get_client
