@@ -69,15 +69,17 @@ class OrchestratorAgent:
     def connect(self):
         try:
             self.channel = grpc.insecure_channel(f"{self.grpc_host}:{self.grpc_port}")
-            self.stub = semantic_engine_pb2_grpc.SemanticEngineStub(self.channel)
             # Simple ping/check if server is up
             try:
                 grpc.channel_ready_future(self.channel).result(timeout=2)
+                self.stub = semantic_engine_pb2_grpc.SemanticEngineStub(self.channel)
                 print("✅ Connected to Synapse")
             except grpc.FutureTimeoutError:
                 print("⚠️  Synapse not reachable. Is it running?")
+                self.stub = None
         except Exception as e:
             print(f"❌ Failed to connect to Synapse: {e}")
+            self.stub = None
 
     def close(self):
         """Close gRPC channel"""
