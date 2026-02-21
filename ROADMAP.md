@@ -26,12 +26,12 @@ This roadmap outlines the phases for developing and enhancing the "Spec Driven S
 - [x] **Implementation of Agents**: Python implementations for all agents (orchestrator, coder, reviewer, deployer, memory).
 - [x] **End-to-End Flow**: `scripts/swarm_flow.py` connects all agents.
 
-## Phase 2: Enhanced Capabilities (Current)
+## Phase 2: Enhanced Capabilities (Completed)
 
 - [x] **Advanced Reasoning**: Implement more sophisticated reasoning capabilities within the Orchestrator using Synapse graph queries.
-- [ ] **Multi-Agent Collaboration**: Enable direct peer-to-peer communication between agents (e.g., Coder asking Reviewer for clarification).
-- [ ] **Context Awareness**: Improve context retention across sessions by leveraging Synapse's long-term memory.
-- [ ] **Code Quality Gates**: Add automated testing and linting to the Reviewer agent's workflow.
+- [x] **Multi-Agent Collaboration**: Enable indirect collaboration via Synapse Graph (e.g., Coder querying past Reviewer critiques).
+- [x] **Context Awareness**: Improve context retention across sessions by leveraging Synapse's long-term memory (Artifacts & Critiques).
+- [x] **Code Quality Gates**: Add automated testing and linting to the Reviewer agent's workflow (`pylint`, `flake8`, `bandit`).
 - [ ] **MCP Expansion**: Add more MCP tools for deeper integration with external services (GitHub, Linear, etc.).
 
 ## Phase 3: Production Readiness

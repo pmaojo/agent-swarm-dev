@@ -47,7 +47,7 @@ A neuro-symbolic agent swarm with graph-driven orchestration using Synapse knowl
 
 ```bash
 # Python dependencies
-pip install fastembed flask grpcio-tools synapse-sdk pyyaml
+pip install fastembed flask grpcio-tools synapse-sdk pyyaml openai pylint flake8 bandit tenacity
 
 # Synapse binary (light mode)
 # Download from https://github.com/synapse-engine/synapse/releases
