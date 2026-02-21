@@ -21,11 +21,11 @@ class TrelloBridge:
 
         # Track processed cards to prevent re-triggering for the same state
         # Set of tuples: (card_id, list_name)
-        # We need to clear this if the card moves, but for simplicity,
-        # we can just track what we've processed in the current list.
-        # If a card moves back to a list, we should process it again? Yes.
-        # But if it stays in a list (e.g., waiting for approval), we shouldn't.
         self.processed_states = set()
+
+        # Mock State
+        self.mock_card = {'id': 'mock_card_1', 'name': 'Test Feature', 'desc': 'Build a login page', 'idList': 'mock_list_id', 'labels': []}
+        self.mock_current_list = "INBOX" # Start in INBOX
 
         if not all([self.api_key, self.token, self.board_id]):
             logger.warning("⚠️ Trello credentials missing. Bridge will run in Mock Mode.")
@@ -47,6 +47,7 @@ class TrelloBridge:
         if params:
             query_params.update(params)
 
+        response = None
         try:
             response = requests.request(method, url, params=query_params, json=data)
             response.raise_for_status()
@@ -78,6 +79,16 @@ class TrelloBridge:
 
     def move_card(self, card_id: str, target_list_name: str):
         """Move a card to a different list."""
+        if self.mock_mode:
+            logger.info(f"[MOCK] Moved card {card_id} to {target_list_name}")
+            self.mock_current_list = target_list_name
+
+            # Special logic for TODO -> Need Approved label
+            if target_list_name == "TODO":
+                 logger.info("[MOCK] Auto-adding Approved label for testing flow")
+                 self.mock_card['labels'].append({'name': 'Approved'})
+            return
+
         target_list_id = self.get_list_id(target_list_name)
         if not target_list_id:
             logger.error(f"Cannot move card. Target list '{target_list_name}' not found.")
@@ -86,23 +97,34 @@ class TrelloBridge:
         logger.info(f"🚚 Moving card {card_id} to '{target_list_name}'...")
         self._request("PUT", f"/cards/{card_id}", params={'idList': target_list_id})
 
-        # Clear processing state for this card in the OLD list (implicitly handled by the set logic)
-        # But we should also mark it as processed in the NEW list if we moved it ourselves?
-        # No, usually we want the NEXT agent to pick it up.
-        # So we leave it unprocessed for the next list callback.
-
     def update_card_desc(self, card_id: str, desc: str):
         """Update a card's description."""
+        if self.mock_mode:
+            logger.info(f"[MOCK] Updated desc for {card_id}: {desc[:50]}...")
+            self.mock_card['desc'] = desc
+            return
+
         logger.info(f"📝 Updating description for {card_id}...")
         self._request("PUT", f"/cards/{card_id}", params={'desc': desc})
 
     def add_comment(self, card_id: str, text: str):
         """Add a comment to a card."""
+        if self.mock_mode:
+            logger.info(f"[MOCK] Comment on {card_id}: {text[:50]}...")
+            return
+
         logger.info(f"💬 Commenting on {card_id}: {text[:50]}...")
         self._request("POST", f"/cards/{card_id}/actions/comments", params={'text': text})
 
     def has_label(self, card_id: str, label_name: str) -> bool:
         """Check if a card has a specific label (case-insensitive)."""
+        if self.mock_mode:
+            # Check mock card labels
+            for label in self.mock_card.get('labels', []):
+                if label.get('name', '').lower() == label_name.lower():
+                    return True
+            return False
+
         card_data = self._request("GET", f"/cards/{card_id}")
         if not card_data: return False
 
@@ -121,13 +143,19 @@ class TrelloBridge:
         Executes a single polling step. Non-blocking.
         """
         if self.mock_mode:
-            logger.info("[MOCK] Polling Trello... (Mocking card detection)")
-            # Simulate finding a card in INBOX only once
-            if "INBOX" in self.callbacks and ('mock_card_1', 'INBOX') not in self.processed_states:
-                 fake_card = {'id': 'mock_card_1', 'name': 'Test Feature', 'desc': 'Build a login page', 'idList': 'mock_list_id'}
-                 logger.info(f"[MOCK] Found card in INBOX: {fake_card['name']}")
-                 self.callbacks["INBOX"](fake_card)
-                 self.processed_states.add(('mock_card_1', 'INBOX'))
+            logger.info(f"[MOCK] Polling Trello... (Current List: {self.mock_current_list})")
+
+            # Simulate finding the card in the CURRENT mock list
+            # Only trigger if we haven't processed THIS state yet
+            current_state_key = (self.mock_card['id'], self.mock_current_list)
+
+            if self.mock_current_list in self.callbacks and current_state_key not in self.processed_states:
+                 logger.info(f"[MOCK] Triggering callback for {self.mock_current_list}")
+                 try:
+                     self.callbacks[self.mock_current_list](self.mock_card)
+                     self.processed_states.add(current_state_key)
+                 except Exception as e:
+                     logger.error(f"[MOCK] Callback failed: {e}")
             return
 
         # Real Polling

@@ -42,6 +42,7 @@ class ProductManagerAgent:
     def connect(self):
         try:
             self.channel = grpc.insecure_channel(f"{self.grpc_host}:{self.grpc_port}")
+            grpc.channel_ready_future(self.channel).result(timeout=5)
             self.stub = semantic_engine_pb2_grpc.SemanticEngineStub(self.channel)
         except Exception as e:
             print(f"⚠️ [Product Manager] Failed to connect to Synapse: {e}")
