@@ -123,6 +123,8 @@ class AnalystAgent:
 
     def cluster_failures(self, failures):
         clusters = defaultdict(list)
+        decoder = json.JSONDecoder()
+
         for f in failures:
             role = f.get('role') or f.get('?role')
             note = f.get('note') or f.get('?note')
@@ -150,10 +152,21 @@ class AnalystAgent:
                 if stack.startswith('"') and stack.endswith('"'):
                     stack = stack[1:-1]
 
+                # @synapse:optimization Use raw_decode to avoid full parsing of large log arrays
+                # @synapse:fix Ensure note is hashable (handle nested lists/dicts)
                 if note.startswith('[') and note.endswith(']'):
-                   parsed = json.loads(note)
-                   if isinstance(parsed, list) and parsed:
-                       note = parsed[0]
+                   try:
+                       # Skip the opening bracket '[' at index 0, start parsing at index 1
+                       parsed_val, _ = decoder.raw_decode(note, 1)
+
+                       # If valid parsed value, use it.
+                       # Ensure it's hashable for clustering keys.
+                       if isinstance(parsed_val, (list, dict)):
+                           note = str(parsed_val)
+                       else:
+                           note = parsed_val
+                   except json.JSONDecodeError:
+                       pass
             except:
                 pass
 
