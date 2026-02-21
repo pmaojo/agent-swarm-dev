@@ -15,3 +15,12 @@ venv/
 
 # OS
 .DS_Store
+
+# Logs
+*.log
+
+# Data
+synapse-data/
+
+# Tools
+protoc/

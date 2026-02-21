@@ -1,7 +1,8 @@
 #!/bin/bash
 # Start all services for agent-swarm-dev
-# 1. FastEmbed server (port 11434)
-# 2. Synapse (port 50051)
+# 1. Ensure Synapse is built (Light Version)
+# 2. FastEmbed server (port 11434)
+# 3. Synapse (port 50051)
 
 set -e
 
@@ -10,21 +11,33 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
 echo "📦 Starting Agent Swarm Dev Services..."
 
-# Check for FastEmbed
+# 1. Build Synapse
+echo "🔨 Ensuring Synapse is built..."
+cd "$PROJECT_DIR"
+# Run setup_synapse.sh to build/update
+if ! bash scripts/setup_synapse.sh; then
+    echo "❌ Build failed!"
+    exit 1
+fi
+
+# 2. Check for FastEmbed
 if ! curl -s http://localhost:11434/ >/dev/null 2>&1; then
     echo "▶️  Starting FastEmbed server..."
-    cd "$PROJECT_DIR"
-    python3 scripts/embeddings_server.py --port 11434 &
+    python3 scripts/embeddings_server.py --port 11434 > /dev/null 2>&1 &
     sleep 3
 else
     echo "✅ FastEmbed already running"
 fi
 
-# Check for Synapse
+# 3. Check for Synapse
 if ! curl -s http://localhost:50051 >/dev/null 2>&1; then
     echo "▶️  Starting Synapse..."
-    cd "$PROJECT_DIR"
-    EMBEDDING_PROVIDER=remote ./synapse &
+    # Use local synapse-data
+    export GRAPH_STORAGE_PATH="./synapse-data"
+    export EMBEDDING_PROVIDER="remote"
+
+    # Run synapse in background
+    ./synapse > synapse.log 2>&1 &
     sleep 3
 else
     echo "✅ Synapse already running"
@@ -32,4 +45,4 @@ fi
 
 echo "🎉 All services ready!"
 echo "   - FastEmbed: http://localhost:11434"
-echo "   - Synapse: localhost:50051"
+echo "   - Synapse: localhost:50051 (Data: ./synapse-data)"

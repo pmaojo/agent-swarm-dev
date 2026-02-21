@@ -1,0 +1,3 @@
+[submodule "synapse-engine"]
+	path = synapse-engine
+	url = https://github.com/pmaojo/synapse-engine
