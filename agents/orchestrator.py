@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Orchestrator Agent - Task decomposition and workflow management
+Orchestrator Agent - Task decomposition and workflow management.
+Real implementation: Coordinates real agents via Synapse-driven state machine.
 """
 import os
 import json
@@ -10,9 +11,14 @@ import yaml
 import time
 from typing import List, Dict, Any, Optional
 
-# Add path to synapse sdk
+# Add path to lib and agents
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'lib'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'agents'))
+
 from synapse.infrastructure.web import semantic_engine_pb2, semantic_engine_pb2_grpc
+from coder import CoderAgent
+from reviewer import ReviewerAgent
+from deployer import DeployerAgent
 
 class OrchestratorAgent:
     def __init__(self):
@@ -29,6 +35,13 @@ class OrchestratorAgent:
         
         # Load Schema at startup
         self.load_schema()
+
+        # Instantiate Agents
+        self.agents = {
+            "Coder": CoderAgent(),
+            "Reviewer": ReviewerAgent(),
+            "Deployer": DeployerAgent()
+        }
 
     def connect(self):
         try:
@@ -47,6 +60,9 @@ class OrchestratorAgent:
         """Close gRPC channel"""
         if self.channel:
             self.channel.close()
+        for agent in self.agents.values():
+            if hasattr(agent, 'close'):
+                agent.close()
 
     def __del__(self):
         self.close()
@@ -100,6 +116,16 @@ class OrchestratorAgent:
                     triples.append({"subject": subject, "predicate": "http://swarm.os/on_success", "object": f"http://swarm.os/task/{transitions.get('on_success')}"})
                 if transitions.get('on_failure'):
                     triples.append({"subject": subject, "predicate": "http://swarm.os/on_failure", "object": f"http://swarm.os/task/{transitions.get('on_failure')}"})
+
+            # Artifacts (New Neuro-symbolic Types)
+            for artifact_name, artifact_data in schema.get('artifacts', {}).items():
+                subject = f"http://swarm.os/artifact/{artifact_name}"
+                triples.append({"subject": subject, "predicate": "http://swarm.os/type", "object": "http://swarm.os/ArtifactType"})
+                triples.append({"subject": subject, "predicate": "http://swarm.os/description", "object": artifact_data.get('description', '')})
+                # Properties
+                for prop in artifact_data.get('properties', []):
+                    prop_subj = f"http://swarm.os/property/{prop}"
+                    triples.append({"subject": subject, "predicate": "http://swarm.os/hasProperty", "object": prop_subj})
 
             self.ingest_triples(triples, namespace=self.namespace)
             print(f"✅ Schema loaded ({len(triples)} triples)")
@@ -161,23 +187,19 @@ class OrchestratorAgent:
         return None
 
     def run_agent(self, agent_name: str, task_desc: str, context: Dict = None) -> Dict:
-        """Execute an agent (mock execution for now)"""
+        """Execute an agent"""
         print(f"🤖 Agent '{agent_name}' executing: {task_desc}")
 
-        # Simulate agent execution
-        if agent_name == "Coder":
-            return {"status": "success", "generated": {"files": ["app.py"]}}
-        elif agent_name == "Reviewer":
-            # Simulate failure if context says so, or random/default success
-            if "buggy" in task_desc.lower() and "Fix previous issues" not in task_desc:
-                print("❌ Reviewer rejected the code!")
-                return {"status": "failure", "issues": ["Syntax error"]}
-            print("✅ Reviewer approved the code.")
-            return {"status": "success"}
-        elif agent_name == "Deployer":
-            return {"status": "success", "url": "https://vercel.app/project"}
+        agent = self.agents.get(agent_name)
+        if not agent:
+            print(f"❌ Unknown agent: {agent_name}")
+            return {"status": "failure", "error": "Unknown agent"}
 
-        return {"status": "success"}
+        try:
+            return agent.run(task_desc, context)
+        except Exception as e:
+            print(f"❌ Agent execution failed: {e}")
+            return {"status": "failure", "error": str(e)}
 
     def run(self, task: str) -> Dict[str, Any]:
         print(f"🚀 Orchestrator starting task: {task}")
@@ -198,7 +220,8 @@ class OrchestratorAgent:
                 break
 
             # 3. Execute Agent
-            result = self.run_agent(agent_name, task, {"history": history})
+            context = {"history": history}
+            result = self.run_agent(agent_name, task, context)
             outcome = result.get("status", "failure")
 
             history.append({
@@ -221,8 +244,13 @@ class OrchestratorAgent:
                          break
 
                      print(f"⚠️  Task failed (Retry {retry_count}/{max_retries})... appending feedback to instructions.")
-                     issues = result.get('issues', ['Unknown error'])
-                     task = f"{task} (Fix previous issues: {issues})"
+                     # Append issues from Reviewer to task description for the next loop (Coder)
+                     issues = result.get('issues', [])
+                     if not issues and result.get('error'):
+                         issues = [result.get('error')]
+
+                     # Be more verbose in feedback
+                     task = f"{task} (Fix previous issues: {json.dumps(issues)})"
                 else:
                     # Reset retry count on success
                     retry_count = 0
