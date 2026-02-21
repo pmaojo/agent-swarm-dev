@@ -1,33 +1,47 @@
-schema_version: "1.3"
+schema_version: "1.4"
 
 memory_settings:
   consolidation_threshold: 5
+
+execution_modes:
+  PARALLEL:
+    description: "War Room Mode: Concurrent execution with resource locking."
+    synapse_mode: "WAR_ROOM"
+  TABLE_ORDER:
+    description: "Council Mode: Sequential execution based on seat index."
+    synapse_mode: "COUNCIL"
 
 agents:
   Orchestrator:
     description: "Coordinates task flow and manages state using graph-based reasoning."
     ontology_role: "Program Manager"
     supported_stacks: []
+    seat_index: -1 # Manager
   ProductManager:
     description: "Transforms user ideas into structured OpenSpec requirements."
     ontology_role: "Product Manager"
     supported_stacks: ["openspec", "markdown"]
+    seat_index: 0
   Architect:
     description: "Designs technical solutions and implementation plans based on OpenSpec."
     ontology_role: "System Architect"
     supported_stacks: ["openspec", "markdown"]
+    seat_index: 1
   Coder:
     description: "Implements features and writes code based on specifications and feedback."
     ontology_role: "Frontend Developer"
     supported_stacks: ["python", "react", "rust", "typescript"]
+    seat_index: 2
   Reviewer:
     description: "Reviews code for quality, security, and spec adherence using static analysis and LLM reasoning."
     ontology_role: "QA Engineer"
     supported_stacks: ["python", "react", "rust", "typescript"]
+    seat_index: 3
   Deployer:
     description: "Verifies and deploys the application."
     ontology_role: "DevOps Engineer"
     supported_stacks: ["vercel", "docker"]
+    seat_index: 4
 
 tasks:
   RequirementsDefinitionTask:
@@ -129,3 +143,9 @@ artifacts:
     properties:
       - url
       - status
+  ResourceLock:
+    description: "A mutex lock on a shared resource (e.g. file) for concurrent operations."
+    properties:
+      - resource_uri
+      - holder_agent
+      - timeout
