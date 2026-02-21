@@ -3,25 +3,44 @@ name: Build Synapse
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
+  workflow_dispatch:
 
 jobs:
-  build:
+  build-synapse:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      
       - name: Install Rust
         uses: dtolnay/rust-action@stable
-        
+
+      - name: Clone Synapse
+        run: |
+          git clone https://github.com/synapse-engine/synapse.git
+          cd synapse
+          git checkout v0.8.5
+
       - name: Build Synapse
         run: |
-          cd crates/synapse-core
-          cargo build --release --features remote-embeddings
-          
-      - name: Upload binary
+          cd synapse
+          cargo build --release
+
+      - name: Create package
+        run: |
+          mkdir -p dist
+          cp synapse/target/release/synapse dist/
+
+          # Download embeddings model
+          python3 -c "
+from fastembed import InitOptions, TextEmbedding, EmbeddingModel
+print('📥 Downloading BGE-small-ENV15...')
+model = TextEmbedding(InitOptions(EmbeddingModel.BGESmallENV15))
+print('✅ Model ready!')
+"
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: synapse-linux-x64
-          path: target/release/synapse
+          name: synapse-v085
+          path: |
+            dist/synapse
+            ~/.cache/fastembed/
+          retention-days: 7
