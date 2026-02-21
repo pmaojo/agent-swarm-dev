@@ -1,0 +1,47 @@
+# Nivel Ejecutivo
+<Chief Product Officer (CPO)> <lidera_area> <Organización de Producto>
+<Chief Technology Officer (CTO)> <lidera_area> <Organización de Ingeniería>
+<VP of Product> <reporta_a> <Chief Product Officer (CPO)>
+<VP of Engineering> <reporta_a> <Chief Technology Officer (CTO)>
+<Head of Product> <es_equivalente_a> <VP of Product>
+
+# Gestión de Producto
+<Product Manager> <pertenece_a_area> <Gestión de Producto>
+<Product Manager> <reporta_a> <VP of Product>
+<Senior Product Manager> <mentorea_a> <Product Manager>
+<Product Manager> <es_responsable_de> <Definir el "qué" y el "por qué" del producto>
+<Product Owner> <es_un_rol_de_metodologia> <Scrum/Agile>
+<Product Owner> <gestiona> <Product Backlog>
+<Business Analyst> <apoya_a> <Product Manager>
+
+# Diseño y UX
+<Product Designer> <pertenece_a_area> <Diseño y Experiencia de Usuario>
+<UX Designer> <se_enfoca_en> <Usabilidad y flujos de trabajo>
+<UI Designer> <se_enfoca_en> <Capa visual e interfaz final>
+<UI Designer> <colabora_estrechamente_con> <UX Designer>
+<UX Researcher> <provee_datos_a> <Product Designer>
+<UX Writer> <es_responsable_de> <Microcopy y textos del producto>
+
+# Ingeniería
+<Engineering Manager> <pertenece_a_area> <Ingeniería>
+<Engineering Manager> <es_responsable_de> <Gestión de personas y eficiencia del equipo>
+<Tech Lead> <reporta_a> <Engineering Manager>
+<Tech Lead> <es_responsable_de> <Toma de decisiones técnicas diarias>
+<Software Architect> <define> <Estructura técnica de alto nivel>
+<Frontend Developer> <pertenece_a_area> <Ingeniería>
+<Backend Developer> <pertenece_a_area> <Ingeniería>
+<Mobile Developer> <pertenece_a_area> <Ingeniería>
+<Full Stack Developer> <tiene_habilidades_de> <Frontend y Backend>
+
+# QA, DevOps, Data
+<QA Engineer> <pertenece_a_area> <Aseguramiento de Calidad>
+<QA Engineer> <valida_el_trabajo_de> <Ingeniería>
+<QA Automation Engineer> <es_responsable_de> <Automatizar pruebas de software>
+<DevOps Engineer> <opera_en_la_interseccion_de> <Desarrollo y Operaciones>
+<Site Reliability Engineer (SRE)> <es_responsable_de> <Fiabilidad y escalabilidad en producción>
+<Data Scientist> <pertenece_a_area> <Datos y Analítica>
+<Product Analyst> <provee_insights_a> <Product Manager>
+
+# Roles Puente
+<Product Marketing Manager> <conecta> <Producto con el Mercado>
+<Growth Product Manager> <se_enfoca_en> <Métricas de adquisición y retención>

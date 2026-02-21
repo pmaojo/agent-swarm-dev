@@ -2,7 +2,7 @@ schema_version: "1.0"
 
 agents:
   Orchestrator:
-    description: "Coordinators task flow and manages state."
+    description: "Coordinates task flow and manages state."
   Coder:
     description: "Implements features and writes code."
   Reviewer:

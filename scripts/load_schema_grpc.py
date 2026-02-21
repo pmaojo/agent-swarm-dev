@@ -14,6 +14,9 @@ class GrpcClient:
         self.channel = grpc.insecure_channel(f"{host}:{port}")
         self.stub = semantic_engine_pb2_grpc.SemanticEngineStub(self.channel)
 
+    def close(self):
+        self.channel.close()
+
     def ingest_triples(self, triples: List[Dict[str, str]], namespace: str = "default"):
         pb_triples = []
         for t in triples:
@@ -63,6 +66,8 @@ def load_schema(filepath="swarm_schema.yaml", namespace="default"):
     except Exception as e:
         print(f"❌ Failed to load schema: {e}")
         sys.exit(1)
+    finally:
+        client.close()
 
 if __name__ == "__main__":
     filepath = sys.argv[1] if len(sys.argv) > 1 else "swarm_schema.yaml"

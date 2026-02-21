@@ -18,8 +18,8 @@ class OrchestratorAgent:
     def __init__(self):
         self.model = os.getenv("LLM_MODEL", "gpt-4")
         self.api_key = os.getenv("OPENAI_API_KEY")
-        self.grpc_host = "localhost"
-        self.grpc_port = 50051
+        self.grpc_host = os.getenv("SYNAPSE_GRPC_HOST", "localhost")
+        self.grpc_port = int(os.getenv("SYNAPSE_GRPC_PORT", "50051"))
         self.channel = None
         self.stub = None
         self.namespace = "default"
@@ -42,6 +42,14 @@ class OrchestratorAgent:
                 print("⚠️  Synapse not reachable. Is it running?")
         except Exception as e:
             print(f"❌ Failed to connect to Synapse: {e}")
+
+    def close(self):
+        """Close gRPC channel"""
+        if self.channel:
+            self.channel.close()
+
+    def __del__(self):
+        self.close()
 
     def ingest_triples(self, triples: List[Dict[str, str]], namespace: str = "default"):
         """Ingest triples helper"""
@@ -177,6 +185,8 @@ class OrchestratorAgent:
         # 1. Determine Initial State
         current_task_type = self.get_initial_task_type(task)
         history = []
+        max_retries = 3
+        retry_count = 0
         
         while current_task_type:
             # 2. Find Responsible Agent
@@ -205,9 +215,17 @@ class OrchestratorAgent:
                 print(f"🔄 Transition: {current_task_type} ({outcome}) -> {next_task_type}")
 
                 if outcome == "failure":
-                     print("⚠️  Task failed... appending feedback to instructions.")
+                     retry_count += 1
+                     if retry_count > max_retries:
+                         print("🛑 Max retries exceeded. Halting workflow.")
+                         break
+
+                     print(f"⚠️  Task failed (Retry {retry_count}/{max_retries})... appending feedback to instructions.")
                      issues = result.get('issues', ['Unknown error'])
                      task = f"{task} (Fix previous issues: {issues})"
+                else:
+                    # Reset retry count on success
+                    retry_count = 0
 
                 current_task_type = next_task_type
             else:
@@ -223,5 +241,8 @@ class OrchestratorAgent:
 if __name__ == "__main__":
     task = " ".join(sys.argv[1:]) if len(sys.argv) > 1 else "Implement feature X"
     agent = OrchestratorAgent()
-    result = agent.run(task)
-    print(json.dumps(result, indent=2))
+    try:
+        result = agent.run(task)
+        print(json.dumps(result, indent=2))
+    finally:
+        agent.close()
