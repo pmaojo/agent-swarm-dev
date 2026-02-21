@@ -1,5 +1,5 @@
 #!/bin/bash
-# Run a specific agent
+# Run a specific agent wrapper
 
 AGENT_NAME="${1:-orchestrator}"
 shift
@@ -13,26 +13,36 @@ fi
 echo "🤖 Running agent: $AGENT_NAME"
 echo "📋 Task: $TASK"
 
-# Agent implementation would go here
-# This is a placeholder for the actual agent logic
+SCRIPT_DIR=$(dirname "$0")
+AGENTS_DIR="$SCRIPT_DIR/../agents"
 
 case $AGENT_NAME in
   orchestrator)
-    echo "🔄 Orchestrating task breakdown..."
+    python3 "$AGENTS_DIR/orchestrator.py" "$TASK"
     ;;
   coder)
-    echo "💻 Generating code..."
+    python3 "$AGENTS_DIR/coder.py" "$TASK"
     ;;
   reviewer)
-    echo "🔍 Reviewing code..."
+    # Check if reviewer exists as standalone executable
+    if [ -f "$AGENTS_DIR/reviewer.py" ]; then
+        python3 "$AGENTS_DIR/reviewer.py" "$TASK"
+    else
+        echo "❌ Reviewer agent script not found or not standalone."
+        exit 1
+    fi
     ;;
   deployer)
-    echo "🚀 Deploying to Vercel..."
+    if [ -f "$AGENTS_DIR/deployer.py" ]; then
+        python3 "$AGENTS_DIR/deployer.py" "$TASK"
+    else
+        echo "❌ Deployer agent script not found or not standalone."
+        exit 1
+    fi
     ;;
   *)
     echo "❌ Unknown agent: $AGENT_NAME"
+    echo "Available agents: orchestrator, coder, reviewer, deployer"
     exit 1
     ;;
 esac
-
-echo "✅ Agent $AGENT_NAME completed"
