@@ -9,6 +9,8 @@
 - **GSD Integration**: Added to SKILL.md
 - **Swarm Ontology**: Defined `swarm_schema.yaml` with Agent roles and Task flows.
 - **Advanced Reasoning**: Implemented graph-based state machine in Orchestrator using Synapse queries.
+- **Trello Bridge**: Full bidirectional integration for autonomous workflow.
+- **OpenSpec**: Integrated spec-driven development framework.
 
 ---
 
@@ -32,15 +34,16 @@ This roadmap outlines the phases for developing and enhancing the "Spec Driven S
 - [x] **Multi-Agent Collaboration**: Enable indirect collaboration via Synapse Graph (e.g., Coder querying past Reviewer critiques).
 - [x] **Context Awareness**: Improve context retention across sessions by leveraging Synapse's long-term memory (Artifacts & Critiques).
 - [x] **Code Quality Gates**: Add automated testing and linting to the Reviewer agent's workflow (`pylint`, `flake8`, `bandit`).
-- [ ] **MCP Expansion**: Add more MCP tools for deeper integration with external services (GitHub, Linear, etc.).
+- [x] **MCP Expansion**: Add more MCP tools for deeper integration with external services.
+- [x] **Trello & OpenSpec UI**: Complete implementation of the Trello Bridge and OpenSpec file integration.
 
-## Phase 3: Production Readiness
+## Phase 3: Operational Scale & Reliability (What's Next)
 
-- [ ] **Comprehensive Testing**: Implement unit and integration tests for all agents and memory components.
-- [ ] **CI/CD Pipeline**: fully automate the testing and deployment process using GitHub Actions.
-- [ ] **Monitoring & Logging**: Add structured logging and monitoring for agent activities and memory usage.
-- [ ] **Error Handling**: Robust error handling and recovery mechanisms for agent failures.
-- [ ] **Security**: Implement secure handling of API keys and sensitive data.
+- [ ] **Infrastructure-as-Code (Dockerization)**: Multi-container setup for Synapse + Agents. Ensure swarm portability.
+- [ ] **Multi-Stack Maturity**: Formalize "Skill-Based Routing" to handle Python, Rust, and TS projects in parallel.
+- [ ] **Proactive Monitoring**: Implement Telegram alerts for budget (80%) and system health.
+- [ ] **Auto-Consolidation 2.0**: Empower the Analyst Agent to propose schema updates, not just "Golden Rules".
+- [ ] **CI/CD Pipeline**: Fully automate the testing and deployment process using GitHub Actions.
 
 ## Phase 4: Expansion & Ecosystem
 

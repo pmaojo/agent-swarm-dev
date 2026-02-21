@@ -74,6 +74,40 @@ python3 scripts/swarm_flow.py "Create a REST API"
 python3 scripts/swarm_flow.py "Implement user authentication" --verbose
 ```
 
+## 🤖 Autonomous GSD Workflow (Trello + OpenSpec)
+
+This system implements a fully autonomous "Get Shit Done" (GSD) workflow driven by Trello state transitions and OpenSpec documents.
+
+### The "Ping-Pong" Workflow
+
+The swarm operates through a continuous feedback loop between three specialized agents, using Trello lists as the state machine and the file system (OpenSpec) as the source of truth.
+
+| Stage | Agent | Action | Transition |
+|---|---|---|---|
+| **INBOX** | 🧠 **Product Manager** | Reads user idea, generates `openspec/specs/.../spec.md`, and links it to the card. | Moves to `REQUIREMENTS` |
+| **REQUIREMENTS** | 📐 **Architect** | Reads `spec.md`, generates Technical Design (`openspec/changes/.../design.md`), and updates card. | Moves to `DESIGN` |
+| **DESIGN** | 🛑 **Human-in-the-Loop** | **WAITING FOR APPROVAL**. A human must review the Design and apply the `[APPROVED]` label. | Manual Move to `TODO` |
+| **TODO** | 🏗️ **Orchestrator** | Detects `[APPROVED]` label, executes the implementation (Coder -> Reviewer), and verifies against Spec. | Moves to `DONE` |
+
+### 🛡️ NIST Guardrails
+
+To ensure safety and alignment, the **Orchestrator** enforces a strict policy:
+*   It will **ONLY** execute tasks from the `TODO` list if the Trello card has the **`[APPROVED]`** label.
+*   This acts as a mandatory "Human-in-the-Loop" checkpoint, preventing the swarm from writing code without explicit authorization of the design.
+
+### State Diagram
+
+```mermaid
+graph LR
+    A[INBOX] -->|Product Manager| B[REQUIREMENTS]
+    B -->|Architect| C[DESIGN]
+    C -->|Human Review| D{Approved?}
+    D -- Yes --> E[TODO]
+    D -- No --> B
+    E -->|Orchestrator| F[IN PROGRESS]
+    F -->|Coder + Reviewer| G[DONE]
+```
+
 ## 📋 Schema Definition
 
 The swarm behavior is defined in `swarm_schema.yaml`:
