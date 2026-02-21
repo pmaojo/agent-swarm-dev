@@ -1,0 +1,19 @@
+# Sanity Suite: Reference tasks used to validate new Golden Rules.
+# Each stack has a list of tasks that MUST pass for the rule to be accepted.
+
+sanity_checks:
+  python:
+    - description: "Write a function `def factorial(n):` that returns the factorial of n. Handle n=0."
+      expected_output_contains: ["def factorial", "return 1", "if n == 0", "if n <= 1"]
+    - description: "Create a simple class `Person` with a method `greet` that returns 'Hello'."
+      expected_output_contains: ["class Person", "def greet", "return 'Hello'"]
+
+  react:
+    - description: "Create a functional component `Button` that accepts an `onClick` prop and renders a button."
+      expected_output_contains: ["function Button", "onClick={onClick}", "<button"]
+    - description: "Create a hook `useCounter` that manages a count state."
+      expected_output_contains: ["useCounter", "useState", "setCount"]
+
+  rust:
+    - description: "Write a function `add` that takes two i32 and returns their sum."
+      expected_output_contains: ["fn add", "i32", "+"]
