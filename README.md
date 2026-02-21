@@ -1,4 +1,4 @@
-<img width="1024" height="572" alt="image_00b13d08-0cb7-44be-ac9b-1f37b30b2d9a" src="https://github.com/user-attachments/assets/63f9fe0b-44b7-4944-8f5c-bd11c61edd1e" />
+<img width="1024" height="572" alt="image_43ba708f-448c-450e-8a4c-585a204ca731" src="https://github.com/user-attachments/assets/4942493e-e259-4c65-b8ee-855012e944f2" />
 
 
 # Agent Swarm Development System
