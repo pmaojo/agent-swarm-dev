@@ -1,18 +1,20 @@
 # Spec Driven Swarm Development - Roadmap
 
-## ✅ Completed (2026-02-20)
+## ✅ Completed (2026-02-21)
 
 - **Synapse Light Build**: `--no-default-features` (RAM + remote embeddings)
 - **FastEmbed Server**: Python HTTP server compatible with Ollama API
 - **gRPC Integration**: Working Python client for Synapse
 - **GitHub Actions**: Workflow for light builds
 - **GSD Integration**: Added to SKILL.md
+- **Swarm Ontology**: Defined `swarm_schema.yaml` with Agent roles and Task flows.
+- **Advanced Reasoning**: Implemented graph-based state machine in Orchestrator using Synapse queries.
 
 ---
 
 This roadmap outlines the phases for developing and enhancing the "Spec Driven Swarm Development with Neuro-symbolic Memory" system.
 
-## Phase 1: Foundation (Current)
+## Phase 1: Foundation (Completed)
 
 - [x] **Project Structure**: Establish the base directory structure and initial files (`SPEC.md`, `SKILL.md`).
 - [x] **Core Agents Definition**: Define the roles and responsibilities of Orchestrator, Coder, Reviewer, and Deployer (`agents/`).
@@ -24,9 +26,9 @@ This roadmap outlines the phases for developing and enhancing the "Spec Driven S
 - [x] **Implementation of Agents**: Python implementations for all agents (orchestrator, coder, reviewer, deployer, memory).
 - [x] **End-to-End Flow**: `scripts/swarm_flow.py` connects all agents.
 
-## Phase 2: Enhanced Capabilities
+## Phase 2: Enhanced Capabilities (Current)
 
-- [ ] **Advanced Reasoning**: Implement more sophisticated reasoning capabilities within the Orchestrator using Synapse graph queries.
+- [x] **Advanced Reasoning**: Implement more sophisticated reasoning capabilities within the Orchestrator using Synapse graph queries.
 - [ ] **Multi-Agent Collaboration**: Enable direct peer-to-peer communication between agents (e.g., Coder asking Reviewer for clarification).
 - [ ] **Context Awareness**: Improve context retention across sessions by leveraging Synapse's long-term memory.
 - [ ] **Code Quality Gates**: Add automated testing and linting to the Reviewer agent's workflow.

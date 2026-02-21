@@ -1,0 +1,35 @@
+schema_version: "1.0"
+
+agents:
+  Orchestrator:
+    description: "Coordinators task flow and manages state."
+  Coder:
+    description: "Implements features and writes code."
+  Reviewer:
+    description: "Reviews code for quality and spec adherence."
+  Deployer:
+    description: "Deploys the application."
+
+tasks:
+  FeatureImplementationTask:
+    handler: Coder
+    description: "Implement a feature based on a specification."
+  CodeReviewTask:
+    handler: Reviewer
+    description: "Review the implemented code."
+  DeploymentTask:
+    handler: Deployer
+    description: "Deploy the verified code."
+
+transitions:
+  FeatureImplementationTask:
+    on_success: CodeReviewTask
+    on_failure: FeatureImplementationTask
+
+  CodeReviewTask:
+    on_success: DeploymentTask
+    on_failure: FeatureImplementationTask
+
+  DeploymentTask:
+    on_success: null
+    on_failure: DeploymentTask
