@@ -16,12 +16,15 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'lib'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'agents'))
 
 try:
-    from proto import semantic_engine_pb2, semantic_engine_pb2_grpc
+    from synapse.infrastructure.web import semantic_engine_pb2, semantic_engine_pb2_grpc
 except ImportError:
-    # Fallback if run from root
-    from agents.proto import semantic_engine_pb2, semantic_engine_pb2_grpc
+    try:
+        from agents.proto import semantic_engine_pb2, semantic_engine_pb2_grpc
+    except ImportError:
+        from proto import semantic_engine_pb2, semantic_engine_pb2_grpc
 
 from llm import LLMService
+from orchestrator import OrchestratorAgent
 
 # Define Strict Namespaces
 SWARM = "http://swarm.os/ontology/"
@@ -43,6 +46,7 @@ class AnalystAgent:
         self.config = self.load_config()
         self.threshold = self.config.get('memory_settings', {}).get('consolidation_threshold', 5)
         self.mock_llm = os.getenv("MOCK_LLM", "true").lower() == "true"
+        self.sanity_suite = self.load_sanity_suite()
 
     def connect(self):
         try:
@@ -61,6 +65,13 @@ class AnalystAgent:
         schema_path = os.path.join(os.path.dirname(__file__), '..', 'swarm_schema.yaml')
         if os.path.exists(schema_path):
             with open(schema_path, 'r') as f:
+                return yaml.safe_load(f)
+        return {}
+
+    def load_sanity_suite(self):
+        suite_path = os.path.join(os.path.dirname(__file__), '..', 'scenarios', 'sanity_suite.yaml')
+        if os.path.exists(suite_path):
+            with open(suite_path, 'r') as f:
                 return yaml.safe_load(f)
         return {}
 
@@ -86,20 +97,8 @@ class AnalystAgent:
         request = semantic_engine_pb2.IngestRequest(triples=pb_triples, namespace=self.namespace)
         self.stub.IngestTriples(request)
 
-    def debug_discovery(self):
-        """Debug function to dump raw triples to check IRI correctness."""
-        print("🔍 DEBUG: Running discovery query (LIMIT 20)...")
-        query = "SELECT ?s ?p ?o WHERE { ?s ?p ?o } LIMIT 20"
-        results = self.query_graph(query)
-        for r in results:
-            s = r.get("?s") or r.get("s")
-            p = r.get("?p") or r.get("p")
-            o = r.get("?o") or r.get("o")
-            print(f"   <{s}> <{p}> <{o}>")
-
     def find_unconsolidated_failures(self):
         # Strict Namespace Query with Literal Matching
-
         query = f"""
         PREFIX swarm: <{SWARM}>
         PREFIX nist: <{NIST}>
@@ -107,13 +106,15 @@ class AnalystAgent:
         PREFIX rdf: <{RDF}>
         PREFIX skos: <{SKOS}>
 
-        SELECT ?execId ?agent ?role ?note
+        SELECT ?execId ?agent ?role ?note ?stack
         WHERE {{
             ?execId rdf:type swarm:ExecutionRecord .
             ?execId nist:resultState "on_failure" .
             ?execId prov:wasAssociatedWith ?agent .
             ?agent rdf:type ?role .
             ?execId skos:historyNote ?note .
+
+            OPTIONAL {{ ?execId swarm:hasStack ?stack }}
 
             FILTER NOT EXISTS {{ ?execId swarm:isConsolidated "true" }}
         }}
@@ -126,15 +127,28 @@ class AnalystAgent:
             role = f.get('role') or f.get('?role')
             note = f.get('note') or f.get('?note')
             execId = f.get('execId') or f.get('?execId')
+            stack = f.get('stack') or f.get('?stack') or "unknown"
 
             # Note is a literal, check if it's a JSON string
             if isinstance(note, dict):
                 note = note.get('value', '')
 
+            # Stack might be a dict if it came from JSON results with type info
+            if isinstance(stack, dict):
+                stack = stack.get('value', 'unknown')
+
+            # Role might be a dict (URI)
+            if isinstance(role, dict):
+                role = role.get('value', '')
+
             try:
                 # Remove surrounding quotes from JSON string if double-encoded
                 if note.startswith('"') and note.endswith('"') and len(note) > 1:
                      note = note[1:-1]
+
+                # Stack usually comes as "python" (quoted)
+                if stack.startswith('"') and stack.endswith('"'):
+                    stack = stack[1:-1]
 
                 if note.startswith('[') and note.endswith(']'):
                    parsed = json.loads(note)
@@ -143,22 +157,22 @@ class AnalystAgent:
             except:
                 pass
 
-            # Simple clustering: exact match on (role, note)
-            key = (role, note)
+            # Cluster by (Role, Note, Stack)
+            key = (role, note, stack)
             clusters[key].append(execId)
         return clusters
 
-    def generate_golden_rule(self, role, note, count):
+    def generate_golden_rule(self, role, note, count, stack):
         # Clean Role for Prompt (it's a URI)
         role_name = role.split('/')[-1]
 
         if self.mock_llm:
-            print(f"⚠️  Using MOCK LLM response for role: {role_name}")
-            return "Always verify React hooks order in components."
+            print(f"⚠️  Using MOCK LLM response for role: {role_name} (Stack: {stack})")
+            return f"Always follow {stack} best practices."
 
         prompt = f"""
         You are a Data Analyst for an AI Swarm.
-        Identify a pattern in these {count} failures for the role '{role_name}'.
+        Identify a pattern in these {count} failures for the role '{role_name}' working with stack '{stack}'.
         The failure note is: "{note}"
 
         Create a concise "Golden Rule" (HardConstraint) to prevent this in the future.
@@ -166,6 +180,50 @@ class AnalystAgent:
         Return ONLY the rule text.
         """
         return self.llm.completion(prompt).strip().strip('"')
+
+    def validate_rule(self, rule_text: str, stack: str) -> bool:
+        """Run sanity checks (dry-run) to validate the new rule."""
+        if not self.sanity_suite:
+            print("⚠️  No sanity suite loaded. Skipping validation.")
+            return True
+
+        tasks = self.sanity_suite.get('sanity_checks', {}).get(stack, [])
+        if not tasks:
+            print(f"⚠️  No sanity checks found for stack '{stack}'. Skipping validation.")
+            return True
+
+        print(f"🧪 Validating rule '{rule_text}' against {len(tasks)} sanity tasks for {stack}...")
+
+        # Instantiate a temporary Orchestrator for dry-run
+        # We need to ensure it doesn't pollute the main history, but Orchestrator currently writes to graph.
+        # Ideally, we should use a "dry-run" flag in Orchestrator, but for now we accept the graph writes as "Test Execution"
+        # Or we can just run it and let it be. The system is designed to learn from failures.
+
+        # Use a separate orchestrator instance to avoid state pollution if any
+        orch = OrchestratorAgent()
+
+        all_passed = True
+        for task_def in tasks:
+            description = task_def['description']
+            print(f"   Running sanity task: {description[:40]}...")
+
+            # Pass the candidate rule as an extra rule
+            result = orch.run(description, stack=stack, extra_rules=[rule_text])
+
+            if result['final_status'] != 'success':
+                print(f"❌ Sanity task failed! Rule '{rule_text}' caused regression.")
+                all_passed = False
+                break
+
+            # Optionally check expected output content
+            # This requires inspecting the artifacts or history, which is harder.
+            # Assuming "success" status means it passed review.
+
+        orch.close()
+
+        if all_passed:
+            print("✅ Rule validation passed.")
+        return all_passed
 
     def run(self):
         # 0. Discovery Debug
@@ -180,52 +238,63 @@ class AnalystAgent:
         consolidated_count = 0
         new_rules = []
 
-        for (role, note_text), execIds in clusters.items():
+        for (role, note_text, stack), execIds in clusters.items():
             if len(execIds) >= self.threshold:
-                print(f"⚠️  Found pattern: {len(execIds)} failures for {role} with note: {note_text[:50]}...")
+                print(f"⚠️  Found pattern: {len(execIds)} failures for {role} (Stack: {stack}) with note: {note_text[:50]}...")
 
                 # 1. Generate Rule
-                rule_text = self.generate_golden_rule(role, note_text, len(execIds))
-                print(f"✅ Generated Golden Rule: {rule_text}")
+                rule_text = self.generate_golden_rule(role, note_text, len(execIds), stack)
+                print(f"📝 Proposed Golden Rule: {rule_text}")
 
-                # 2. Ingest Rule into Graph
-                # <Role> nist:HardConstraint "Rule"
-                # Wrapping rule_text in escaped quotes to encourage literal treatment
-                # Role is already a URI string (e.g. http://synapse.os/Frontend Developer) from SPARQL result
-                rule_triples = [
-                    {"subject": role, "predicate": f"{NIST}HardConstraint", "object": f'"{rule_text}"'}
-                ]
-                self.ingest_triples(rule_triples)
+                # 2. Validate Rule (Dry Run)
+                if self.validate_rule(rule_text, stack):
+                    print(f"✅ Rule validated. Persisting...")
 
-                # 3. Soft Delete (Mark as consolidated)
-                # <ExecId> swarm:isConsolidated "true"
-                consolidation_triples = []
-                for execId in execIds:
-                    consolidation_triples.append({
-                        "subject": execId,
-                        "predicate": f"{SWARM}isConsolidated",
-                        "object": '"true"'
-                    })
-                self.ingest_triples(consolidation_triples)
+                    # 3. Ingest Rule into Graph
+                    # If stack is known, attach to Stack URI: http://swarm.os/stack/{stack}
+                    # Else attach to Role
 
-                # 4. Append to consolidated_wisdom.ttl
-                self.append_to_ttl(role, rule_text)
+                    if stack and stack != "unknown":
+                        subject = f"http://swarm.os/stack/{stack}"
+                    else:
+                        subject = role
 
-                consolidated_count += len(execIds)
-                new_rules.append(rule_text)
+                    rule_triples = [
+                        {"subject": subject, "predicate": f"{NIST}HardConstraint", "object": f'"{rule_text}"'}
+                    ]
+                    self.ingest_triples(rule_triples)
+
+                    # 4. Soft Delete (Mark as consolidated)
+                    # <ExecId> swarm:isConsolidated "true"
+                    consolidation_triples = []
+                    for execId in execIds:
+                        consolidation_triples.append({
+                            "subject": execId,
+                            "predicate": f"{SWARM}isConsolidated",
+                            "object": '"true"'
+                        })
+                    self.ingest_triples(consolidation_triples)
+
+                    # 5. Append to consolidated_wisdom.ttl
+                    self.append_to_ttl(subject, rule_text)
+
+                    consolidated_count += len(execIds)
+                    new_rules.append(rule_text)
+                else:
+                    print(f"⛔ Rule rejected due to validation failure.")
 
         print(f"🏁 Consolidation complete. Consolidated {consolidated_count} lessons. Generated {len(new_rules)} new rules.")
 
-    def append_to_ttl(self, role, rule_text):
+    def append_to_ttl(self, subject, rule_text):
         path = os.path.join(os.path.dirname(__file__), '..', 'consolidated_wisdom.ttl')
 
-        # Ensure role is wrapped in <> if it's not already
-        role_str = role
-        if not role_str.startswith('<'):
-            role_str = f"<{role_str}>"
+        # Ensure subject is wrapped in <> if it's not already
+        subj_str = subject
+        if not subj_str.startswith('<'):
+            subj_str = f"<{subj_str}>"
 
         with open(path, 'a') as f:
-            f.write(f'{role_str} <{NIST}HardConstraint> "{rule_text}" .\n')
+            f.write(f'{subj_str} <{NIST}HardConstraint> "{rule_text}" .\n')
 
 if __name__ == "__main__":
     analyst = AnalystAgent()

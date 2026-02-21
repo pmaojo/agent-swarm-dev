@@ -13,7 +13,13 @@ from typing import Dict, Any, List, Optional
 
 # Add path to lib
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'lib'))
-from synapse.infrastructure.web import semantic_engine_pb2, semantic_engine_pb2_grpc
+try:
+    from synapse.infrastructure.web import semantic_engine_pb2, semantic_engine_pb2_grpc
+except ImportError:
+    try:
+        from agents.proto import semantic_engine_pb2, semantic_engine_pb2_grpc
+    except ImportError:
+        from proto import semantic_engine_pb2, semantic_engine_pb2_grpc
 
 class DeployerAgent:
     def __init__(self):

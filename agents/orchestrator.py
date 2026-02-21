@@ -20,7 +20,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'agents'))
 try:
     from synapse.infrastructure.web import semantic_engine_pb2, semantic_engine_pb2_grpc
 except ImportError:
-    from agents.proto import semantic_engine_pb2, semantic_engine_pb2_grpc
+    try:
+        from agents.proto import semantic_engine_pb2, semantic_engine_pb2_grpc
+    except ImportError:
+        from proto import semantic_engine_pb2, semantic_engine_pb2_grpc
 
 from coder import CoderAgent
 from reviewer import ReviewerAgent
@@ -188,6 +191,11 @@ class OrchestratorAgent:
                     # Creating triple: <Agent> rdf:type <Role> (where Role is just the string for now, or a URI)
                     triples.append({"subject": subject, "predicate": "http://www.w3.org/1999/02/22-rdf-syntax-ns#type", "object": ontology_role})
 
+                # Skills / Stacks
+                for stack in agent_data.get('supported_stacks', []):
+                    stack_uri = f"http://swarm.os/stack/{stack}"
+                    triples.append({"subject": subject, "predicate": "http://swarm.os/hasSkill", "object": stack_uri})
+
             # Tasks
             for task_name, task_data in schema.get('tasks', {}).items():
                 subject = f"http://swarm.os/task/{task_name}"
@@ -280,11 +288,14 @@ class OrchestratorAgent:
         responsibilities = [r.get("?desc") or r.get("desc") for r in results]
         return responsibilities
 
-    def get_agent_lessons(self, agent_name: str) -> List[str]:
-        """Retrieve past lessons learned for this agent."""
+    def get_agent_lessons(self, agent_name: str, stack: str = "python") -> List[str]:
+        """Retrieve past lessons learned for this agent, filtered by stack context."""
         agent_uri = f"http://swarm.os/agent/{agent_name}"
+        stack_literal = f'"{stack}"'
+
         # Query for skos:historyNote via memory:learnedFrom
         # Filter out consolidated lessons
+        # Also filter by stack: ?execId swarm:hasStack "python"
         query = f"""
         PREFIX swarm: <{SWARM}>
         PREFIX nist: <{NIST}>
@@ -294,6 +305,7 @@ class OrchestratorAgent:
         WHERE {{
             <{agent_uri}> swarm:learnedFrom ?execId .
             ?execId skos:historyNote ?note .
+            ?execId swarm:hasStack {stack_literal} .
             FILTER NOT EXISTS {{ ?execId swarm:isConsolidated "true" }}
         }}
         """
@@ -301,18 +313,26 @@ class OrchestratorAgent:
         lessons = [r.get("?note") or r.get("note") for r in results]
         return lessons
 
-    def get_golden_rules(self, agent_name: str) -> List[str]:
-        """Retrieve Golden Rules (HardConstraints) for the agent's role."""
+    def get_golden_rules(self, agent_name: str, stack: str = "python") -> List[str]:
+        """Retrieve Golden Rules (HardConstraints) for the agent's role AND the specific stack."""
         agent_uri = f"http://swarm.os/agent/{agent_name}"
-        # <Agent> a ?role . ?role nist:HardConstraint ?rule
+        stack_uri = f"http://swarm.os/stack/{stack}"
+
+        # UNION query: Rules for the Role OR Rules for the Stack
         query = f"""
         PREFIX nist: <{NIST}>
         PREFIX rdf: <{RDF}>
 
         SELECT ?rule
         WHERE {{
-            <{agent_uri}> rdf:type ?role .
-            ?role nist:HardConstraint ?rule .
+            {{
+                <{agent_uri}> rdf:type ?role .
+                ?role nist:HardConstraint ?rule .
+            }}
+            UNION
+            {{
+                <{stack_uri}> nist:HardConstraint ?rule .
+            }}
         }}
         """
         results = self.query_graph(query)
@@ -355,7 +375,7 @@ class OrchestratorAgent:
                 return next_task_uri.strip("<>").split("/")[-1]
         return None
 
-    def run_agent(self, agent_name: str, task_desc: str, context: Dict = None, task_type: str = None) -> Dict:
+    def run_agent(self, agent_name: str, task_desc: str, context: Dict = None, task_type: str = None, stack: str = "python", extra_rules: List[str] = None) -> Dict:
         """Execute an agent"""
 
         # 1. NIST Guardrail Check
@@ -366,30 +386,33 @@ class OrchestratorAgent:
         # 2. Dynamic System Prompts (Responsibilities)
         responsibilities = self.get_agent_responsibilities(agent_name)
 
-        # 3. Lessons Learned (Memory)
-        lessons = self.get_agent_lessons(agent_name)
+        # 3. Lessons Learned (Memory) - Stack Aware
+        lessons = self.get_agent_lessons(agent_name, stack=stack)
 
-        # 4. Golden Rules
-        golden_rules = self.get_golden_rules(agent_name)
+        # 4. Golden Rules - Stack Aware
+        golden_rules = self.get_golden_rules(agent_name, stack=stack)
+
+        # Add transient/dry-run rules
+        if extra_rules:
+            golden_rules.extend(extra_rules)
 
         # Inject into context/prompt
-        # Since we can't easily change the agent's internal system prompt without modifying the agent,
-        # we will append this information to the task description or context which the agent uses.
-        # Ideally, we would pass this to the agent's run method if it supported 'system_context'.
-        # For now, we prepend to task_desc which acts as the prompt input.
-
         enhanced_task_desc = f"{task_desc}"
 
+        # Add stack context header
+        enhanced_task_desc = f"CONTEXT: Stack={stack}\n{enhanced_task_desc}"
+
         if golden_rules:
-            enhanced_task_desc = f"⚠️ GOLDEN RULES (HARD CONSTRAINTS):\n" + "\n".join([f"- {r}" for r in golden_rules]) + f"\n\n{enhanced_task_desc}"
+            enhanced_task_desc = f"⚠️ GOLDEN RULES (HARD CONSTRAINTS) FOR {stack.upper()}:\n" + "\n".join([f"- {r}" for r in golden_rules]) + f"\n\n{enhanced_task_desc}"
 
         if responsibilities:
             enhanced_task_desc = f"ROLE RESPONSIBILITIES:\n" + "\n".join([f"- {r}" for r in responsibilities]) + f"\n\n{enhanced_task_desc}"
 
         if lessons:
-            enhanced_task_desc = f"LESSONS LEARNED FROM PAST FAILURES:\n" + "\n".join([f"- {l}" for l in lessons]) + f"\n\n{enhanced_task_desc}"
+            enhanced_task_desc = f"LESSONS LEARNED FROM PAST {stack.upper()} FAILURES:\n" + "\n".join([f"- {l}" for l in lessons]) + f"\n\n{enhanced_task_desc}"
 
         print(f"🤖 Agent '{agent_name}' executing: {task_desc[:50]}...")
+        print(f"   ↳ Stack: {stack}")
         if responsibilities:
             print(f"   ↳ Injected {len(responsibilities)} responsibilities")
         if lessons:
@@ -408,8 +431,8 @@ class OrchestratorAgent:
             print(f"❌ Agent execution failed: {e}")
             return {"status": "failure", "error": str(e)}
 
-    def run(self, task: str) -> Dict[str, Any]:
-        print(f"🚀 Orchestrator starting task: {task}")
+    def run(self, task: str, stack: str = "python", extra_rules: List[str] = None) -> Dict[str, Any]:
+        print(f"🚀 Orchestrator starting task: {task} [Stack: {stack}]")
         
         # 1. Determine Initial State
         current_task_type = self.get_initial_task_type(task)
@@ -431,7 +454,7 @@ class OrchestratorAgent:
             # Generate Execution UUID for this step
             execution_uuid = f"{SWARM}execution/{uuid.uuid4()}"
 
-            result = self.run_agent(agent_name, task, context, task_type=current_task_type)
+            result = self.run_agent(agent_name, task, context, task_type=current_task_type, stack=stack, extra_rules=extra_rules)
             outcome = result.get("status", "failure")
 
             history.append({
@@ -439,7 +462,8 @@ class OrchestratorAgent:
                 "agent": agent_name,
                 "result": result,
                 "outcome": outcome,
-                "execution_uuid": execution_uuid
+                "execution_uuid": execution_uuid,
+                "stack": stack
             })
 
             # 4. Determine Next Step (Reasoning)
@@ -452,11 +476,6 @@ class OrchestratorAgent:
                      retry_count += 1
 
                      # Automatic Memory Ingestion: Lesson Learned
-                     # [Execution_UUID] prov:wasAssociatedWith [Agent_ID]
-                     # [Execution_UUID] nist:resultState "on_failure"
-                     # [Execution_UUID] skos:historyNote "[The critique/error message from the Reviewer]"
-                     # [Agent_ID] memory:learnedFrom [Execution_UUID]
-
                      agent_uri = f"http://swarm.os/agent/{agent_name}"
 
                      # Extract error message
@@ -468,10 +487,11 @@ class OrchestratorAgent:
                      failure_triples = [
                          {"subject": execution_uuid, "predicate": f"{RDF}type", "object": f"{SWARM}ExecutionRecord"},
                          {"subject": execution_uuid, "predicate": f"{PROV}wasAssociatedWith", "object": agent_uri},
-                         # Wrap resultState and historyNote in QUOTES to store as Literals
                          {"subject": execution_uuid, "predicate": f"{NIST}resultState", "object": '"on_failure"'},
                          {"subject": execution_uuid, "predicate": f"{SKOS}historyNote", "object": f'"{error_msg}"'},
-                         {"subject": agent_uri, "predicate": f"{SWARM}learnedFrom", "object": execution_uuid}
+                         {"subject": agent_uri, "predicate": f"{SWARM}learnedFrom", "object": execution_uuid},
+                         # Stack Tracking
+                         {"subject": execution_uuid, "predicate": f"{SWARM}hasStack", "object": f'"{stack}"'}
                      ]
 
                      print(f"🧠 Learning from failure... Ingesting {len(failure_triples)} triples.")
@@ -501,10 +521,16 @@ class OrchestratorAgent:
         }
 
 if __name__ == "__main__":
-    task = " ".join(sys.argv[1:]) if len(sys.argv) > 1 else "Implement feature X"
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("task", nargs="+", help="Task description")
+    parser.add_argument("--stack", default="python", help="Tech stack (python, react, etc.)")
+    args = parser.parse_args()
+
+    task_str = " ".join(args.task)
     agent = OrchestratorAgent()
     try:
-        result = agent.run(task)
+        result = agent.run(task_str, stack=args.stack)
         print(json.dumps(result, indent=2))
     finally:
         agent.close()
