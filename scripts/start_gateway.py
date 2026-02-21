@@ -11,8 +11,12 @@ def load_config():
     config_path = os.path.join(PROJECT_ROOT, 'config', 'swarm.json')
     if not os.path.exists(config_path):
         return {}
-    with open(config_path, 'r') as f:
-        return json.load(f)
+    try:
+        with open(config_path, 'r') as f:
+            return json.load(f)
+    except json.JSONDecodeError as e:
+        print(f"⚠️  Failed to parse config file {config_path}: {e}")
+        return {}
 
 if __name__ == "__main__":
     print(f"🔧 Configuring environment from {PROJECT_ROOT}")

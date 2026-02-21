@@ -11,10 +11,13 @@ from agents.orchestrator import OrchestratorAgent
 app = FastAPI()
 
 # Enable CORS
+# Using wildcard allow_origins with allow_credentials=True is insecure and disallowed by some browsers.
+# For development, we can allow localhost or specific domains.
+# Or, if we need truly open access (e.g. for TUI/Web running anywhere), we disable credentials.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False, # Changed to False for wildcard origin security
     allow_methods=["*"],
     allow_headers=["*"],
 )

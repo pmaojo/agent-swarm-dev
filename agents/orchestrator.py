@@ -513,6 +513,10 @@ class OrchestratorAgent:
                 session = task_row.get('session') or task_row.get('?session')
                 goal = task_row.get('content') or task_row.get('?content')
 
+                if not session:
+                    print("⚠️  Pending task found without session URI. Skipping.")
+                    continue
+
                 # Extract session ID from URI if needed, or use full URI.
                 # The session URI is like http://swarm.os/session/{id}
                 # We need the ID for the run method if it sets namespace.
