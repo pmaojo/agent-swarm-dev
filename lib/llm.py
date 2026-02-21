@@ -214,16 +214,19 @@ class LLMService:
         stop=stop_after_attempt(6),
         retry=retry_if_not_exception_type(BudgetExceededException)
     )
-    def completion(self, prompt: str, system_prompt: str = "You are a helpful assistant.", json_mode: bool = False) -> str:
+    def completion(self, prompt: str, system_prompt: str = "You are a helpful assistant.", json_mode: bool = False, tools: Optional[List[Dict]] = None, tool_choice: Any = None, messages: Optional[List[Dict]] = None) -> Any:
         """
         Generate a completion using the configured LLM, with Budget Enforcement.
+        Returns content string if no tools used, otherwise returns the message object.
+        If `messages` is provided, it overrides prompt/system_prompt construction.
         """
         self.check_budget()
 
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": prompt}
-        ]
+        if messages is None:
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": prompt}
+            ]
 
         response_format = {"type": "json_object"} if json_mode else None
 
@@ -232,6 +235,8 @@ class LLMService:
                 model=self.model,
                 messages=messages,
                 response_format=response_format,
+                tools=tools,
+                tool_choice=tool_choice,
                 temperature=0.7
             )
 
@@ -240,6 +245,8 @@ class LLMService:
             if usage:
                 self.log_spend(usage.prompt_tokens, usage.completion_tokens)
 
+            if tools:
+                return response.choices[0].message
             return response.choices[0].message.content
         except BudgetExceededException:
             raise # Propagate up

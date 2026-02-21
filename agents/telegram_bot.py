@@ -209,6 +209,68 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ Status check failed: {e}")
 
+async def approve_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if ALLOWED_CHAT_ID and str(update.effective_chat.id) != ALLOWED_CHAT_ID:
+        await update.message.reply_text("⛔ Unauthorized.")
+        return
+
+    try:
+        uuid_arg = context.args[0]
+        # Allow passing full URI or just UUID suffix if consistent, but shell.py generates full URI <http://nist.gov/caisi/request/UUID>
+        # The user sees `http://nist.gov/caisi/request/UUID` or just the UUID?
+        # Shell.py output: `UUID: <uuid>` (it returns the full URI string).
+        # So user will likely copy-paste the full URI.
+        # But telegram message format: `UUID: cmd_uuid`.
+        # cmd_uuid in shell.py is `http://nist.gov/caisi/request/{uuid}`.
+        # So user copies that.
+        # If user copies just the UUID part, we need to handle it?
+        # Let's assume user copies what is provided.
+        # But spaces/formatting might be an issue.
+        # We will wrap it in <> if not present for subject?
+        # shell.py ingest uses `subject=cmd_uuid`.
+        # If cmd_uuid starts with http, it's a URI.
+        # synapse.ingest wrapper expects string.
+        # In shell.py: `{"subject": cmd_uuid, ...}`
+        # In ingest: `pb_triples.append(..., subject=t["subject"])`
+        # Synapse expects full URI string usually.
+
+        target_subject = uuid_arg
+        if not target_subject.startswith("http"):
+            # Assume it's the suffix, reconstruct?
+            target_subject = f"{NIST}request/{target_subject}"
+
+        synapse.ingest([
+            {"subject": target_subject, "predicate": f"{NIST}approvalStatus", "object": '"APPROVED"'},
+            {"subject": target_subject, "predicate": f"{PROV}wasAttributedTo", "object": f'"{update.effective_user.name}"'}
+        ])
+        await update.message.reply_text(f"✅ Approved command request.")
+
+    except IndexError:
+        await update.message.reply_text("⚠️ Usage: /approve <uuid_or_uri>")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Failed to approve: {e}")
+
+async def deny_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if ALLOWED_CHAT_ID and str(update.effective_chat.id) != ALLOWED_CHAT_ID:
+        await update.message.reply_text("⛔ Unauthorized.")
+        return
+
+    try:
+        uuid_arg = context.args[0]
+        target_subject = uuid_arg
+        if not target_subject.startswith("http"):
+            target_subject = f"{NIST}request/{target_subject}"
+
+        synapse.ingest([
+            {"subject": target_subject, "predicate": f"{NIST}approvalStatus", "object": '"REJECTED"'},
+            {"subject": target_subject, "predicate": f"{PROV}wasAttributedTo", "object": f'"{update.effective_user.name}"'}
+        ])
+        await update.message.reply_text(f"🚫 Denied command request.")
+    except IndexError:
+        await update.message.reply_text("⚠️ Usage: /deny <uuid_or_uri>")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Failed to deny: {e}")
+
 if __name__ == '__main__':
     if not TELEGRAM_TOKEN:
         print("⚠️  TELEGRAM_BOT_TOKEN not set. Bot disabled.")
@@ -220,6 +282,8 @@ if __name__ == '__main__':
     application.add_handler(CommandHandler('stop_all', stop_all))
     application.add_handler(CommandHandler('resume', resume))
     application.add_handler(CommandHandler('status', status_command))
+    application.add_handler(CommandHandler('approve', approve_command))
+    application.add_handler(CommandHandler('deny', deny_command))
 
     print("🤖 Telegram Bot Polling...")
     application.run_polling()
