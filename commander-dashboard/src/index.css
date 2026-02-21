@@ -1,0 +1,115 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 230 25% 7%;
+    --foreground: 200 20% 90%;
+
+    --card: 230 25% 10%;
+    --card-foreground: 200 20% 90%;
+
+    --popover: 230 25% 10%;
+    --popover-foreground: 200 20% 90%;
+
+    --primary: 190 100% 50%;
+    --primary-foreground: 230 25% 7%;
+
+    --secondary: 230 20% 16%;
+    --secondary-foreground: 200 20% 85%;
+
+    --muted: 230 18% 14%;
+    --muted-foreground: 215 15% 55%;
+
+    --accent: 230 20% 18%;
+    --accent-foreground: 200 20% 90%;
+
+    --destructive: 0 85% 55%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 230 20% 18%;
+    --input: 230 20% 18%;
+    --ring: 190 100% 50%;
+
+    --radius: 0.5rem;
+
+    /* Cyberpunk neon palette */
+    --neon-cyan: 190 100% 50%;
+    --neon-green: 140 100% 45%;
+    --neon-amber: 40 100% 55%;
+    --neon-crimson: 0 85% 55%;
+    --neon-purple: 270 80% 60%;
+
+    --sidebar-background: 230 25% 8%;
+    --sidebar-foreground: 200 20% 85%;
+    --sidebar-primary: 190 100% 50%;
+    --sidebar-primary-foreground: 230 25% 7%;
+    --sidebar-accent: 230 20% 14%;
+    --sidebar-accent-foreground: 200 20% 90%;
+    --sidebar-border: 230 20% 15%;
+    --sidebar-ring: 190 100% 50%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+  }
+}
+
+@layer utilities {
+  .neon-glow-cyan {
+    box-shadow: 0 0 8px hsl(190 100% 50% / 0.4), 0 0 20px hsl(190 100% 50% / 0.15), inset 0 0 8px hsl(190 100% 50% / 0.05);
+  }
+  .neon-glow-green {
+    box-shadow: 0 0 8px hsl(140 100% 45% / 0.4), 0 0 20px hsl(140 100% 45% / 0.15);
+  }
+  .neon-glow-amber {
+    box-shadow: 0 0 8px hsl(40 100% 55% / 0.4), 0 0 20px hsl(40 100% 55% / 0.15);
+  }
+  .neon-glow-crimson {
+    box-shadow: 0 0 8px hsl(0 85% 55% / 0.5), 0 0 25px hsl(0 85% 55% / 0.2);
+  }
+  .neon-border-cyan {
+    border-color: hsl(190 100% 50% / 0.5);
+  }
+  .neon-border-green {
+    border-color: hsl(140 100% 45% / 0.5);
+  }
+  .neon-border-amber {
+    border-color: hsl(40 100% 55% / 0.5);
+  }
+  .neon-border-crimson {
+    border-color: hsl(0 85% 55% / 0.5);
+  }
+  .scanlines {
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      hsl(190 100% 50% / 0.02) 2px,
+      hsl(190 100% 50% / 0.02) 4px
+    );
+  }
+  .text-neon-cyan {
+    color: hsl(190 100% 50%);
+    text-shadow: 0 0 8px hsl(190 100% 50% / 0.5);
+  }
+  .text-neon-green {
+    color: hsl(140 100% 45%);
+    text-shadow: 0 0 8px hsl(140 100% 45% / 0.5);
+  }
+  .text-neon-amber {
+    color: hsl(40 100% 55%);
+    text-shadow: 0 0 8px hsl(40 100% 55% / 0.5);
+  }
+  .text-neon-crimson {
+    color: hsl(0 85% 55%);
+    text-shadow: 0 0 8px hsl(0 85% 55% / 0.5);
+  }
+}
