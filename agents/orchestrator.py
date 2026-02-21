@@ -4,6 +4,7 @@ Orchestrator Agent - Task decomposition and workflow management.
 Real implementation: Coordinates real agents via Synapse-driven state machine.
 """
 import os
+import re
 import json
 import grpc
 import sys
@@ -16,10 +17,21 @@ from typing import List, Dict, Any, Optional
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'lib'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'agents'))
 
-from synapse.infrastructure.web import semantic_engine_pb2, semantic_engine_pb2_grpc
+try:
+    from synapse.infrastructure.web import semantic_engine_pb2, semantic_engine_pb2_grpc
+except ImportError:
+    from agents.proto import semantic_engine_pb2, semantic_engine_pb2_grpc
+
 from coder import CoderAgent
 from reviewer import ReviewerAgent
 from deployer import DeployerAgent
+
+# Define Strict Namespaces
+SWARM = "http://swarm.os/ontology/"
+NIST = "http://nist.gov/caisi/"
+PROV = "http://www.w3.org/ns/prov#"
+RDF = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+SKOS = "http://www.w3.org/2004/02/skos/core#"
 
 class OrchestratorAgent:
     def __init__(self):
@@ -37,6 +49,7 @@ class OrchestratorAgent:
         # Load Schema at startup
         self.load_schema()
         self.load_security_policy()
+        self.load_consolidated_wisdom()
 
         # Instantiate Agents
         self.agents = {
@@ -114,6 +127,41 @@ class OrchestratorAgent:
         except Exception as e:
             print(f"❌ Failed to load security policy: {e}")
 
+    def load_consolidated_wisdom(self):
+        """Load consolidated_wisdom.ttl into Synapse with improved parsing."""
+        wisdom_path = os.path.join(os.path.dirname(__file__), '..', 'consolidated_wisdom.ttl')
+        if not os.path.exists(wisdom_path):
+            return
+
+        print("🧠 Loading Consolidated Wisdom...")
+        triples = []
+        try:
+            with open(wisdom_path, 'r') as f:
+                content = f.read()
+
+            # Regex for simple Turtle: <Subject> <Predicate> "Object" .
+            # Handles quotes inside object, assumes single line per triple for now
+            pattern = re.compile(r'(<[^>]+>)\s+(<[^>]+>)\s+"((?:[^"\\]|\\.)*)"\s*\.')
+
+            for match in pattern.finditer(content):
+                s = match.group(1).strip('<>')
+                p = match.group(2).strip('<>')
+                o = match.group(3) # Regex group excludes quotes
+
+                # Unescape if needed
+                o = o.replace('\\"', '"')
+
+                # Re-wrap in quotes for ingestion (Literals) to be handled by engine patch
+                o_literal = f'"{o}"'
+
+                triples.append({"subject": s, "predicate": p, "object": o_literal})
+
+            if triples:
+                self.ingest_triples(triples, namespace=self.namespace)
+                print(f"✅ Consolidated Wisdom loaded ({len(triples)} rules)")
+        except Exception as e:
+            print(f"❌ Failed to load consolidated wisdom: {e}")
+
     def load_schema(self):
         """Load swarm_schema.yaml into Synapse"""
         schema_path = os.path.join(os.path.dirname(__file__), '..', 'swarm_schema.yaml')
@@ -138,13 +186,6 @@ class OrchestratorAgent:
                 if ontology_role:
                     # Map simplified role name to a URI if needed, or use a predicate to link to a role node
                     # Creating triple: <Agent> rdf:type <Role> (where Role is just the string for now, or a URI)
-                    # The prompt says: [Agent_Instance_ID] rdf:type [ontology_role]
-                    # And query: ?role <es_responsable_de> ?desc
-                    # So [ontology_role] must match the subjects in organizational_knowledge.txt (e.g., "Frontend Developer" wrapped in <>)
-                    # But organizational_knowledge.txt uses readable strings in brackets.
-                    # Synapse might need consistent URIs.
-                    # But ingest_knowledge_grpc.py just took the string inside <>.
-                    # So "Frontend Developer" is the subject.
                     triples.append({"subject": subject, "predicate": "http://www.w3.org/1999/02/22-rdf-syntax-ns#type", "object": ontology_role})
 
             # Tasks
@@ -243,17 +284,40 @@ class OrchestratorAgent:
         """Retrieve past lessons learned for this agent."""
         agent_uri = f"http://swarm.os/agent/{agent_name}"
         # Query for skos:historyNote via memory:learnedFrom
-        # <Agent_ID> memory:learnedFrom <Execution_UUID> . <Execution_UUID> skos:historyNote ?note
+        # Filter out consolidated lessons
         query = f"""
+        PREFIX swarm: <{SWARM}>
+        PREFIX nist: <{NIST}>
+        PREFIX skos: <{SKOS}>
+
         SELECT ?note
         WHERE {{
-            <{agent_uri}> <http://swarm.os/memory/learnedFrom> ?execId .
-            ?execId <http://www.w3.org/2004/02/skos/core#historyNote> ?note .
+            <{agent_uri}> swarm:learnedFrom ?execId .
+            ?execId skos:historyNote ?note .
+            FILTER NOT EXISTS {{ ?execId swarm:isConsolidated "true" }}
         }}
         """
         results = self.query_graph(query)
         lessons = [r.get("?note") or r.get("note") for r in results]
         return lessons
+
+    def get_golden_rules(self, agent_name: str) -> List[str]:
+        """Retrieve Golden Rules (HardConstraints) for the agent's role."""
+        agent_uri = f"http://swarm.os/agent/{agent_name}"
+        # <Agent> a ?role . ?role nist:HardConstraint ?rule
+        query = f"""
+        PREFIX nist: <{NIST}>
+        PREFIX rdf: <{RDF}>
+
+        SELECT ?rule
+        WHERE {{
+            <{agent_uri}> rdf:type ?role .
+            ?role nist:HardConstraint ?rule .
+        }}
+        """
+        results = self.query_graph(query)
+        rules = [r.get("?rule") or r.get("rule") for r in results]
+        return rules
 
     def get_initial_task_type(self, task_description: str) -> str:
         """Determine initial task type based on description or default to FeatureImplementationTask"""
@@ -305,6 +369,9 @@ class OrchestratorAgent:
         # 3. Lessons Learned (Memory)
         lessons = self.get_agent_lessons(agent_name)
 
+        # 4. Golden Rules
+        golden_rules = self.get_golden_rules(agent_name)
+
         # Inject into context/prompt
         # Since we can't easily change the agent's internal system prompt without modifying the agent,
         # we will append this information to the task description or context which the agent uses.
@@ -313,8 +380,11 @@ class OrchestratorAgent:
 
         enhanced_task_desc = f"{task_desc}"
 
+        if golden_rules:
+            enhanced_task_desc = f"⚠️ GOLDEN RULES (HARD CONSTRAINTS):\n" + "\n".join([f"- {r}" for r in golden_rules]) + f"\n\n{enhanced_task_desc}"
+
         if responsibilities:
-            enhanced_task_desc = f"ROLE RESPONSIBILITIES:\n" + "\n".join([f"- {r}" for r in responsibilities]) + f"\n\nTASK:\n{enhanced_task_desc}"
+            enhanced_task_desc = f"ROLE RESPONSIBILITIES:\n" + "\n".join([f"- {r}" for r in responsibilities]) + f"\n\n{enhanced_task_desc}"
 
         if lessons:
             enhanced_task_desc = f"LESSONS LEARNED FROM PAST FAILURES:\n" + "\n".join([f"- {l}" for l in lessons]) + f"\n\n{enhanced_task_desc}"
@@ -324,6 +394,8 @@ class OrchestratorAgent:
             print(f"   ↳ Injected {len(responsibilities)} responsibilities")
         if lessons:
             print(f"   ↳ Injected {len(lessons)} past lessons")
+        if golden_rules:
+            print(f"   ↳ Injected {len(golden_rules)} golden rules")
 
         agent = self.agents.get(agent_name)
         if not agent:
@@ -357,7 +429,7 @@ class OrchestratorAgent:
             # 3. Execute Agent
             context = {"history": history}
             # Generate Execution UUID for this step
-            execution_uuid = f"http://swarm.os/execution/{uuid.uuid4()}"
+            execution_uuid = f"{SWARM}execution/{uuid.uuid4()}"
 
             result = self.run_agent(agent_name, task, context, task_type=current_task_type)
             outcome = result.get("status", "failure")
@@ -394,10 +466,12 @@ class OrchestratorAgent:
                      error_msg = json.dumps(issues)
 
                      failure_triples = [
-                         {"subject": execution_uuid, "predicate": "http://www.w3.org/ns/prov#wasAssociatedWith", "object": agent_uri},
-                         {"subject": execution_uuid, "predicate": "http://swarm.os/nist/resultState", "object": "on_failure"},
-                         {"subject": execution_uuid, "predicate": "http://www.w3.org/2004/02/skos/core#historyNote", "object": error_msg},
-                         {"subject": agent_uri, "predicate": "http://swarm.os/memory/learnedFrom", "object": execution_uuid}
+                         {"subject": execution_uuid, "predicate": f"{RDF}type", "object": f"{SWARM}ExecutionRecord"},
+                         {"subject": execution_uuid, "predicate": f"{PROV}wasAssociatedWith", "object": agent_uri},
+                         # Wrap resultState and historyNote in QUOTES to store as Literals
+                         {"subject": execution_uuid, "predicate": f"{NIST}resultState", "object": '"on_failure"'},
+                         {"subject": execution_uuid, "predicate": f"{SKOS}historyNote", "object": f'"{error_msg}"'},
+                         {"subject": agent_uri, "predicate": f"{SWARM}learnedFrom", "object": execution_uuid}
                      ]
 
                      print(f"🧠 Learning from failure... Ingesting {len(failure_triples)} triples.")
