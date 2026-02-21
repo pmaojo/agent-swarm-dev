@@ -1,0 +1,9 @@
+2026-02-21 16:59:27,266 - SwarmController - INFO - 🤖 Starting Swarm Trello Controller...
+2026-02-21 16:59:27,266 - TrelloBridge - WARNING - ⚠️ Trello credentials missing. Bridge will run in Mock Mode.
+2026-02-21 16:59:27,430 - TrelloBridge - WARNING - ⚠️ Trello credentials missing. Bridge will run in Mock Mode.
+2026-02-21 16:59:32,510 - TrelloBridge - WARNING - ⚠️ Trello credentials missing. Bridge will run in Mock Mode.
+2026-02-21 16:59:37,514 - TrelloBridge - WARNING - ⚠️ Trello credentials missing. Bridge will run in Mock Mode.
+2026-02-21 16:59:39,751 - SwarmController - INFO - 🔗 Registering Agent Callbacks...
+2026-02-21 16:59:39,751 - SwarmController - INFO - ✅ All Agents Registered. Entering Main Loop.
+2026-02-21 16:59:39,751 - TrelloBridge - INFO - [MOCK] Polling Trello... (Current List: INBOX)
+2026-02-21 16:59:39,751 - TrelloBridge - INFO - [MOCK] Triggering callback for INBOX
