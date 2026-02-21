@@ -3,28 +3,35 @@ schema_version: "1.1"
 agents:
   Orchestrator:
     description: "Coordinates task flow and manages state using graph-based reasoning."
+    ontology_role: "Product Manager"
   Coder:
     description: "Implements features and writes code based on specifications and feedback."
+    ontology_role: "Frontend Developer"
   Reviewer:
     description: "Reviews code for quality, security, and spec adherence using static analysis and LLM reasoning."
+    ontology_role: "QA Engineer"
   Deployer:
     description: "Verifies and deploys the application."
+    ontology_role: "DevOps Engineer"
 
 tasks:
   FeatureImplementationTask:
     handler: Coder
     description: "Implement a feature based on a specification."
     outputs: ["CodeArtifact"]
+    required_permissions: ["CodeGenerationPermission"]
   CodeReviewTask:
     handler: Reviewer
     description: "Review the implemented code."
     inputs: ["CodeArtifact"]
     outputs: ["ReviewCritique", "LintError"]
+    required_permissions: ["CodeReviewPermission"]
   DeploymentTask:
     handler: Deployer
     description: "Deploy the verified code."
     inputs: ["CodeArtifact"]
     outputs: ["DeploymentResult"]
+    required_permissions: ["DeploymentPermission"]
 
 transitions:
   FeatureImplementationTask:
