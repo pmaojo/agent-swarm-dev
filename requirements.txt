@@ -1,4 +1,0 @@
-fastembed>=0.7.0
-flask>=3.0.0
-grpcio-tools>=1.60.0
-synapse-sdk>=0.8.0
