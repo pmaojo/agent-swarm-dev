@@ -38,8 +38,9 @@ except ImportError:
 NIST = "http://nist.gov/caisi/"
 SWARM = "http://swarm.os/ontology/"
 RDF = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+PROV = "http://www.w3.org/ns/prov#"
 
-SAFE_COMMANDS = ["ls", "grep", "cat", "echo", "pwd", "whoami", "date", "head", "tail", "find", "stat", "diff", "npm", "pytest", "python", "python3", "node"]
+SAFE_COMMANDS = ["ls", "grep", "cat", "echo", "pwd", "whoami", "date", "head", "tail", "find", "stat", "diff", "npm", "pytest", "python", "python3", "node", "false", "sleep", "pylint", "flake8", "bandit"]
 RESTRICTED_PATTERNS = ["rm ", "sudo", "chmod", "chown", "mv ", "cp ", "dd ", "mkfs", "mount", "umount", "systemctl", "service", "kill", "pkill", "killall", "apt", "apt-get", "yum", "dnf", "npm install", "pip install", "docker", "docker-compose", "kubectl", "git push", "wget", "curl", "ssh", "scp", "nc", "ncat", "netcat", ">", ">>"]
 # Redirects are tricky but > can overwrite files. `write_file` is safer.
 # We block redirects in restricted mode.
@@ -103,6 +104,43 @@ class CommandGuard:
             pass
         return "PENDING"
 
+    def check_kill_switch(self) -> bool:
+        """
+        Check global system status. Returns True if HALTED.
+        Uses optimized ASK query to detect HALTED state without subsequent OPERATIONAL state.
+        """
+        if not self.stub: return False # If synapse down, default to safe (or risk it? default to operational is standard)
+
+        query = f"""
+        PREFIX nist: <{NIST}>
+        PREFIX prov: <{PROV}>
+
+        ASK WHERE {{
+            # Find a HALTED event
+            ?haltEvent nist:newStatus "HALTED" ;
+                       prov:generatedAtTime ?haltTime .
+
+            # Ensure NO OPERATIONAL event exists with a newer timestamp
+            FILTER NOT EXISTS {{
+                ?resumeEvent nist:newStatus "OPERATIONAL" ;
+                             prov:generatedAtTime ?resumeTime .
+                FILTER (?resumeTime > ?haltTime)
+            }}
+        }}
+        """
+
+        try:
+            request = semantic_engine_pb2.SparqlRequest(query=query, namespace="default")
+            response = self.stub.QuerySparql(request)
+            result_json = json.loads(response.results_json)
+            is_halted = result_json.get("boolean", False)
+            if is_halted:
+                print("🛑 SYSTEM HALTED (Kill Switch Active)")
+            return is_halted
+        except Exception as e:
+            print(f"⚠️ Failed to check kill switch: {e}")
+            return False
+
 def send_telegram_alert(message: str):
     token = os.getenv("TELEGRAM_BOT_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
@@ -160,6 +198,13 @@ def execute_command(command: str, reason: str = "Task execution") -> Dict[str, A
     Returns a dict with 'status' (success, failure, pending_approval) and 'output' or 'uuid'.
     """
     guard = CommandGuard()
+
+    # 0. Kill Switch Check (High Granularity)
+    if guard.check_kill_switch():
+         return {
+             "status": "failure",
+             "error": "SYSTEM_HALTED: Kill switch active. Execution denied. DO NOT RETRY until system is resumed."
+         }
 
     if is_safe(command):
         print(f"✅ Executing Safe Command: {command}")

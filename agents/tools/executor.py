@@ -1,36 +1,37 @@
 """
 Executor Tool - Runs shell commands in a subprocess.
 Used by CoderAgent for self-correction and testing.
+Delegates to `agents.tools.shell.execute_command` for NIST Guardrails.
 """
-import subprocess
-import shlex
-from typing import Tuple, Optional
+from typing import Tuple
+from agents.tools.shell import execute_command
 
 def run_command(command: str, timeout: int = 30) -> Tuple[int, str, str]:
     """
-    Executes a shell command and returns the exit code, stdout, and stderr.
+    Executes a shell command via CommandGuard and returns the exit code, stdout, and stderr.
 
     Args:
         command (str): The command to execute.
-        timeout (int): Maximum time in seconds to wait for completion.
+        timeout (int): Ignored by CommandGuard (defaults to 120s), kept for API compatibility.
 
     Returns:
         Tuple[int, str, str]: (return_code, stdout, stderr)
     """
     try:
-        # Split command for safety if not using shell=True, but for flexible testing we might need shell=True
-        # or careful parsing. Since the agent generates full commands (e.g. "pytest tests/"),
-        # we'll use shell=True for now to support pipes/redirects if needed,
-        # acknowledging the security implications in a real environment.
-        process = subprocess.run(
-            command,
-            shell=True,
-            capture_output=True,
-            text=True,
-            timeout=timeout
-        )
-        return process.returncode, process.stdout, process.stderr
-    except subprocess.TimeoutExpired:
-        return -1, "", f"Command timed out after {timeout} seconds"
+        # execute_command returns a dict: {'status', 'stdout', 'stderr', 'returncode', 'error', 'uuid', 'message'}
+        result = execute_command(command, reason="Executor Tool (Coder/Test)")
+
+        if result.get("status") == "success":
+            return result.get("returncode", 0), result.get("stdout", ""), result.get("stderr", "")
+
+        elif result.get("status") == "failure":
+            return -1, "", result.get("error", "Unknown failure")
+
+        elif result.get("status") == "pending_approval":
+            return -2, "", f"Command requires approval. UUID: {result.get('uuid')}. Message: {result.get('message')}"
+
+        else:
+            return -1, "", "Unknown status from CommandGuard"
+
     except Exception as e:
         return -1, "", f"Execution failed: {str(e)}"
