@@ -104,6 +104,185 @@ def fetch_stats() -> Dict[str, Any]:
         print(f"Error fetching stats: {e}")
         return {"error": str(e)}
 
+def fetch_game_state() -> Dict[str, Any]:
+    """Fetch RPG Game State."""
+    try:
+        # 1. System Status
+        status = orch.check_operational_status()
+
+        # 2. Daily Budget
+        today = datetime.now().strftime("%Y-%m-%d")
+        spend_query = f"""
+        PREFIX swarm: <http://swarm.os/ontology/>
+        SELECT (SUM(?amount) as ?total)
+        WHERE {{
+            ?event a swarm:SpendEvent .
+            ?event swarm:date "{today}" .
+            ?event swarm:amount ?amount .
+        }}
+        """
+        spend_res = orch.query_graph(spend_query, namespace="default")
+        spend = 0.0
+        if spend_res:
+            val = spend_res[0].get('?total') or spend_res[0].get('total')
+            if val: spend = float(val)
+
+        max_budget = 10.0
+        try:
+            budget_res = orch.query_graph('PREFIX swarm: <http://swarm.os/ontology/> SELECT ?max WHERE { <http://swarm.os/ontology/Finance> swarm:maxBudget ?max } LIMIT 1', namespace="default")
+            if budget_res:
+                 val = budget_res[0].get('?max') or budget_res[0].get('max')
+                 if val: max_budget = float(val)
+        except:
+            pass
+
+        daily_budget = {
+            "max": max_budget,
+            "spent": spend,
+            "unit": "USD"
+        }
+
+        # 3. Party (Agents)
+        party = []
+        # Fallback list if Synapse is down
+        known_agents = ["ProductManager", "Architect", "Coder", "Reviewer", "Deployer"]
+
+        # Map roles to RPG classes
+        rpg_classes = {
+            "ProductManager": "Bard",
+            "Architect": "Wizard",
+            "Coder": "Warrior",
+            "Reviewer": "Cleric",
+            "Deployer": "Rogue"
+        }
+
+        locations = {
+             "ProductManager": "The Requirements Hall",
+             "Architect": "The Tower of Design",
+             "Coder": "The Shell Dungeon",
+             "Reviewer": "The Gate of Judgment",
+             "Deployer": "The Cloud Kingdom"
+        }
+
+        # Attempt to fetch agent descriptions/statuses from Synapse
+        # Or just iterate known agents
+        for name in known_agents:
+            # Mock Stats
+            stats = { "hp": 100, "mana": 80, "success_rate": "95%" }
+
+            # Try to get real failure count to impact HP
+            try:
+                fail_q = f'PREFIX nist: <http://nist.gov/caisi/> PREFIX prov: <http://www.w3.org/ns/prov#> SELECT (COUNT(?exec) as ?count) WHERE {{ ?exec prov:wasAssociatedWith <http://swarm.os/agent/{name}> ; nist:resultState "on_failure" }}'
+                fail_res = orch.query_graph(fail_q)
+                if fail_res:
+                    val = fail_res[0].get('?count') or fail_res[0].get('count')
+                    if val:
+                        fails = int(val)
+                        stats["hp"] = max(0, 100 - (fails * 5))
+            except:
+                pass
+
+            agent_data = {
+                "id": f"agent-{name.lower()}",
+                "name": name,
+                "class": rpg_classes.get(name, "Villager"),
+                "level": 5, # Placeholder
+                "stats": stats,
+                "current_action": "Idle", # Default
+                "location": locations.get(name, "Unknown")
+            }
+            party.append(agent_data)
+
+        # 4. Active Quests (Trello)
+        active_quests = []
+        try:
+            # Requirements
+            for card in orch.bridge.get_cards_in_list("REQUIREMENTS"):
+                active_quests.append({
+                    "id": card['id'], "title": card['name'], "stage": "Requirements", "difficulty": "Medium", "rewards": ["XP"]
+                })
+            # Design
+            for card in orch.bridge.get_cards_in_list("DESIGN"):
+                active_quests.append({
+                    "id": card['id'], "title": card['name'], "stage": "Design", "difficulty": "Hard", "rewards": ["Wisdom"]
+                })
+            # Todo (Approved/Pending)
+            for card in orch.bridge.get_cards_in_list("TODO"):
+                 active_quests.append({
+                    "id": card['id'], "title": card['name'], "stage": "Ready", "difficulty": "Normal", "rewards": ["Gold"]
+                })
+            # In Progress
+            for card in orch.bridge.get_cards_in_list("IN PROGRESS"):
+                 active_quests.append({
+                    "id": card['id'], "title": card['name'], "stage": "In Progress", "difficulty": "Hard", "rewards": ["Loot"]
+                })
+        except Exception as e:
+            print(f"Error fetching quests: {e}")
+
+        return {
+            "system_status": status,
+            "daily_budget": daily_budget,
+            "party": party,
+            "active_quests": active_quests
+        }
+
+    except Exception as e:
+        print(f"Error fetching game state: {e}")
+        return {"error": str(e)}
+
+def fetch_graph_nodes() -> Dict[str, Any]:
+    """Fetch Cytoscape Graph Nodes (Last 20 Triples)."""
+    try:
+        query = """
+        SELECT ?s ?p ?o
+        WHERE {
+            ?s ?p ?o .
+        }
+        LIMIT 20
+        """
+        results = orch.query_graph(query)
+
+        nodes = []
+        edges = []
+        node_ids = set()
+
+        def add_node(uri_or_literal, node_type="unknown"):
+            # Clean up ID
+            n_id = str(uri_or_literal).strip('<>"')
+            label = n_id.split('/')[-1] if '/' in n_id else n_id
+
+            if n_id not in node_ids:
+                nodes.append({
+                    "data": { "id": n_id, "label": label, "type": node_type }
+                })
+                node_ids.add(n_id)
+            return n_id
+
+        for row in results:
+            s = row.get("?s") or row.get("s")
+            p = row.get("?p") or row.get("p")
+            o = row.get("?o") or row.get("o")
+
+            if s and p and o:
+                s_id = add_node(s, "subject")
+                o_id = add_node(o, "object")
+
+                # Edge
+                p_label = str(p).strip('<>').split('/')[-1].split('#')[-1]
+                edges.append({
+                    "data": { "source": s_id, "target": o_id, "label": p_label }
+                })
+
+        return {
+            "elements": {
+                "nodes": nodes,
+                "edges": edges
+            }
+        }
+    except Exception as e:
+        print(f"Error fetching graph nodes: {e}")
+        return {"elements": {"nodes": [], "edges": []}}
+
 async def broadcast_stats_loop():
     """Background task to push stats."""
     while True:
@@ -139,6 +318,16 @@ app.add_middleware(
 async def get_status():
     """REST Endpoint for system status."""
     return await asyncio.to_thread(fetch_stats)
+
+@app.get("/api/v1/game-state")
+async def get_game_state():
+    """Returns the RPG Game State JSON."""
+    return await asyncio.to_thread(fetch_game_state)
+
+@app.get("/api/v1/graph-nodes")
+async def get_graph_nodes():
+    """Returns the Cytoscape Graph JSON."""
+    return await asyncio.to_thread(fetch_graph_nodes)
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
