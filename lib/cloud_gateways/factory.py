@@ -109,6 +109,7 @@ class CloudGatewayFactory:
         stack_literal = f'"{stack.lower()}"'
         query = f"""
         PREFIX swarm: <{SWARM}>
+        PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
         SELECT ?providerUri ?lat
         WHERE {{
             ?providerUri swarm:specialty {stack_literal} .
