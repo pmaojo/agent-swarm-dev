@@ -17,6 +17,8 @@ from typing import List, Dict, Any, Optional
 # Add path to lib and agents
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'lib'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'agents'))
+# Add proto path for gRPC
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'proto'))
 
 try:
     from synapse.infrastructure.web import semantic_engine_pb2, semantic_engine_pb2_grpc
@@ -86,9 +88,12 @@ class OrchestratorAgent:
     def __del__(self):
         self.close()
 
-    def ingest_triples(self, triples: List[Dict[str, str]], namespace: str = "default"):
+    def ingest_triples(self, triples: List[Dict[str, str]], namespace: str = None):
         """Ingest triples helper"""
         if not self.stub: return
+
+        target_namespace = namespace if namespace else self.namespace
+
         pb_triples = []
         for t in triples:
             pb_triples.append(semantic_engine_pb2.Triple(
@@ -98,7 +103,7 @@ class OrchestratorAgent:
             ))
         request = semantic_engine_pb2.IngestRequest(
             triples=pb_triples,
-            namespace=namespace
+            namespace=target_namespace
         )
         self.stub.IngestTriples(request)
 
@@ -233,15 +238,17 @@ class OrchestratorAgent:
         except Exception as e:
             print(f"❌ Failed to load schema: {e}")
 
-    def query_graph(self, query: str) -> List[Dict]:
+    def query_graph(self, query: str, namespace: str = None) -> List[Dict]:
         """Execute SPARQL query against Synapse"""
         if not self.stub:
             print("❌ Not connected to Synapse")
             return []
 
+        target_namespace = namespace if namespace else self.namespace
+
         request = semantic_engine_pb2.SparqlRequest(
             query=query,
-            namespace=self.namespace
+            namespace=target_namespace
         )
         try:
             response = self.stub.QuerySparql(request)
@@ -485,128 +492,184 @@ class OrchestratorAgent:
             print(f"❌ Agent execution failed: {e}")
             return {"status": "failure", "error": str(e)}
 
-    def run(self, task: str, stack: str = "python", extra_rules: List[str] = None) -> Dict[str, Any]:
-        print(f"🚀 Orchestrator starting task: {task} [Stack: {stack}]")
-        
-        # 0. Ensure Stack Knowledge (Bootstrap Mode)
-        self.ensure_stack_knowledge(stack)
+    def autonomous_loop(self):
+        print("👀 Swarm de guardia. Buscando tareas en Synapse...")
+        while True:
+            # Buscamos sesiones con tareas pendientes
+            # Using default namespace to find global pending tasks
+            query = """
+            SELECT ?session ?instruction ?content
+            WHERE {
+                ?session <http://swarm.os/has_pending_task> ?instruction .
+                ?session <http://swarm.os/session_status> "pending" .
+                ?instruction <http://synapse.os/memory#content> ?content .
+            } LIMIT 1
+            """
+            # Always query default/global namespace for the queue
+            pending_tasks = self.query_graph(query, namespace="default")
+
+            if pending_tasks:
+                task_row = pending_tasks[0]
+                session = task_row.get('session') or task_row.get('?session')
+                goal = task_row.get('content') or task_row.get('?content')
+
+                # Extract session ID from URI if needed, or use full URI.
+                # The session URI is like http://swarm.os/session/{id}
+                # We need the ID for the run method if it sets namespace.
+                # Assuming session_id is the last part of URI or just use the URI as unique ID.
+                session_id = session.split('/')[-1]
+
+                print(f"🚀 Iniciando tarea autónoma para {session}: {goal}")
+
+                try:
+                    # 1. Ejecutar el flujo (Coder -> Reviewer -> Deployer)
+                    result = self.run(goal, session_id=session_id) # Uses session isolation
+                    final_status = result["final_status"]
+                except Exception as e:
+                    print(f"❌ Error en tarea autónoma: {e}")
+                    final_status = "error"
+
+                # 2. Marcar como completado en el grafo (Global namespace where the queue is)
+                self.ingest_triples([
+                    {"subject": session, "predicate": "http://swarm.os/session_status", "object": '"completed"'},
+                    {"subject": session, "predicate": "http://swarm.os/last_result", "object": f'"{final_status}"'}
+                ], namespace="default")
+
+                # 3. (Opcional) Enviar respuesta al Gateway de vuelta al usuario
+                # self.send_to_gateway(session, result)
+
+            time.sleep(5) # Evita saturar el CPU
+
+    def run(self, task: str, stack: str = "python", extra_rules: List[str] = None, session_id: str = "default") -> Dict[str, Any]:
+        # Usar el session_id como Namespace en Synapse para aislamiento total
+        previous_namespace = self.namespace
+        self.namespace = session_id
+
+        print(f"🚀 Orchestrator starting task: {task} [Stack: {stack}] [Session: {session_id}]")
+
+        try:
+            # 0. Ensure Stack Knowledge (Bootstrap Mode)
+            self.ensure_stack_knowledge(stack)
 
         # 1. Determine Initial State
-        current_task_type = self.get_initial_task_type(task)
-        history = []
-        max_retries = 3
-        retry_count = 0
-        
-        while current_task_type:
-            # 2. Find Responsible Agent
-            agent_name = self.get_handler_for_task(current_task_type)
-            print(f"📍 Step: {current_task_type} -> Handler: {agent_name}")
+            current_task_type = self.get_initial_task_type(task)
+            history = []
+            max_retries = 3
+            retry_count = 0
 
-            if agent_name == "Unknown":
-                print(f"❌ No handler found for {current_task_type}")
-                break
+            while current_task_type:
+                # 2. Find Responsible Agent
+                agent_name = self.get_handler_for_task(current_task_type)
+                print(f"📍 Step: {current_task_type} -> Handler: {agent_name}")
 
-            # 3. Execute Agent
-            context = {"history": history}
-            execution_uuid = f"{SWARM}execution/{uuid.uuid4()}"
+                if agent_name == "Unknown":
+                    print(f"❌ No handler found for {current_task_type}")
+                    break
 
-            # --- PHASE 3: P2P Delegation for Feature Implementation ---
-            if current_task_type == "FeatureImplementationTask" and agent_name == "Coder":
-                 print("🔀 Delegating to P2P Negotiation Session...")
-                 coder = self.agents.get("Coder")
-                 reviewer = self.agents.get("Reviewer")
+                # 3. Execute Agent
+                context = {"history": history}
+                execution_uuid = f"{SWARM}execution/{uuid.uuid4()}"
 
-                 # Prepare enhanced description with rules/lessons
-                 # We reuse run_agent logic to get rules but we need to pass them to negotiate.
-                 # Actually, negotiate calls generate_code_with_verification which is internal.
-                 # To ensure constraints are passed, we should inject them into the task description here,
-                 # or update Coder to fetch them. Coder currently doesn't fetch rules in negotiate,
-                 # it relies on Orchestrator passing them.
-                 # So we need to construct the enhanced prompt here.
+                # --- PHASE 3: P2P Delegation for Feature Implementation ---
+                if current_task_type == "FeatureImplementationTask" and agent_name == "Coder":
+                     print("🔀 Delegating to P2P Negotiation Session...")
+                     coder = self.agents.get("Coder")
+                     reviewer = self.agents.get("Reviewer")
 
-                 golden_rules = self.get_golden_rules("Coder", stack=stack)
-                 responsibilities = self.get_agent_responsibilities("Coder")
-                 lessons = self.get_agent_lessons("Coder", stack=stack)
+                     # Prepare enhanced description with rules/lessons
+                     # We reuse run_agent logic to get rules but we need to pass them to negotiate.
+                     # Actually, negotiate calls generate_code_with_verification which is internal.
+                     # To ensure constraints are passed, we should inject them into the task description here,
+                     # or update Coder to fetch them. Coder currently doesn't fetch rules in negotiate,
+                     # it relies on Orchestrator passing them.
+                     # So we need to construct the enhanced prompt here.
 
-                 enhanced_task = task
-                 enhanced_task = f"CONTEXT: Stack={stack}\n{enhanced_task}"
-                 if golden_rules: enhanced_task = f"HARD CONSTRAINTS:\n" + "\n".join([f"- {r}" for r in golden_rules]) + f"\n\n{enhanced_task}"
-                 if lessons: enhanced_task = f"LESSONS:\n" + "\n".join([f"- {l}" for l in lessons]) + f"\n\n{enhanced_task}"
+                     golden_rules = self.get_golden_rules("Coder", stack=stack)
+                     responsibilities = self.get_agent_responsibilities("Coder")
+                     lessons = self.get_agent_lessons("Coder", stack=stack)
 
-                 result = coder.negotiate(enhanced_task, reviewer, context)
-                 outcome = result.get("status", "failure")
+                     enhanced_task = task
+                     enhanced_task = f"CONTEXT: Stack={stack}\n{enhanced_task}"
+                     if golden_rules: enhanced_task = f"HARD CONSTRAINTS:\n" + "\n".join([f"- {r}" for r in golden_rules]) + f"\n\n{enhanced_task}"
+                     if lessons: enhanced_task = f"LESSONS:\n" + "\n".join([f"- {l}" for l in lessons]) + f"\n\n{enhanced_task}"
 
-            else:
-                 # Standard Flow
-                 result = self.run_agent(agent_name, task, context, task_type=current_task_type, stack=stack, extra_rules=extra_rules)
-                 outcome = result.get("status", "failure")
+                     result = coder.negotiate(enhanced_task, reviewer, context)
+                     outcome = result.get("status", "failure")
 
-            history.append({
-                "task_type": current_task_type,
-                "agent": agent_name,
-                "result": result,
-                "outcome": outcome,
-                "execution_uuid": execution_uuid,
-                "stack": stack
-            })
-
-            # 4. Determine Next Step (Reasoning)
-            next_task_type = self.get_next_task(current_task_type, outcome)
-
-            if next_task_type:
-                # OPTIMIZATION: If we just finished FeatureImplementationTask via Negotiation,
-                # we have effectively done CodeReviewTask.
-                # If next task is CodeReviewTask, we can verify if we should skip it.
-                if current_task_type == "FeatureImplementationTask" and outcome == "success" and next_task_type == "CodeReviewTask":
-                    print("⏩ P2P Negotiation successful. Skipping explicit CodeReviewTask.")
-                    # Get next task after CodeReviewTask
-                    next_task_type = self.get_next_task("CodeReviewTask", "success")
-                    if not next_task_type:
-                        print("🏁 Workflow Complete (Skipped Review)")
-                        break
-
-                print(f"🔄 Transition: {current_task_type} ({outcome}) -> {next_task_type}")
-
-                if outcome == "failure":
-                     retry_count += 1
-                     # ... (Failure learning logic same as before) ...
-                     # Automatic Memory Ingestion: Lesson Learned
-                     agent_uri = f"http://swarm.os/agent/{agent_name}"
-                     issues = result.get('issues', [])
-                     if not issues and result.get('error'):
-                         issues = [result.get('error')]
-                     error_msg = json.dumps(issues)
-
-                     failure_triples = [
-                         {"subject": execution_uuid, "predicate": f"{RDF}type", "object": f"{SWARM}ExecutionRecord"},
-                         {"subject": execution_uuid, "predicate": f"{PROV}wasAssociatedWith", "object": agent_uri},
-                         {"subject": execution_uuid, "predicate": f"{NIST}resultState", "object": '"on_failure"'},
-                         {"subject": execution_uuid, "predicate": f"{SKOS}historyNote", "object": f'"{error_msg}"'},
-                         {"subject": agent_uri, "predicate": f"{SWARM}learnedFrom", "object": execution_uuid},
-                         {"subject": execution_uuid, "predicate": f"{SWARM}hasStack", "object": f'"{stack}"'}
-                     ]
-                     print(f"🧠 Learning from failure... Ingesting {len(failure_triples)} triples.")
-                     self.ingest_triples(failure_triples)
-
-                     if retry_count > max_retries:
-                         print("🛑 Max retries exceeded. Halting workflow.")
-                         break
-
-                     print(f"⚠️  Task failed (Retry {retry_count}/{max_retries})... appending feedback.")
-                     task = f"{task} (Fix: {error_msg})"
                 else:
-                    retry_count = 0
+                     # Standard Flow
+                     result = self.run_agent(agent_name, task, context, task_type=current_task_type, stack=stack, extra_rules=extra_rules)
+                     outcome = result.get("status", "failure")
 
-                current_task_type = next_task_type
-            else:
-                print("🏁 Workflow Complete")
-                break
+                history.append({
+                    "task_type": current_task_type,
+                    "agent": agent_name,
+                    "result": result,
+                    "outcome": outcome,
+                    "execution_uuid": execution_uuid,
+                    "stack": stack
+                })
 
-        return {
-            "task": task,
-            "history": history,
-            "final_status": "success" if history and history[-1]["outcome"] == "success" else "failure"
-        }
+                # 4. Determine Next Step (Reasoning)
+                next_task_type = self.get_next_task(current_task_type, outcome)
+
+                if next_task_type:
+                    # OPTIMIZATION: If we just finished FeatureImplementationTask via Negotiation,
+                    # we have effectively done CodeReviewTask.
+                    # If next task is CodeReviewTask, we can verify if we should skip it.
+                    if current_task_type == "FeatureImplementationTask" and outcome == "success" and next_task_type == "CodeReviewTask":
+                        print("⏩ P2P Negotiation successful. Skipping explicit CodeReviewTask.")
+                        # Get next task after CodeReviewTask
+                        next_task_type = self.get_next_task("CodeReviewTask", "success")
+                        if not next_task_type:
+                            print("🏁 Workflow Complete (Skipped Review)")
+                            break
+
+                    print(f"🔄 Transition: {current_task_type} ({outcome}) -> {next_task_type}")
+
+                    if outcome == "failure":
+                         retry_count += 1
+                         # ... (Failure learning logic same as before) ...
+                         # Automatic Memory Ingestion: Lesson Learned
+                         agent_uri = f"http://swarm.os/agent/{agent_name}"
+                         issues = result.get('issues', [])
+                         if not issues and result.get('error'):
+                             issues = [result.get('error')]
+                         error_msg = json.dumps(issues)
+
+                         failure_triples = [
+                             {"subject": execution_uuid, "predicate": f"{RDF}type", "object": f"{SWARM}ExecutionRecord"},
+                             {"subject": execution_uuid, "predicate": f"{PROV}wasAssociatedWith", "object": agent_uri},
+                             {"subject": execution_uuid, "predicate": f"{NIST}resultState", "object": '"on_failure"'},
+                             {"subject": execution_uuid, "predicate": f"{SKOS}historyNote", "object": f'"{error_msg}"'},
+                             {"subject": agent_uri, "predicate": f"{SWARM}learnedFrom", "object": execution_uuid},
+                             {"subject": execution_uuid, "predicate": f"{SWARM}hasStack", "object": f'"{stack}"'}
+                         ]
+                         print(f"🧠 Learning from failure... Ingesting {len(failure_triples)} triples.")
+                         self.ingest_triples(failure_triples)
+
+                         if retry_count > max_retries:
+                             print("🛑 Max retries exceeded. Halting workflow.")
+                             break
+
+                         print(f"⚠️  Task failed (Retry {retry_count}/{max_retries})... appending feedback.")
+                         task = f"{task} (Fix: {error_msg})"
+                    else:
+                        retry_count = 0
+
+                    current_task_type = next_task_type
+                else:
+                    print("🏁 Workflow Complete")
+                    break
+
+            return {
+                "task": task,
+                "history": history,
+                "final_status": "success" if history and history[-1]["outcome"] == "success" else "failure"
+            }
+        finally:
+             # Restore previous namespace to avoid side effects in shared instance
+             self.namespace = previous_namespace
 
 if __name__ == "__main__":
     import argparse

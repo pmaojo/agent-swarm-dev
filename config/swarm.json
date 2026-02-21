@@ -1,0 +1,20 @@
+{
+  "gateway": {
+    "port": 18789,
+    "auth_token": "ENV:GATEWAY_TOKEN"
+  },
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "bot_token": "ENV:TELEGRAM_BOT_TOKEN"
+    },
+    "whatsapp": {
+      "enabled": false
+    }
+  },
+  "agents": {
+    "defaults": {
+      "workspace": "./sessions"
+    }
+  }
+}
