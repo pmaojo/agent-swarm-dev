@@ -1,0 +1,14 @@
+fastembed
+flask
+grpcio-tools
+synapse-sdk
+pyyaml
+openai
+pylint
+flake8
+bandit
+tenacity
+requests
+beautifulsoup4
+playwright
+rdflib

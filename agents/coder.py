@@ -22,7 +22,11 @@ except ImportError:
     try:
         from agents.proto import semantic_engine_pb2, semantic_engine_pb2_grpc
     except ImportError:
-        from proto import semantic_engine_pb2, semantic_engine_pb2_grpc
+        try:
+            from proto import semantic_engine_pb2, semantic_engine_pb2_grpc
+        except ImportError:
+            semantic_engine_pb2 = None
+            semantic_engine_pb2_grpc = None
 from llm import LLMService
 
 # --- New Tool Imports ---
@@ -31,6 +35,8 @@ from agents.tools.files import read_file, write_file, list_dir
 from agents.tools.patch import patch_file
 from agents.tools.logs import read_logs
 from agents.tools.shell import execute_command, run_shell_raw, CommandGuard
+from agents.tools.context import ContextParser
+from agents.tools.browser import BrowserTool
 
 # Namespaces
 SWARM = "http://swarm.os/ontology/"
@@ -43,9 +49,15 @@ class CoderAgent:
         self.llm = LLMService()
         self.channel = None
         self.stub = None
+        self.context_parser = ContextParser()
+        self.browser = BrowserTool()
+        self.modified_files = []
         self.connect()
 
     def connect(self):
+        if not semantic_engine_pb2_grpc:
+            print("⚠️ [Coder] Synapse gRPC modules not found. Tracking disabled.")
+            return
         try:
             self.channel = grpc.insecure_channel(f"{self.grpc_host}:{self.grpc_port}")
             self.stub = semantic_engine_pb2_grpc.SemanticEngineStub(self.channel)
@@ -55,6 +67,8 @@ class CoderAgent:
     def close(self):
         if self.channel:
             self.channel.close()
+        self.browser.close()
+        self.context_parser.close()
 
     def record_artifact(self, filename: str, content: str = "Modified via Tool"):
         """Record the generated artifact in Synapse."""
@@ -136,12 +150,15 @@ class CoderAgent:
             if func_name == "read_file":
                 return read_file(args.get("path"))
             elif func_name == "write_file":
-                result = write_file(args.get("path"), args.get("content"))
-                self.record_artifact(args.get("path"), args.get("content"))
+                path = args.get("path")
+                result = write_file(path, args.get("content"))
+                self.record_artifact(path, args.get("content"))
+                if path not in self.modified_files: self.modified_files.append(path)
                 return result
             elif func_name == "patch_file":
-                result = patch_file(args.get("path"), args.get("search_content"), args.get("replace_content"))
-                # Ideally record artifact too? content is unknown unless we read it back.
+                path = args.get("path")
+                result = patch_file(path, args.get("search_content"), args.get("replace_content"))
+                if path not in self.modified_files: self.modified_files.append(path)
                 return result
             elif func_name == "list_dir":
                 return list_dir(args.get("path", "."))
@@ -149,6 +166,10 @@ class CoderAgent:
                 return read_logs(args.get("path"), args.get("lines", 50), args.get("grep"))
             elif func_name == "execute_command":
                 return execute_command(args.get("command"), args.get("reason"))
+            elif func_name == "search_documentation":
+                return self.browser.search_documentation(args.get("query"))
+            elif func_name == "read_url":
+                return self.browser.read_url(args.get("url"))
             else:
                 return f"Error: Unknown tool '{func_name}'"
         except Exception as e:
@@ -158,28 +179,34 @@ class CoderAgent:
         """
         Main Agent Loop using Tool Calling.
         """
+        # Expand Context using Smart Context Parser
+        task_with_context = self.context_parser.expand_context(task)
+
         print(f"🧠 [Coder] Starting Task: {task[:50]}...")
 
         system_prompt = """
         You are a Tactical Software Engineer Agent (CoderAgent).
-        You have direct access to the filesystem and shell.
+        You have direct access to the filesystem, shell, and internet (via BrowserTool).
 
         Your Goal: Implement the requested feature or fix completely.
 
         Guidelines:
         1. EXPLORE FIRST: Use `list_dir` and `read_file` to understand the codebase.
-        2. TEST DRIVEN: Create or update tests before or along with your changes.
-        3. VERIFY: You MUST run verification commands (e.g., `pytest`, `npm test`) using `execute_command`.
-        4. EDIT SMART: Use `patch_file` for partial edits to avoid overwriting large files. Use `write_file` for new files.
-        5. DEBUG: If a test fails, use `read_logs` or read the output, fix the code, and retry.
-        6. SAFETY: Dangerous commands (rm, npm install) require human approval. Provide a good reason.
+        2. SMART CONTEXT: If you see @file:path in the prompt, the content is already provided below.
+        3. RESEARCH: If you encounter an error or need documentation, use `search_documentation` and `read_url`. Do not guess.
+        4. SURGICAL EDITS: Use `patch_file` for partial edits. Only use `write_file` for new files or complete rewrites.
+        5. TAGGING SKILL: When you discover a new constraint or best practice, add a comment in the code:
+           `// @synapse:constraint Always use X for Y`
+           This helps the Swarm learn.
+        6. TEST DRIVEN: Create or update tests. Verify with `pytest` or `npm test`.
+        7. SAFETY: Dangerous commands (rm, npm install) require approval.
 
         When you are confident the task is complete and VERIFIED, return a final text summary.
         """
 
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"Task: {task}"}
+            {"role": "user", "content": f"Task: {task_with_context}"}
         ]
 
         # Add history from context if available
@@ -189,29 +216,21 @@ class CoderAgent:
                 hist_msg += f"- {h.get('outcome')}: {json.dumps(h.get('result', {}))}\n"
             messages.append({"role": "user", "content": hist_msg})
 
-        max_steps = 15 # Limit tool steps to avoid infinite loops
+        max_steps = 20 # Limit tool steps
         step = 0
 
         while step < max_steps:
             try:
                 # Call LLM
                 completion_msg = self.llm.completion(
-                    prompt="", # Prompt is in messages
-                    messages=messages, # We need to pass full messages list
+                    prompt="",
+                    messages=messages,
                     tools=TOOLS_SCHEMA,
                     tool_choice="auto"
                 )
 
-                # Check if we got a tool call or final text
-                # My llm.completion returns message object if tools used, or content string if not?
-                # Wait, my llm.completion implementation:
-                # if tools: return response.choices[0].message
-                # else: return content
-                # But here I am calling it with tools=TOOLS_SCHEMA.
-                # So it returns message object.
-
                 message = completion_msg
-                messages.append(message) # Append assistant's response to history
+                messages.append(message)
 
                 if message.tool_calls:
                     for tool_call in message.tool_calls:
@@ -242,10 +261,9 @@ class CoderAgent:
                             "content": json.dumps(result) if isinstance(result, (dict, list)) else str(result)
                         })
                 else:
-                    # No tool calls -> Final response (or just text)
                     content = message.content
                     print("🏁 [Coder] Finished.")
-                    return {"status": "success", "result": content, "saved_files": []} # We don't track saved files list explicitly anymore unless we scan history
+                    return {"status": "success", "result": content, "saved_files": self.modified_files}
 
             except Exception as e:
                 print(f"❌ [Coder] Error in loop: {e}")

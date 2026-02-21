@@ -128,5 +128,39 @@ TOOLS_SCHEMA = [
                 "required": ["command", "reason"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_documentation",
+            "description": "Search for documentation or technical solutions online.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The search query (e.g., 'python pydantic validation error')."
+                    }
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_url",
+            "description": "Read the content of a specific URL (e.g., documentation page).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "The URL to visit."
+                    }
+                },
+                "required": ["url"]
+            }
+        }
     }
 ]

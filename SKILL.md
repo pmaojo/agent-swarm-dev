@@ -131,3 +131,45 @@ npx get-shit-done-cc@latest --claude --global
 - `swarm`: Memoria del swarm
 - `agents`: Estado de agentes
 - `tasks`: Tareas y resultados
+
+## 🧠 Kilo-Style Interactive Mode
+
+The swarm now includes an interactive command center for developers.
+
+### Usage
+```bash
+python3 scripts/kilo_interactive.py
+```
+
+### Commands
+- `/ask <query>` - Chat with LLM (context-aware).
+- `/code <task>` - Run CoderAgent (e.g., "Implement login").
+- `/review` - Run ReviewerAgent on recent changes.
+- `/browser <query>` - Search documentation using `BrowserTool`.
+- `/harvest <path>` - Scan codebase for knowledge tags.
+- `/scenario <name>` - Load a domain-specific ontology scenario.
+
+## 🔗 Smart Context & Knowledge Harvesting
+
+The system uses advanced context parsing to reduce hallucinations and enforce consistency.
+
+### 1. Smart Context (@file)
+In any prompt (CLI or Agent), use `@file:path/to/file` to inject its content AND its associated "Golden Rules" from Synapse.
+Example:
+> `/code Refactor @file:agents/coder.py to use async/await.`
+
+### 2. Knowledge Tagging (@synapse)
+Agents and Developers can teach the swarm by adding comments in code:
+- **Constraints**: `// @synapse:constraint Always use Pydantic v2.` -> Ingested as `nist:HardConstraint`.
+- **Lessons**: `// @synapse:lesson Retry logic is needed for Synapse gRPC.` -> Ingested as `swarm:LessonLearned`.
+
+Run `/harvest .` or `python3 agents/tools/knowledge.py` to consolidate these into the Knowledge Graph.
+
+### 3. Browser Tool
+The CoderAgent is equipped with a headless browser (Playwright + DuckDuckGo) to:
+- `search_documentation(query)`: Find solutions online.
+- `read_url(url)`: Extract knowledge from docs.
+
+### 4. Scenario Loading
+Load specialized knowledge packages:
+> `/scenario core` (Loads Schema.org, PROV-O, etc.)
