@@ -1,0 +1,4 @@
+<http://swarm.os/agent/Coder> <http://swarm.os/nist/hasPermission> <http://swarm.os/nist/CodeGenerationPermission>
+<http://swarm.os/agent/Reviewer> <http://swarm.os/nist/hasPermission> <http://swarm.os/nist/CodeReviewPermission>
+<http://swarm.os/agent/Deployer> <http://swarm.os/nist/hasPermission> <http://swarm.os/nist/DeploymentPermission>
+<http://swarm.os/agent/Orchestrator> <http://swarm.os/nist/hasPermission> <http://swarm.os/nist/TaskCoordinationPermission>
