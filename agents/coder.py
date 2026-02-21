@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Coder Agent - Code generation based on specifications and feedback.
-Real implementation using LLM and Synapse Memory.
-Enhanced for P2P Negotiation and Self-Correction (Phase 3).
+Coder Agent - Tactical Operator for Code & System Operations.
+Real implementation using LLM Tool Calling and Synapse Memory.
+Enhanced for NIST Guardrails and Autonomous Operations (Phase 3).
 """
 import os
 import json
@@ -25,11 +25,12 @@ except ImportError:
         from proto import semantic_engine_pb2, semantic_engine_pb2_grpc
 from llm import LLMService
 
-try:
-    from agents.tools.executor import run_command
-except ImportError:
-    # Fallback for different execution contexts
-    from tools.executor import run_command
+# --- New Tool Imports ---
+from agents.tools.definitions import TOOLS_SCHEMA
+from agents.tools.files import read_file, write_file, list_dir
+from agents.tools.patch import patch_file
+from agents.tools.logs import read_logs
+from agents.tools.shell import execute_command, run_shell_raw, CommandGuard
 
 # Namespaces
 SWARM = "http://swarm.os/ontology/"
@@ -55,37 +56,14 @@ class CoderAgent:
         if self.channel:
             self.channel.close()
 
-    def query_critiques(self, task_description: str) -> List[str]:
-        """Query Synapse for past critiques related to this task context."""
-        if not self.stub: return []
-        
-        query = f"""
-        SELECT ?message
-        WHERE {{
-            ?critique <{SWARM}type> <{SWARM}ArtifactType> .
-            ?critique <{SWARM}description> "Feedback from Reviewer explaining why code was rejected." .
-            ?critique <{SWARM}hasProperty> ?prop .
-            ?prop <{SWARM}message> ?message .
-        }}
-        LIMIT 5
-        """
-        try:
-            request = semantic_engine_pb2.SparqlRequest(query=query, namespace=self.namespace)
-            response = self.stub.QuerySparql(request)
-            results = json.loads(response.results_json)
-            return [r.get("message", "") for r in results if r.get("message")]
-        except Exception as e:
-            print(f"⚠️ [Coder] Failed to query critiques: {e}")
-            return []
-
-    def record_artifact(self, filename: str, content: str):
+    def record_artifact(self, filename: str, content: str = "Modified via Tool"):
         """Record the generated artifact in Synapse."""
         if not self.stub: return
 
         subject = f"{SWARM}artifact/code/{int(time.time())}_{os.path.basename(filename)}"
         triples = [
             {"subject": subject, "predicate": f"{SWARM}type", "object": f"{SWARM}ArtifactType"},
-            {"subject": subject, "predicate": f"{SWARM}description", "object": "Generated Code"},
+            {"subject": subject, "predicate": f"{SWARM}description", "object": "Generated/Modified Code"},
             {"subject": subject, "predicate": f"{SWARM}hasProperty", "object": f"{SWARM}prop/path/{filename}"},
         ]
 
@@ -128,130 +106,156 @@ class CoderAgent:
         except Exception as e:
              print(f"⚠️ [Coder] Failed to record negotiation: {e}")
 
+    def wait_for_approval(self, cmd_uuid: str, command: str) -> Dict[str, Any]:
+        """Poll Synapse for command approval."""
+        print(f"⏳ [Coder] Waiting for approval for: '{command}' (UUID: {cmd_uuid})")
+        print("   -> Reply via Telegram: /approve <UUID>")
+
+        guard = CommandGuard()
+        start_time = time.time()
+        timeout = 600 # 10 minutes timeout
+
+        while time.time() - start_time < timeout:
+            status = guard.check_status(cmd_uuid)
+            if status == "APPROVED":
+                print("✅ [Coder] Command APPROVED. Resuming execution...")
+                return run_shell_raw(command)
+            elif status == "REJECTED":
+                print("⛔ [Coder] Command REJECTED by user.")
+                return {"status": "failure", "error": "Command rejected by user."}
+
+            time.sleep(5) # Poll every 5s
+
+        return {"status": "failure", "error": "Approval timed out."}
+
+    def execute_tool(self, func_name: str, args: Dict) -> Any:
+        """Dispatcher for tool execution."""
+        print(f"🔨 [Coder] Executing tool: {func_name} with args: {args}")
+
+        try:
+            if func_name == "read_file":
+                return read_file(args.get("path"))
+            elif func_name == "write_file":
+                result = write_file(args.get("path"), args.get("content"))
+                self.record_artifact(args.get("path"), args.get("content"))
+                return result
+            elif func_name == "patch_file":
+                result = patch_file(args.get("path"), args.get("search_content"), args.get("replace_content"))
+                # Ideally record artifact too? content is unknown unless we read it back.
+                return result
+            elif func_name == "list_dir":
+                return list_dir(args.get("path", "."))
+            elif func_name == "read_logs":
+                return read_logs(args.get("path"), args.get("lines", 50), args.get("grep"))
+            elif func_name == "execute_command":
+                return execute_command(args.get("command"), args.get("reason"))
+            else:
+                return f"Error: Unknown tool '{func_name}'"
+        except Exception as e:
+            return f"Error executing tool '{func_name}': {e}"
 
     def generate_code_with_verification(self, task: str, context: Optional[Dict] = None) -> Dict[str, Any]:
         """
-        Generate code, run verification tool, and retry if needed (Self-Correction Loop).
+        Main Agent Loop using Tool Calling.
         """
-        attempts = 0
-        max_attempts = 2
-        history = context.get('history', []) if context else []
-        current_feedback = ""
-
-        while attempts <= max_attempts:
-            print(f"🧠 [Coder] Generating code (Attempt {attempts+1})...")
-
-            # Construct Prompt
-            system_prompt = """
-            You are an expert Python software engineer.
-            Your task is to implement the requested feature.
-
-            You have access to a Test Runner tool. You MUST generate a verification command to test your code.
-
-            Return ONLY a JSON object with the following structure:
-            {
-                "files": [
-                    {
-                        "path": "path/to/file.py",
-                        "content": "full source code"
-                    }
-                ],
-                "dependencies": ["list", "of", "pip", "packages"],
-                "verification_command": "python3 -m unittest tests/test_feature.py" or "pytest"
-            }
-
-            If you need to create a test file to run the verification, include it in the "files" list.
-            Ensure code is complete, correct, and follows best practices.
-            """
-
-            prompt = f"Task: {task}\n"
-            if current_feedback:
-                prompt += f"\n⚠️ Previous attempt failed verification:\n{current_feedback}\nFix the code.\n"
-
-            # Include global history
-            if history:
-                 prompt += "\nHistory of previous external attempts:\n"
-                 for h in history:
-                     prompt += f"- {h.get('outcome')}: {json.dumps(h.get('result', {}))}\n"
-
-            # Call LLM
-            try:
-                result = self.llm.get_structured_completion(prompt, system_prompt)
-            except Exception as e:
-                return {"status": "failure", "error": f"LLM Error: {e}"}
-
-            generated_files = result.get("files", [])
-            verification_cmd = result.get("verification_command")
-
-            if not generated_files:
-                return {"status": "failure", "error": "No files generated"}
-
-            # Write files to disk
-            saved_files = []
-            for file_data in generated_files:
-                path = file_data.get("path")
-                content = file_data.get("content")
-                if path and content:
-                    dir_path = os.path.dirname(path)
-                    if dir_path and not os.path.exists(dir_path):
-                        os.makedirs(dir_path)
-                    with open(path, "w") as f:
-                        f.write(content)
-                    saved_files.append(path)
-                    self.record_artifact(path, content)
-
-            print(f"✍️ [Coder] Wrote {len(saved_files)} files.")
-
-            # Run Verification
-            if verification_cmd:
-                print(f"🧪 [Coder] Running verification: {verification_cmd}")
-                code, stdout, stderr = run_command(verification_cmd)
-
-                if code != 0:
-                    print(f"❌ [Coder] Verification Failed (Exit Code {code})")
-                    current_feedback = f"Command: {verification_cmd}\nSTDOUT:\n{stdout}\nSTDERR:\n{stderr}"
-                    attempts += 1
-                    continue # Retry loop
-                else:
-                    print(f"✅ [Coder] Verification Passed!")
-            else:
-                print("⚠️ [Coder] No verification command provided. Skipping self-correction.")
-
-            # If we get here, success or no verification
-            result["saved_files"] = saved_files
-            return result
-
-        return {"status": "failure", "error": "Max self-correction attempts exceeded", "details": current_feedback}
-
-    def research_stack(self, stack: str) -> List[str]:
-        """
-        Research a new stack and return 5 best practices/principles.
-        """
-        print(f"🔎 [Coder] Researching stack: {stack}...")
+        print(f"🧠 [Coder] Starting Task: {task[:50]}...")
 
         system_prompt = """
-        You are a Senior Tech Lead researching a new technology stack.
-        Your goal is to identify the top 5 most critical best practices, principles, or hard constraints
-        for writing high-quality, secure code in this stack.
+        You are a Tactical Software Engineer Agent (CoderAgent).
+        You have direct access to the filesystem and shell.
 
-        Return a JSON object:
-        {
-            "principles": [
-                "Principle 1 description...",
-                "Principle 2 description...",
-                "Principle 3 description...",
-                "Principle 4 description...",
-                "Principle 5 description..."
-            ]
-        }
+        Your Goal: Implement the requested feature or fix completely.
+
+        Guidelines:
+        1. EXPLORE FIRST: Use `list_dir` and `read_file` to understand the codebase.
+        2. TEST DRIVEN: Create or update tests before or along with your changes.
+        3. VERIFY: You MUST run verification commands (e.g., `pytest`, `npm test`) using `execute_command`.
+        4. EDIT SMART: Use `patch_file` for partial edits to avoid overwriting large files. Use `write_file` for new files.
+        5. DEBUG: If a test fails, use `read_logs` or read the output, fix the code, and retry.
+        6. SAFETY: Dangerous commands (rm, npm install) require human approval. Provide a good reason.
+
+        When you are confident the task is complete and VERIFIED, return a final text summary.
         """
 
-        prompt = f"Research the technology stack: {stack}"
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"Task: {task}"}
+        ]
 
+        # Add history from context if available
+        if context and context.get("history"):
+            hist_msg = "History of previous attempts:\n"
+            for h in context["history"]:
+                hist_msg += f"- {h.get('outcome')}: {json.dumps(h.get('result', {}))}\n"
+            messages.append({"role": "user", "content": hist_msg})
+
+        max_steps = 15 # Limit tool steps to avoid infinite loops
+        step = 0
+
+        while step < max_steps:
+            try:
+                # Call LLM
+                completion_msg = self.llm.completion(
+                    prompt="", # Prompt is in messages
+                    messages=messages, # We need to pass full messages list
+                    tools=TOOLS_SCHEMA,
+                    tool_choice="auto"
+                )
+
+                # Check if we got a tool call or final text
+                # My llm.completion returns message object if tools used, or content string if not?
+                # Wait, my llm.completion implementation:
+                # if tools: return response.choices[0].message
+                # else: return content
+                # But here I am calling it with tools=TOOLS_SCHEMA.
+                # So it returns message object.
+
+                message = completion_msg
+                messages.append(message) # Append assistant's response to history
+
+                if message.tool_calls:
+                    for tool_call in message.tool_calls:
+                        step += 1
+                        func_name = tool_call.function.name
+                        try:
+                            args = json.loads(tool_call.function.arguments)
+                        except json.JSONDecodeError:
+                            args = {}
+
+                        # Execute
+                        result = self.execute_tool(func_name, args)
+
+                        # Handle Pending Approval
+                        if isinstance(result, dict) and result.get("status") == "pending_approval":
+                            uuid_val = result.get("uuid")
+                            result = self.wait_for_approval(uuid_val, command=args.get('command'))
+
+                        # Feed back result
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "content": json.dumps(result) if isinstance(result, (dict, list)) else str(result)
+                        })
+                else:
+                    # No tool calls -> Final response (or just text)
+                    content = message.content
+                    print("🏁 [Coder] Finished.")
+                    return {"status": "success", "result": content, "saved_files": []} # We don't track saved files list explicitly anymore unless we scan history
+
+            except Exception as e:
+                print(f"❌ [Coder] Error in loop: {e}")
+                return {"status": "failure", "error": str(e)}
+
+        return {"status": "failure", "error": "Max steps exceeded"}
+
+    def research_stack(self, stack: str) -> List[str]:
+        # Reuse existing research logic but maybe using tools?
+        # For now keep legacy JSON mode for research as it's pure knowledge query.
+        print(f"🔎 [Coder] Researching stack: {stack}...")
+        system_prompt = "You are a Senior Tech Lead. Identify top 5 best practices for this stack. Return JSON: {'principles': []}."
         try:
-            result = self.llm.get_structured_completion(prompt, system_prompt)
-            principles = result.get("principles", [])
-            return principles[:5]
+            result = self.llm.get_structured_completion(f"Research: {stack}", system_prompt)
+            return result.get("principles", [])[:5]
         except Exception as e:
             print(f"❌ [Coder] Research failed: {e}")
             return []
@@ -267,7 +271,7 @@ class CoderAgent:
         execution_uuid = str(uuid.uuid4()) # Traceability for this session
 
         while negotiation_count < max_negotiations:
-            # 1. Generate & Self-Verify
+            # 1. Generate & Self-Verify (Using Tool Loop)
             result = self.generate_code_with_verification(task, context)
 
             if result.get("status") == "failure":
@@ -275,19 +279,16 @@ class CoderAgent:
                  return result
 
             # 2. Update Context for Reviewer
-            # We add our result to the history so Reviewer can see it
             step_record = {
                 "agent": "Coder",
                 "outcome": "success",
-                "result": result,
+                "result": result, # Now text summary
                 "negotiation_round": negotiation_count
             }
             context["history"] = context.get("history", []) + [step_record]
 
             # 3. Call Reviewer (Directly)
             print(f"📨 [Coder] Sending code to Reviewer (Round {negotiation_count+1})...")
-
-            # Record Traceability Triple
             self.record_negotiation(reviewer_agent, execution_uuid)
 
             review_result = reviewer_agent.run(task, context)
@@ -305,8 +306,6 @@ class CoderAgent:
             # 4. Handle Rejection
             issues = review_result.get("issues", [])
             print(f"🛑 [Coder] Reviewer Rejected: {issues}")
-
-            # Update task description with feedback for next iteration
             task = f"{task}\n\nReviewer Feedback (Round {negotiation_count+1}):\n" + "\n".join(issues)
             negotiation_count += 1
 
@@ -317,8 +316,6 @@ class CoderAgent:
         }
 
     def run(self, task: str, context: Optional[Dict] = None) -> Dict[str, Any]:
-        # Legacy run method, mainly for simple tasks or if Orchestrator calls it directly without negotiation
-        # Use generate_code_with_verification for robustness
         result = self.generate_code_with_verification(task, context)
         return {
             "status": "success" if "error" not in result else "failure",
@@ -327,7 +324,7 @@ class CoderAgent:
         }
 
 if __name__ == "__main__":
-    task = " ".join(sys.argv[1:]) if len(sys.argv) > 1 else "Create a hello world python script"
+    task = " ".join(sys.argv[1:]) if len(sys.argv) > 1 else "List current directory"
     agent = CoderAgent()
     result = agent.run(task)
     print(json.dumps(result, indent=2))
