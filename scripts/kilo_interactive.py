@@ -99,9 +99,12 @@ class KiloShell:
     def handle_browser(self, query):
         results = self.browser.search_documentation(query)
         for i, res in enumerate(results):
-            print(f"{i+1}. {res['title']}")
-            print(f"   {res['url']}")
-            print(f"   {res['snippet'][:150]}...\n")
+            title = res.get('title', 'No Title')
+            url = res.get('url', 'No URL')
+            snippet = res.get('snippet', '')
+            print(f"{i+1}. {title}")
+            print(f"   {url}")
+            print(f"   {snippet[:150]}...\n")
 
     def handle_harvest(self, path):
         self.harvester.scan_and_ingest(path)

@@ -33,8 +33,10 @@ class BrowserTool:
         """Closes the browser."""
         if self.browser:
             self.browser.close()
-            self.playwright.stop()
             self.browser = None
+        if self.playwright:
+            self.playwright.stop()
+            self.playwright = None
 
     def search_documentation(self, query: str) -> List[Dict[str, str]]:
         """
