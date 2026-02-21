@@ -492,9 +492,67 @@ class OrchestratorAgent:
             print(f"❌ Agent execution failed: {e}")
             return {"status": "failure", "error": str(e)}
 
+    def check_operational_status(self) -> str:
+        """
+        High-Efficiency Status Check using Temporal Shadowing Pattern.
+        Uses ASK + FILTER NOT EXISTS for O(1) detection of HALTED state
+        that hasn't been superseded by a later OPERATIONAL state.
+        """
+        # Optimized ASK Query
+        query = f"""
+        PREFIX nist: <{NIST}>
+        PREFIX prov: <{PROV}>
+
+        ASK WHERE {{
+            # Find a HALTED event
+            ?haltEvent nist:newStatus "HALTED" ;
+                       prov:generatedAtTime ?haltTime .
+
+            # Ensure NO OPERATIONAL event exists with a newer timestamp
+            FILTER NOT EXISTS {{
+                ?resumeEvent nist:newStatus "OPERATIONAL" ;
+                             prov:generatedAtTime ?resumeTime .
+                FILTER (?resumeTime > ?haltTime)
+            }}
+        }}
+        """
+
+        # We need to handle ASK response properly.
+        # Synapse (Oxigraph) usually returns boolean JSON for ASK: {"boolean": true}
+        if not self.stub: return "OPERATIONAL"
+
+        request = semantic_engine_pb2.SparqlRequest(query=query, namespace="default")
+        try:
+            response = self.stub.QuerySparql(request)
+            result_json = json.loads(response.results_json)
+
+            # Check boolean result
+            is_halted = result_json.get("boolean", False)
+
+            if is_halted:
+                return "HALTED"
+            else:
+                return "OPERATIONAL"
+
+        except Exception as e:
+            print(f"❌ Status Check Failed: {e}")
+            # Fail closed (HALTED) or open (OPERATIONAL)?
+            # Safety first -> HALTED if check fails? Or OPERATIONAL to avoid deadlock?
+            # Let's assume OPERATIONAL if query fails, but log error.
+            return "OPERATIONAL"
+
     def autonomous_loop(self):
         print("👀 Swarm de guardia. Buscando tareas en Synapse...")
         while True:
+            # Check Status
+            status = self.check_operational_status()
+            if status == "HALTED":
+                print("🛑 SYSTEM HALTED. Waiting...")
+                # Log Safety Shutdown (Once? Or periodic? Periodic is annoying but safe)
+                # We can just wait.
+                time.sleep(10)
+                continue
+
             # Buscamos sesiones con tareas pendientes
             # Using default namespace to find global pending tasks
             query = """

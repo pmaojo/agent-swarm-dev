@@ -2,57 +2,171 @@ import asyncio
 import json
 import uuid
 import time
-from typing import Dict, Any
+from typing import Dict, Any, List
+from contextlib import asynccontextmanager
+from datetime import datetime
 
-from fastapi import FastAPI, WebSocket, Request, HTTPException
+from fastapi import FastAPI, WebSocket, Request, HTTPException, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from agents.orchestrator import OrchestratorAgent
 
-app = FastAPI()
+# --- Connection Manager ---
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: List[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+
+    async def broadcast(self, message: Dict):
+        for connection in self.active_connections:
+            try:
+                await connection.send_json(message)
+            except Exception:
+                pass
+
+manager = ConnectionManager()
+
+# --- Stats Helper ---
+# Global Orchestrator instance
+orch = OrchestratorAgent()
+
+def fetch_stats() -> Dict[str, Any]:
+    """Fetch real-time stats from Synapse."""
+    try:
+        # 1. Operational Status
+        status = orch.check_operational_status()
+
+        # 2. Pending Tasks
+        pending_query = 'SELECT (COUNT(?s) as ?count) WHERE { ?s <http://swarm.os/session_status> "pending" }'
+        pending_res = orch.query_graph(pending_query, namespace="default")
+        pending = 0
+        if pending_res:
+            val = pending_res[0].get('?count') or pending_res[0].get('count')
+            if val: pending = int(val)
+
+        # 3. Failed Tasks (All time? Or today? Let's do all time for now as failure log persists)
+        failed_query = 'PREFIX nist: <http://nist.gov/caisi/> SELECT (COUNT(?s) as ?count) WHERE { ?s nist:resultState "on_failure" }'
+        failed_res = orch.query_graph(failed_query, namespace="default")
+        failed = 0
+        if failed_res:
+            val = failed_res[0].get('?count') or failed_res[0].get('count')
+            if val: failed = int(val)
+
+        # 4. Daily Spend
+        today = datetime.now().strftime("%Y-%m-%d")
+        spend_query = f"""
+        PREFIX swarm: <http://swarm.os/ontology/>
+        SELECT (SUM(?amount) as ?total)
+        WHERE {{
+            ?event a swarm:SpendEvent .
+            ?event swarm:date "{today}" .
+            ?event swarm:amount ?amount .
+        }}
+        """
+        spend_res = orch.query_graph(spend_query, namespace="default")
+        spend = 0.0
+        if spend_res:
+            val = spend_res[0].get('?total') or spend_res[0].get('total')
+            if val: spend = float(val)
+
+        # 5. Active Agents (List of agents from schema)
+        active_agents = list(orch.agents.keys())
+
+        # 6. Budget Utilization
+        max_budget = 10.0 # Default fallback
+        # Ideally query Synapse for maxBudget
+        try:
+            budget_res = orch.query_graph('PREFIX swarm: <http://swarm.os/ontology/> SELECT ?max WHERE { <http://swarm.os/ontology/Finance> swarm:maxBudget ?max } LIMIT 1', namespace="default")
+            if budget_res:
+                 val = budget_res[0].get('?max') or budget_res[0].get('max')
+                 if val: max_budget = float(val)
+        except:
+            pass
+
+        utilization = (spend / max_budget * 100) if max_budget > 0 else 0.0
+
+        return {
+            "status": status,
+            "pending_tasks": pending,
+            "failed_tasks": failed,
+            "daily_spend": spend,
+            "budget_utilization": f"{utilization:.1f}%",
+            "active_agents": active_agents,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        print(f"Error fetching stats: {e}")
+        return {"error": str(e)}
+
+async def broadcast_stats_loop():
+    """Background task to push stats."""
+    while True:
+        try:
+            stats = await asyncio.to_thread(fetch_stats)
+            if stats:
+                await manager.broadcast({"type": "stats_update", "payload": stats})
+        except Exception as e:
+            print(f"Broadcast error: {e}")
+        await asyncio.sleep(5)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    task = asyncio.create_task(broadcast_stats_loop())
+    yield
+    # Shutdown
+    task.cancel()
+    orch.close()
+
+app = FastAPI(lifespan=lifespan)
 
 # Enable CORS
-# Using wildcard allow_origins with allow_credentials=True is insecure and disallowed by some browsers.
-# For development, we can allow localhost or specific domains.
-# Or, if we need truly open access (e.g. for TUI/Web running anywhere), we disable credentials.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=False, # Changed to False for wildcard origin security
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Global Orchestrator instance
-# We use this for both direct WebSocket execution and for ingesting Webhook tasks.
-orch = OrchestratorAgent()
+@app.get("/status")
+async def get_status():
+    """REST Endpoint for system status."""
+    return await asyncio.to_thread(fetch_stats)
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    await websocket.accept()
+    await manager.connect(websocket)
 
     try:
-        # Simulación del protocolo OpenClaw: Primer frame debe ser 'connect'
+        # OpenClaw Protocol: Expect connect frame?
+        # Or we can be lenient.
+        # But for compatibility with dashboard, we wait for connect.
         try:
             initial_data = await websocket.receive_json()
         except Exception:
-            await websocket.close(code=4000)
+            # Client connected but sent nothing or garbage?
+            # Just keep connection open for stats?
+            # Or close?
+            # OpenClaw spec is strict.
+            await manager.disconnect(websocket)
             return
 
-        if initial_data.get("method") != "connect":
-            # If not connect, strictly speaking we should fail, but for robustness we might log it.
-            # OpenClaw spec says first frame MUST be connect.
-            await websocket.close(code=4000, reason="First frame must be connect")
-            return
+        if initial_data.get("method") == "connect":
+            await websocket.send_json({
+                "type": "hello-ok",
+                "health": "ok",
+                "version": "1.1.0-observability",
+                "agents": list(orch.agents.keys())
+            })
 
-        # Responder con hello-ok (Snapshot del sistema)
-        await websocket.send_json({
-            "type": "hello-ok",
-            "health": "ok",
-            "version": "1.0.0-synapse",
-            "agents": list(orch.agents.keys())
-        })
-
-        # Loop de mensajes (Async para no bloquear el Orchestrator)
+        # Main Loop
         while True:
             data = await websocket.receive_json()
             method = data.get("method")
@@ -67,15 +181,10 @@ async def websocket_endpoint(websocket: WebSocket):
                     await websocket.send_json({"status": "error", "id": req_id, "error": "No task provided"})
                     continue
 
-                # Ejecución en dos etapas (como OpenClaw)
                 await websocket.send_json({"status": "accepted", "id": req_id})
 
-                # El Orchestrator procesa
-                # Note: This runs the task directly on this connection.
-                # Ideally we would stream events here. For now, we wait for full result.
                 try:
                     result = await asyncio.to_thread(orch.run, task, session_id=session_id)
-
                     await websocket.send_json({
                         "status": "ok",
                         "id": req_id,
@@ -91,12 +200,11 @@ async def websocket_endpoint(websocket: WebSocket):
             elif method == "ping":
                 await websocket.send_json({"type": "pong"})
 
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
     except Exception as e:
         print(f"WebSocket error: {e}")
-        try:
-            await websocket.close()
-        except:
-            pass
+        manager.disconnect(websocket)
 
 @app.post("/webhook/{channel}")
 async def inbound_webhook(channel: str, request: Request):
