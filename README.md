@@ -201,11 +201,16 @@ python3 scripts/simple_synapse_client.py
 ### Synapse (Light Mode)
 
 ```bash
-# Build light mode
+# Initialize submodule
+git submodule update --init --recursive
+
+# Build light mode (inside synapse-engine directory)
+cd synapse-engine
 cargo build --release --no-default-features -p synapse-core
+cd ..
 
 # Run with remote embeddings
-EMBEDDING_PROVIDER=remote ./target/release/synapse
+EMBEDDING_PROVIDER=remote ./synapse-engine/target/release/synapse
 ```
 
 ## 📦 Components
