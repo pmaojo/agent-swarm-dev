@@ -7,12 +7,13 @@ import os
 import json
 import grpc
 import sys
-import subprocess
 import time
 from typing import Dict, Any, List, Optional
 
-# Add path to lib
+# Add path to lib and root
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'lib'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
 try:
     from synapse.infrastructure.web import semantic_engine_pb2, semantic_engine_pb2_grpc
 except ImportError:
@@ -20,6 +21,7 @@ except ImportError:
         from agents.proto import semantic_engine_pb2, semantic_engine_pb2_grpc
     except ImportError:
         from proto import semantic_engine_pb2, semantic_engine_pb2_grpc
+from agents.tools.shell import execute_command
 
 class DeployerAgent:
     def __init__(self):
@@ -50,44 +52,50 @@ class DeployerAgent:
         return {}
 
     def install_dependencies(self, dependencies: List[str]):
-        """Install dependencies via pip."""
+        """Install dependencies via pip using CommandGuard."""
         if not dependencies:
             return
         print(f"📦 [Deployer] Installing dependencies: {dependencies}")
-        try:
-            subprocess.check_call([sys.executable, "-m", "pip", "install"] + dependencies)
-        except subprocess.CalledProcessError as e:
-            print(f"❌ [Deployer] Dependency installation failed: {e}")
-            raise
+        # Construct pip command
+        deps_str = " ".join(dependencies)
+        cmd = f"{sys.executable} -m pip install {deps_str}"
+
+        # Execute with guard
+        res = execute_command(cmd, reason="Deployer installing dependencies")
+
+        if res.get("status") == "failure":
+             error_msg = res.get("error", "Unknown error")
+             print(f"❌ [Deployer] Dependency installation failed: {error_msg}")
+             raise Exception(f"Dependency installation failed: {error_msg}")
+        elif res.get("status") == "pending_approval":
+             # In a real agent loop, we might wait. For now, Deployer is linear.
+             # We should probably return/raise to halt execution until approved.
+             # But Deployer currently doesn't have a wait loop.
+             # We will raise exception asking for approval.
+             print(f"⏳ [Deployer] Approval required: {res.get('message')}")
+             raise Exception(f"Approval required for dependencies: {res.get('uuid')}")
 
     def run_execution(self, entrypoint: str) -> Dict[str, Any]:
-        """Run the entrypoint script."""
+        """Run the entrypoint script using CommandGuard."""
         print(f"🚀 [Deployer] Executing {entrypoint}...")
-        try:
-            # Run with timeout of 5 seconds to verify it starts
-            # If it's a long running process (server), it might be killed, which is fine for verification.
-            proc = subprocess.run([sys.executable, entrypoint], capture_output=True, text=True, timeout=5)
-            return {
-                "status": "success",
-                "stdout": proc.stdout,
-                "stderr": proc.stderr,
-                "returncode": proc.returncode
-            }
-        except subprocess.TimeoutExpired as e:
-            # Use 'stdout' if available (it is bytes in TimeoutExpired usually, unless text=True works?)
-            # subprocess.TimeoutExpired.stdout is bytes by default in older python, but here we use text=True.
-            stdout = e.stdout.decode() if isinstance(e.stdout, bytes) else e.stdout
-            stderr = e.stderr.decode() if isinstance(e.stderr, bytes) else e.stderr
-            print(f"✅ [Deployer] Execution verified (timed out as expected for servers).")
-            return {
-                "status": "success",
-                "stdout": stdout,
-                "stderr": stderr,
-                "message": "Process started successfully (timed out)"
-            }
-        except Exception as e:
-            print(f"❌ [Deployer] Execution failed: {e}")
-            return {"status": "failure", "error": str(e)}
+
+        cmd = f"{sys.executable} {entrypoint}"
+        # We can't easily set timeout in execute_command yet (it has 120s default).
+        # Assuming execute_command handles it.
+
+        res = execute_command(cmd, reason="Deployer verifying execution")
+
+        if res.get("status") == "failure":
+            return {"status": "failure", "error": res.get("error")}
+        elif res.get("status") == "pending_approval":
+             return {"status": "failure", "error": f"Approval required: {res.get('uuid')}"}
+
+        return {
+            "status": "success",
+            "stdout": res.get("stdout"),
+            "stderr": res.get("stderr"),
+            "returncode": res.get("returncode")
+        }
 
     def record_deployment(self, entrypoint: str, result: Dict):
         """Record deployment in Synapse."""

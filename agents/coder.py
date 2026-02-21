@@ -225,6 +225,11 @@ class CoderAgent:
                         # Execute
                         result = self.execute_tool(func_name, args)
 
+                        # Check for SYSTEM_HALTED (Kill Switch)
+                        if isinstance(result, dict) and "SYSTEM_HALTED" in str(result.get("error", "")):
+                            print("🛑 [Coder] System Halted. Aborting execution loop.")
+                            return {"status": "failure", "error": result["error"]}
+
                         # Handle Pending Approval
                         if isinstance(result, dict) and result.get("status") == "pending_approval":
                             uuid_val = result.get("uuid")

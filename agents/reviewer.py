@@ -7,12 +7,13 @@ import os
 import json
 import grpc
 import sys
-import subprocess
 import time
 from typing import Dict, Any, List, Optional
 
-# Add path to lib
+# Add path to lib and root
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'lib'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
 try:
     from synapse.infrastructure.web import semantic_engine_pb2, semantic_engine_pb2_grpc
 except ImportError:
@@ -21,6 +22,7 @@ except ImportError:
     except ImportError:
         from proto import semantic_engine_pb2, semantic_engine_pb2_grpc
 from llm import LLMService
+from agents.tools.shell import execute_command
 
 class ReviewerAgent:
     def __init__(self):
@@ -56,7 +58,7 @@ class ReviewerAgent:
         return []
 
     def run_static_analysis(self, files: List[str]) -> Dict[str, Any]:
-        """Run pylint, flake8, bandit on files."""
+        """Run pylint, flake8, bandit on files using CommandGuard."""
         results = {}
         for file_path in files:
             if not os.path.exists(file_path):
@@ -66,33 +68,41 @@ class ReviewerAgent:
 
             # Pylint
             try:
-                # Run pylint and capture output (it returns non-zero on issues)
-                proc = subprocess.run(["pylint", "--output-format=json", file_path], capture_output=True, text=True)
-                if proc.stdout:
+                cmd = f"pylint --output-format=json {file_path}"
+                res = execute_command(cmd, reason="Static Code Analysis")
+                if res.get("stdout"):
                     try:
-                        file_results["pylint"] = json.loads(proc.stdout)
+                        file_results["pylint"] = json.loads(res.get("stdout"))
                     except json.JSONDecodeError:
-                        file_results["pylint"] = [{"message": "Failed to parse pylint output", "raw": proc.stdout}]
+                        file_results["pylint"] = [{"message": "Failed to parse pylint output", "raw": res.get("stdout")}]
+                elif res.get("status") == "failure":
+                     file_results["pylint"] = [{"error": res.get("error")}]
             except Exception as e:
                 file_results["pylint"] = [{"error": str(e)}]
 
             # Flake8
             try:
-                proc = subprocess.run(["flake8", "--format=default", file_path], capture_output=True, text=True)
-                if proc.stdout:
+                cmd = f"flake8 --format=default {file_path}"
+                res = execute_command(cmd, reason="Static Code Analysis")
+                if res.get("stdout"):
                     # Flake8 default format is: file:line:col: code message
-                    file_results["flake8"] = [{"raw": line} for line in proc.stdout.splitlines() if line]
+                    file_results["flake8"] = [{"raw": line} for line in res.get("stdout").splitlines() if line]
+                elif res.get("status") == "failure":
+                     file_results["flake8"] = [{"error": res.get("error")}]
             except Exception as e:
                 file_results["flake8"] = [{"error": str(e)}]
 
             # Bandit (Security)
             try:
-                proc = subprocess.run(["bandit", "-f", "json", "-r", file_path], capture_output=True, text=True)
-                if proc.stdout:
+                cmd = f"bandit -f json -r {file_path}"
+                res = execute_command(cmd, reason="Static Code Analysis")
+                if res.get("stdout"):
                      try:
-                        file_results["bandit"] = json.loads(proc.stdout).get("results", [])
+                        file_results["bandit"] = json.loads(res.get("stdout")).get("results", [])
                      except json.JSONDecodeError:
                         file_results["bandit"] = [{"message": "Failed to parse bandit output"}]
+                elif res.get("status") == "failure":
+                     file_results["bandit"] = [{"error": res.get("error")}]
             except Exception as e:
                  file_results["bandit"] = [{"error": str(e)}]
 
