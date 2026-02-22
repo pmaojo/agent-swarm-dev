@@ -6,12 +6,16 @@ import os
 import sys
 import json
 
-# Add proto to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'proto'))
+# Add path to lib and agents
+SDK_PYTHON_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, SDK_PYTHON_PATH)
+sys.path.insert(0, os.path.join(SDK_PYTHON_PATH, "lib"))
+sys.path.insert(0, os.path.join(SDK_PYTHON_PATH, "agents"))
 
-import grpc
-import semantic_engine_pb2
-import semantic_engine_pb2_grpc
+try:
+    from synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
+except ImportError:
+    from agents.synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
 from typing import Dict, Any, List, Optional
 
 class MemoryAgent:

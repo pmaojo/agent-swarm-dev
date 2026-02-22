@@ -13,6 +13,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
+# Add path to root
+SDK_PYTHON_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+import sys
+if SDK_PYTHON_PATH not in sys.path:
+    sys.path.insert(0, SDK_PYTHON_PATH)
+
 from agents.orchestrator import OrchestratorAgent
 
 # Godot Integration
