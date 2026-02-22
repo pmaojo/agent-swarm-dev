@@ -2,9 +2,23 @@
 set -e
 
 REPO_DIR="apicentric_repo"
-if [ ! -d "$REPO_DIR" ]; then
-    echo "Creating apicentric_repo..."
-    git clone https://github.com/pmaojo/apicentric.git "$REPO_DIR"
+
+echo "🔧 Ensuring apicentric_repo is ready..."
+
+# Try to update/init submodule first if it is tracked
+if git submodule status "$REPO_DIR" >/dev/null 2>&1; then
+    echo "🔄 Updating submodule..."
+    git submodule update --init --recursive "$REPO_DIR"
+else
+    # Not a submodule or git command failed
+    if [ ! -d "$REPO_DIR" ]; then
+         echo "⬇️  Cloning apicentric_repo..."
+         git clone https://github.com/pmaojo/apicentric.git "$REPO_DIR"
+    elif [ -z "$(ls -A "$REPO_DIR")" ]; then
+         echo "⚠️  Empty directory found. Cloning..."
+         rmdir "$REPO_DIR"
+         git clone https://github.com/pmaojo/apicentric.git "$REPO_DIR"
+    fi
 fi
 
 cd "$REPO_DIR"
