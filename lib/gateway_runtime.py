@@ -2,12 +2,16 @@ import asyncio
 import json
 import uuid
 import time
+import os
+from pathlib import Path
 from typing import Dict, Any, List, Literal
 from contextlib import asynccontextmanager
 from datetime import datetime
 
 from fastapi import FastAPI, WebSocket, Request, HTTPException, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from agents.orchestrator import OrchestratorAgent
 
@@ -339,6 +343,14 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+# Add Middleware for Security Headers (COOP/COEP for Godot Web)
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+    response.headers["Cross-Origin-Embedder-Policy"] = "require-corp"
+    return response
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -492,6 +504,25 @@ async def inbound_webhook(channel: str, request: Request):
         print(f"Webhook ingestion error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# --- Static Files & SPA Fallback ---
+# Mount commander-dashboard/dist if it exists
+STATIC_DIR = Path(__file__).parent.parent / "commander-dashboard" / "dist"
+if STATIC_DIR.exists():
+    app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
+
+    @app.exception_handler(404)
+    async def spa_fallback(request: Request, exc):
+        # Check if the request is an API request; if not, serve index.html
+        if request.url.path.startswith("/api"):
+             raise HTTPException(status_code=404, detail="API route not found")
+        index_path = STATIC_DIR / "index.html"
+        if index_path.exists():
+             return FileResponse(index_path)
+        return HTTPException(status_code=404, detail="Not Found")
+else:
+    print(f"Warning: Static directory {STATIC_DIR} not found. Frontend will not be served.")
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=18789)
+    port = int(os.getenv("PORT", 18789))
+    uvicorn.run(app, host="0.0.0.0", port=port)
