@@ -1,0 +1,23 @@
+; Engine configuration file.
+; Best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section]
+;   param=value
+
+config_version=5
+
+[application]
+config/name="Agent Swarm Visualizer"
+run/main_scene="res://scenes/Main.tscn"
+config/features=PackedStringArray("4.2")
+
+[rendering]
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+renderer/rendering_method.web="gl_compatibility"
+
+[input_devices/pointing]
+emulate_touch_from_mouse=true
+emulate_mouse_from_touch=true
