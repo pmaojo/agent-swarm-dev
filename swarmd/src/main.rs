@@ -3,6 +3,7 @@ mod server;
 mod synapse;
 mod workers;
 mod notifications;
+mod discovery;
 
 use anyhow::Result;
 use tracing::{info, error};
@@ -22,6 +23,9 @@ async fn main() -> Result<()> {
     // 3. Connect to Synapse Core
     let syn_client = synapse::SynapseClient::connect(&cfg.synapse_grpc_host, &cfg.synapse_grpc_port).await?;
     info!("🔗 Connected to Synapse at {}:{}", cfg.synapse_grpc_host, cfg.synapse_grpc_port);
+
+    // Run geopolitical discovery
+    discovery::discover_repositories(&syn_client, ".").await;
 
     // 4. Spawn Background Workers (Telegram, Trello, etc)
     workers::start_background_workers(

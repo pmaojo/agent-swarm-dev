@@ -75,16 +75,15 @@ pub async fn get_game_state(State(state): State<AppState>) -> Json<Value> {
                 let state = item.get("state").or_else(|| item.get("?state"));
                 
                 if let (Some(id_val), Some(state_val)) = (id, state) {
-                    let id_str = id_val.as_str().unwrap_or("");
+                    let id_str = clean_val(id_val);
                     let title_val = item.get("title").or_else(|| item.get("?title"));
                     let title_str = title_val
-                        .and_then(|t| t.as_str())
-                        .map(|t| t.to_string())
+                        .map(|t| clean_val(t))
                         .unwrap_or_else(|| id_str.split('/').last().unwrap_or("Task").replace('-', " "));
 
                     quests.push(serde_json::json!({
                         "id": id_str,
-                        "status": state_val.as_str().unwrap_or("UNKNOWN"),
+                        "status": clean_val(state_val),
                         "title": title_str
                     }));
                 }
@@ -93,36 +92,90 @@ pub async fn get_game_state(State(state): State<AppState>) -> Json<Value> {
         }
     }
 
-    // 4. Mock Party structure
-    let party = serde_json::json!([
-        {
-            "id": "agent-productmanager",
-            "name": "ProductManager",
-            "class": "Bard",
-            "level": 5,
-            "stats": { "hp": 100, "mana": 80, "success_rate": "95%" },
-            "current_action": "Idle",
-            "location": "The Requirements Hall"
-        },
-        {
-            "id": "agent-coder",
-            "name": "Coder",
-            "class": "Warrior",
-            "level": 5,
-            "stats": { "hp": 100, "mana": 80, "success_rate": "95%" },
-            "current_action": "Idle",
-            "location": "The Shell Dungeon"
+    // 4. Fetch Repositories and their populations (Geopolitical Swarms)
+    let repo_query = r#"
+        PREFIX swarm: <http://swarm.os/ontology/>
+        SELECT ?repo ?repoName ?agent ?agentName ?agentClass ?agentStatus WHERE {
+            ?repo a swarm:Repository .
+            ?repo swarm:shortName ?repoName .
+            OPTIONAL {
+                ?repo swarm:hasPopulation ?agent .
+                ?agent swarm:name ?agentName .
+                ?agent swarm:class ?agentClass .
+                ?agent swarm:status ?agentStatus .
+            }
         }
-    ]);
+    "#;
+
+    let mut repositories_out = Vec::new();
+    let mut party_out = Vec::new();
+
+    if let Ok(res_json) = state.synapse.query(repo_query).await {
+        if let Ok(parsed) = serde_json::from_str::<Vec<serde_json::Value>>(&res_json) {
+            use std::collections::HashMap;
+            let mut repos: HashMap<String, (String, Vec<String>)> = HashMap::new();
+            let mut agents: HashMap<String, serde_json::Value> = HashMap::new();
+
+            for item in parsed {
+                let repo_id = clean_val(item.get("repo").or_else(|| item.get("?repo")).unwrap_or(&serde_json::json!("")));
+                let repo_name = clean_val(item.get("repoName").or_else(|| item.get("?repoName")).unwrap_or(&serde_json::json!("Unknown")));
+                let agent_id_raw = item.get("agent").or_else(|| item.get("?agent"));
+
+                let (_name, agent_ids) = repos.entry(repo_id.clone()).or_insert((repo_name.clone(), Vec::new()));
+                
+                if let Some(aid_val) = agent_id_raw {
+                    let aid = clean_val(aid_val);
+                    if !agent_ids.contains(&aid) {
+                        agent_ids.push(aid.clone());
+                    }
+
+                    if !agents.contains_key(&aid) {
+                        let a_name = clean_val(item.get("agentName").or_else(|| item.get("?agentName")).unwrap_or(&serde_json::json!("Agent")));
+                        let a_class = clean_val(item.get("agentClass").or_else(|| item.get("?agentClass")).unwrap_or(&serde_json::json!("Commoner")));
+                        let a_status = clean_val(item.get("agentStatus").or_else(|| item.get("?agentStatus")).unwrap_or(&serde_json::json!("Standby")));
+
+                        agents.insert(aid.clone(), serde_json::json!({
+                            "id": aid.split('/').last().unwrap_or(&aid),
+                            "name": a_name,
+                            "class": a_class,
+                            "level": 5,
+                            "stats": { "hp": 100, "mana": 80, "success_rate": "95%" },
+                            "current_action": a_status,
+                            "location": repo_name
+                        }));
+                    }
+                }
+            }
+
+            for (rid, (name, a_ids)) in repos {
+                repositories_out.push(serde_json::json!({
+                    "id": rid.split('/').last().unwrap_or(&rid),
+                    "name": name,
+                    "swarm": a_ids.iter().map(|id| id.split('/').last().unwrap_or(id)).collect::<Vec<_>>()
+                }));
+            }
+            for (_aid, val) in agents {
+                party_out.push(val);
+            }
+        }
+    }
 
     let response = serde_json::json!({
         "system_status": current_status,
         "daily_budget": daily_budget,
-        "party": party,
+        "party": party_out,
         "active_quests": active_quests,
         "fog_map": {},
-        "repositories": []
+        "repositories": repositories_out
     });
 
     Json(response)
+}
+
+fn clean_val(val: &serde_json::Value) -> String {
+    let s = match val {
+        serde_json::Value::String(s) => s.as_str(),
+        _ => "",
+    };
+    s.trim_matches(|c| c == '"' || c == '<' || c == '>').to_string()
 }
