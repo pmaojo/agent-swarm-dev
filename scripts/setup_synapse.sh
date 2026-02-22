@@ -16,8 +16,8 @@ fi
 
 # Initialize submodule
 if [ -d "synapse-engine" ]; then
-    echo "🔄 Updating synapse-engine submodule..."
-    git submodule update --init --recursive
+    echo "🔄 Skipping synapse-engine submodule update to preserve local patches..."
+    # git submodule update --init --recursive
 else
     echo "⚠️  synapse-engine directory not found. Please run: git submodule add https://github.com/pmaojo/synapse-engine synapse-engine"
     exit 1

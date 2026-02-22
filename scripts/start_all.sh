@@ -38,8 +38,9 @@ else
 fi
 
 # 3. Check for Synapse
-if ! nc -z localhost 50051 2>/dev/null; then
-    echo "▶️  Starting Synapse..."
+SYNAPSE_PORT=${SYNAPSE_GRPC_PORT:-50051}
+if ! nc -z localhost $SYNAPSE_PORT 2>/dev/null; then
+    echo "▶️  Starting Synapse (Port: $SYNAPSE_PORT)..."
     # Use local synapse-data (respect env var)
     export GRAPH_STORAGE_PATH="${GRAPH_STORAGE_PATH:-./synapse-data}"
     export EMBEDDING_PROVIDER="${EMBEDDING_PROVIDER:-remote}"
@@ -48,7 +49,7 @@ if ! nc -z localhost 50051 2>/dev/null; then
     ./synapse > synapse.log 2>&1 &
     sleep 3
 else
-    echo "✅ Synapse already running"
+    echo "✅ Synapse already running on $SYNAPSE_PORT"
 fi
 
 # 4. Start Unified Swarmd Orchestrator
@@ -67,5 +68,5 @@ fi
 
 echo "🎉 All services ready!"
 echo "   - FastEmbed: http://localhost:11434"
-echo "   - Synapse: localhost:50051 (Data: ./synapse-data)"
+echo "   - Synapse: localhost:$SYNAPSE_PORT (Data: ./synapse-data)"
 echo "   - Swarmd (Gateway/Web/Bots): Active (Logs: swarmd.log)"
