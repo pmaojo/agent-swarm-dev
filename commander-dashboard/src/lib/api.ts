@@ -50,3 +50,21 @@ export function useHaltSystem() {
     },
   });
 }
+
+export function useAssignMission() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (mission: { agent_id: string; repo_id: string; task: string }) => {
+      const res = await fetch(`${API_BASE}/mission/assign`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(mission),
+      });
+      if (!res.ok) throw new Error(`${res.status}`);
+      return await res.json();
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["game-state"] });
+    },
+  });
+}

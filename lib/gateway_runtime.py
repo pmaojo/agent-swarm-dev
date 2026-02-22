@@ -13,7 +13,13 @@ from agents.orchestrator import OrchestratorAgent
 
 # Godot Integration
 from lib.godot_bridge.fog import FogService
-from lib.godot_bridge.templates import AGENT_UNIT_GD, FOG_MANAGER_GD
+from lib.godot_bridge.templates import (
+    AGENT_UNIT_GD,
+    FOG_MANAGER_GD,
+    BRIDGE_GD,
+    CITADEL_MANAGER_GD,
+    BUILDING_GD
+)
 
 # --- Connection Manager ---
 class ConnectionManager:
@@ -206,12 +212,29 @@ def fetch_game_state() -> Dict[str, Any]:
         # 5. Fog of War
         fog_map = fog_service.get_fog_state()
 
+        # 6. Repositories (Citadel Buildings)
+        # Identify repos by querying for files and extracting roots, or checking explicit config.
+        # For now, default to the current root "." and identify by folder name.
+        repositories = []
+        try:
+             # Basic implementation: Just one repo for now, can be expanded to query CodeGraph for distinct roots.
+            repositories.append({
+                "id": "repo-root",
+                "name": "Main Citadel",
+                "path": ".",
+                "tasks_pending": pending, # reuse pending task count
+                "status": "error" if failed > 0 else "ok", # show error if failures exist
+                "size": 100 # Mock size
+            })
+        except Exception: pass
+
         return {
             "system_status": status,
             "daily_budget": daily_budget,
             "party": party,
             "active_quests": active_quests,
-            "fog_map": fog_map # New
+            "fog_map": fog_map,
+            "repositories": repositories # New
         }
 
     except Exception as e:
@@ -339,6 +362,37 @@ async def get_agent_script(): return {"script": AGENT_UNIT_GD}
 
 @app.get("/api/v1/godot/scripts/fog")
 async def get_fog_script(): return {"script": FOG_MANAGER_GD}
+
+@app.get("/api/v1/godot/scripts/bridge")
+async def get_bridge_script(): return {"script": BRIDGE_GD}
+
+@app.get("/api/v1/godot/scripts/citadel")
+async def get_citadel_script(): return {"script": CITADEL_MANAGER_GD}
+
+@app.get("/api/v1/godot/scripts/building")
+async def get_building_script(): return {"script": BUILDING_GD}
+
+class MissionAssignment(BaseModel):
+    agent_id: str
+    repo_id: str
+    task: str
+
+@app.post("/api/v1/mission/assign")
+async def assign_mission(mission: MissionAssignment):
+    """
+    Assigns a mission to an agent for a specific repository.
+    Broadcasts the event to Godot.
+    """
+    try:
+        payload = {
+            "type": "mission_assigned",
+            "payload": mission.dict()
+        }
+        await manager.broadcast(payload)
+        return {"status": "assigned", "mission": mission}
+    except Exception as e:
+        print(f"Error assigning mission: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.websocket("/api/v1/codegraph/stream")
 async def codegraph_stream(websocket: WebSocket):

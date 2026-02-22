@@ -3,10 +3,11 @@ import { Header } from "@/components/Header";
 import { PartySidebar } from "@/components/PartySidebar";
 import { KnowledgeGraph } from "@/components/KnowledgeGraph";
 import { QuestLog } from "@/components/QuestLog";
+import { CitadelControls } from "@/components/CitadelControls";
 import { SovereignControls } from "@/components/SovereignControls";
 import { SystemInterdicted } from "@/components/SystemInterdicted";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Network, ScrollText } from "lucide-react";
+import { Network, ScrollText, Rocket } from "lucide-react";
 
 const Index = () => {
   const { data: gameState, isError: gsError } = useGameState();
@@ -36,6 +37,10 @@ const Index = () => {
                 <ScrollText className="h-3.5 w-3.5" />
                 Quest Log
               </TabsTrigger>
+              <TabsTrigger value="citadel" className="font-mono text-xs data-[state=active]:text-neon-cyan gap-1.5">
+                <Rocket className="h-3.5 w-3.5" />
+                Citadel Ops
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="graph" className="flex-1 min-h-0 px-3 pb-1">
@@ -44,6 +49,10 @@ const Index = () => {
 
             <TabsContent value="quests" className="flex-1 min-h-0 overflow-auto">
               <QuestLog quests={gameState?.active_quests ?? []} />
+            </TabsContent>
+
+            <TabsContent value="citadel" className="flex-1 min-h-0 overflow-auto">
+              <CitadelControls agents={gameState?.party ?? []} repositories={gameState?.repositories ?? []} />
             </TabsContent>
           </Tabs>
         </main>
