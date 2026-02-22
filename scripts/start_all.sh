@@ -38,7 +38,7 @@ else
 fi
 
 # 3. Check for Synapse
-if ! curl -s http://localhost:50051 >/dev/null 2>&1; then
+if ! nc -z localhost 50051 2>/dev/null; then
     echo "▶️  Starting Synapse..."
     # Use local synapse-data (respect env var)
     export GRAPH_STORAGE_PATH="${GRAPH_STORAGE_PATH:-./synapse-data}"

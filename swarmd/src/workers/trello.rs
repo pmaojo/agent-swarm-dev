@@ -1,12 +1,21 @@
 use reqwest::Client;
 use serde_json::Value;
 use std::time::Duration;
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 use std::collections::HashSet;
+use tokio::sync::mpsc;
+use crate::notifications::Notification;
 
 use crate::synapse::SynapseClient;
 
-pub async fn poll_trello(api_key: String, token: String, board_id: String, synapse: SynapseClient, client: Client) {
+pub async fn poll_trello(
+    api_key: String, 
+    token: String, 
+    board_id: String, 
+    synapse: SynapseClient, 
+    client: Client,
+    tx: mpsc::Sender<Notification>
+) {
     info!("📋 Trello Poller Started (Board: {})...", board_id);
     let base_url = "https://api.trello.com/1";
     let mut processed_cards = HashSet::new();
@@ -22,9 +31,9 @@ pub async fn poll_trello(api_key: String, token: String, board_id: String, synap
                         let list_id = list.get("id").and_then(|id| id.as_str()).unwrap_or("");
                         let list_name = list.get("name").and_then(|n| n.as_str()).unwrap_or("");
 
-                        // We care about REQUIREMENTS, DESIGN, TODO, IN PROGRESS
+                        // We care about REQUIREMENTS, DESIGN, TODO, INBOX
                         if ["REQUIREMENTS", "DESIGN", "TODO", "INBOX"].contains(&list_name) {
-                            check_list_cards(list_id, list_name, &api_key, &token, &client, &synapse, &mut processed_cards).await;
+                            check_list_cards(list_id, list_name, &api_key, &token, &client, &synapse, &mut processed_cards, &tx).await;
                         }
                     }
                 }
@@ -45,7 +54,8 @@ async fn check_list_cards(
     token: &str, 
     client: &Client, 
     synapse: &SynapseClient,
-    processed_cards: &mut HashSet<String>
+    processed_cards: &mut HashSet<String>,
+    tx: &mpsc::Sender<Notification>,
 ) {
     let cards_url = format!("https://api.trello.com/1/lists/{}/cards?key={}&token={}", list_id, api_key, token);
     
@@ -60,7 +70,10 @@ async fn check_list_cards(
                 if !processed_cards.contains(&state_key) {
                     info!("🔎 Found NEW card '{}' in '{}'", card_name, list_name);
                     
-                    // TODO: Actual Agent Logic mapping here. For now, we just ingest a ping to Synapse.
+                    // Push to Telegram Live Trace
+                    let _ = tx.send(Notification::Trace(format!("New card in *{}*: {}", list_name, card_name))).await;
+
+                    // Ingest to Synapse
                     let subject = format!("http://swarm.os/trello/card/{}", card_id);
                     let _ = synapse.ingest(vec![
                         (&subject, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type", "http://swarm.os/ontology/Task"),

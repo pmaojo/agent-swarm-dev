@@ -48,9 +48,13 @@ else
     exit 1
 fi
 
-# Check GLIBC version
-echo "🔍 Checking GLIBC version..."
-ldd --version | head -1
+# Check GLIBC version (Linux) or System info (Mac)
+echo "🔍 Checking System info..."
+if command -v ldd &> /dev/null; then
+    ldd --version | head -1
+elif command -v sw_vers &> /dev/null; then
+    sw_vers | head -2
+fi
 
 echo ""
 echo "✅ Setup complete!"

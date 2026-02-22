@@ -21,8 +21,14 @@ pub struct AppConfig {
 
 impl AppConfig {
     pub fn load() -> Result<Self> {
-        // Load variables from .env if present. Ignore errors to allow overriding from environment
-        let _ = dotenv();
+        // Load variables from .env and MANUALLY override to ensure consistency
+        if let Ok(iter) = dotenvy::dotenv_iter() {
+            for item in iter {
+                if let Ok((key, value)) = item {
+                    std::env::set_var(key, value);
+                }
+            }
+        }
 
         Ok(Self {
             synapse_grpc_host: std::env::var("SYNAPSE_GRPC_HOST").unwrap_or_else(|_| "127.0.0.1".into()),
