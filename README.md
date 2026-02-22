@@ -9,6 +9,7 @@ A neuro-symbolic agent swarm with graph-driven orchestration using Synapse knowl
 * **Economic Constraints:** LLM usage is tracked against a daily budget. Overspending triggers a "HALT" state.
 * **Temporal Shadowing:** Agents can only act if the "Time Crystal" (global clock) permits.
 * **CodeGraph Intelligence:** Advanced code parsing and graph-based analysis for optimized context retrieval.
+* **API Sandbox (Apicentric):** Native integration with `apicentric` for contract-driven development. Architect agents spin up live mock APIs from OpenAPI specs, and Reviewers validate code against these sandboxes.
 
 ## 🧠 Architecture
 
@@ -57,6 +58,10 @@ pip install fastembed flask grpcio-tools synapse-sdk pyyaml openai pylint flake8
 
 # Synapse binary (light mode)
 # Download from https://github.com/synapse-engine/synapse/releases
+
+# Apicentric (API Simulator)
+# Built from source via cargo or downloaded
+# ./apicentric_repo/target/release/apicentric
 ```
 
 ### 2. Start Services

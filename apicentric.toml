@@ -1,0 +1,8 @@
+# Apicentric Config
+[simulator]
+services_dir = "./openspec/sandboxes"
+http_port = 9002
+
+[log]
+level = "info"
+format = "pretty"

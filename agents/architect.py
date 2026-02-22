@@ -14,6 +14,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from llm import LLMService
 from trello_bridge import TrelloBridge
+try:
+    from agents.tools.api_sandbox import ApiSandboxTool
+except ImportError:
+    # Fallback if running from root
+    from tools.api_sandbox import ApiSandboxTool
 
 # Add Synapse connectivity
 try:
@@ -47,7 +52,7 @@ class ArchitectAgent:
         except Exception as e:
             print(f"⚠️ [Architect] Failed to connect to Synapse: {e}")
 
-    def ingest_design_triple(self, card_id: str, file_path: str):
+    def ingest_design_triple(self, card_id: str, file_path: str, sandbox_url: str = None):
         """Link Trello Card to Design File in Synapse."""
         if not self.stub: return
 
@@ -57,6 +62,13 @@ class ArchitectAgent:
             {"subject": subject, "predicate": f"{SWARM}hasTechnicalDesign", "object": f'"{file_path}"'},
             {"subject": subject, "predicate": f"{SWARM}status", "object": '"DESIGNED"'}
         ]
+
+        if sandbox_url:
+            triples.append({
+                "subject": f"{SWARM}file/{file_path}", # Attach sandbox to the design file
+                "predicate": f"{SWARM}hasApiSandbox",
+                "object": f'"{sandbox_url}"'
+            })
 
         pb_triples = []
         for t in triples:
@@ -81,6 +93,8 @@ class ArchitectAgent:
         You are a Senior System Architect using the OpenSpec framework.
         Your goal is to create a technical design document based on the provided Requirement Specification.
 
+        IMPORTANT: If this feature involves creating or modifying an API, you MUST define the API Contract using OpenAPI 3.0 (Swagger) YAML.
+
         Output Format:
         Use strictly the following Markdown structure:
 
@@ -90,6 +104,13 @@ class ArchitectAgent:
         [Describe the high-level architecture: components, data flow, external services.]
         - Component A -> Component B
         - Database Schema: ...
+
+        ## API Contract (Optional)
+        If an API is required, provide the OpenAPI 3.0 YAML spec here inside a code block.
+        ```yaml
+        openapi: 3.0.0
+        ...
+        ```
 
         ## Implementation Plan
         [Step-by-step plan for the developer.]
@@ -171,14 +192,34 @@ class ArchitectAgent:
         # 3. Save to Repo
         file_path = self.save_design_file(name, design_content)
 
+        # 4. Extract OpenAPI and Create Sandbox
+        sandbox_url = None
+        if "```yaml" in design_content and "openapi:" in design_content:
+            try:
+                # Extract YAML block
+                start = design_content.find("```yaml") + 7
+                end = design_content.find("```", start)
+                yaml_content = design_content[start:end].strip()
+
+                if "openapi" in yaml_content:
+                    print(f"🏗️ [Architect] Detected OpenAPI spec. Creating Sandbox...")
+                    tool = ApiSandboxTool()
+                    safe_name = "".join([c if c.isalnum() else "-" for c in name.lower()])
+                    sandbox_url = tool.create_sandbox(yaml_content, safe_name)
+                    print(f"✅ [Architect] Sandbox created at: {sandbox_url}")
+            except Exception as e:
+                print(f"⚠️ [Architect] Failed to create sandbox: {e}")
+
         # 4. Update Trello
-        comment = f"📐 **Technical Design Ready!**\n\nFile: `{file_path}`\n\n---\n\n{design_content}"
+        comment = f"📐 **Technical Design Ready!**\n\nFile: `{file_path}`"
+        if sandbox_url:
+            comment += f"\n\n🧪 **Live API Sandbox:** `{sandbox_url}`"
+
+        comment += f"\n\n---\n\n{design_content}"
         self.bridge.add_comment(card_id, comment)
-        # Also update desc to include link to design? Or just comment is enough.
-        # Let's keep desc as Spec (The "What") and comments/linked file as Design (The "How").
 
         # 5. Ingest to Synapse
-        self.ingest_design_triple(card_id, file_path)
+        self.ingest_design_triple(card_id, file_path, sandbox_url)
 
         # 6. Move to DESIGN (Wait for Approval)
         self.bridge.move_card(card_id, "DESIGN")
