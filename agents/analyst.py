@@ -8,6 +8,7 @@ import json
 import grpc
 import yaml
 import time
+import uuid
 from collections import defaultdict
 from typing import List, Dict, Any, Optional
 
@@ -291,6 +292,9 @@ class AnalystAgent:
                     # 5. Append to consolidated_wisdom.ttl
                     self.append_to_ttl(subject, rule_text)
 
+                    # 6. Generate Security Restriction TTL File
+                    self.save_security_restriction(subject, rule_text)
+
                     consolidated_count += len(execIds)
                     new_rules.append(rule_text)
                 else:
@@ -308,6 +312,30 @@ class AnalystAgent:
 
         with open(path, 'a') as f:
             f.write(f'{subj_str} <{NIST}HardConstraint> "{rule_text}" .\n')
+
+    def save_security_restriction(self, subject, rule_text):
+        """Generate a .ttl file for the security restriction."""
+        restrictions_dir = os.path.join(os.path.dirname(__file__), '..', 'security_restrictions')
+        if not os.path.exists(restrictions_dir):
+            os.makedirs(restrictions_dir)
+
+        file_uuid = uuid.uuid4()
+        filepath = os.path.join(restrictions_dir, f"restriction_{file_uuid}.ttl")
+
+        # Ensure subject is wrapped
+        subj_str = subject
+        if not subj_str.startswith('<'):
+            subj_str = f"<{subj_str}>"
+
+        content = f"""
+@prefix nist: <{NIST}> .
+@prefix swarm: <{SWARM}> .
+
+{subj_str} nist:HardConstraint "{rule_text}" .
+"""
+        with open(filepath, 'w') as f:
+            f.write(content.strip())
+        print(f"🔒 Generated Security Restriction: {filepath}")
 
 if __name__ == "__main__":
     analyst = AnalystAgent()
