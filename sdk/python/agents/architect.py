@@ -7,27 +7,23 @@ import os
 import json
 import sys
 import time
+from typing import List, Dict, Any, Optional
 
-# Add path to lib
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'lib'))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+# Add path to lib and agents
+SDK_PYTHON_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, SDK_PYTHON_PATH)
+sys.path.insert(0, os.path.join(SDK_PYTHON_PATH, "lib"))
+sys.path.insert(0, os.path.join(SDK_PYTHON_PATH, "agents"))
 
 from llm import LLMService
 from trello_bridge import TrelloBridge
-try:
-    from agents.tools.api_sandbox import ApiSandboxTool
-except ImportError:
-    # Fallback if running from root
-    from tools.api_sandbox import ApiSandboxTool
+from tools.api_sandbox import ApiSandboxTool
 
 # Add Synapse connectivity
 try:
-    from synapse.infrastructure.web import semantic_engine_pb2, semantic_engine_pb2_grpc
+    from synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
 except ImportError:
-    try:
-        from agents.proto import semantic_engine_pb2, semantic_engine_pb2_grpc
-    except ImportError:
-        from synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
+    from agents.synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
 import grpc
 
 SWARM = "http://swarm.os/ontology/"

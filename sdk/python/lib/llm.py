@@ -16,23 +16,16 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger("LLMService")
 
 # --- Synapse/Proto Imports ---
-# Add agents/proto to path if not present, to support imports
-current_dir = os.path.dirname(os.path.abspath(__file__))
-proto_dir = os.path.join(current_dir, '..', 'agents', 'proto')
-if proto_dir not in sys.path:
-    sys.path.insert(0, proto_dir)
+SDK_PYTHON_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if SDK_PYTHON_PATH not in sys.path:
+    sys.path.insert(0, SDK_PYTHON_PATH)
 
 try:
-    import semantic_engine_pb2
-    import semantic_engine_pb2_grpc
+    from agents.synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
 except ImportError:
-    # Fallback for different environments
-    try:
-        from agents.proto import semantic_engine_pb2, semantic_engine_pb2_grpc
-    except ImportError:
-        logger.warning("⚠️  Warning: Could not import Synapse protobufs. Budgeting disabled.")
-        semantic_engine_pb2 = None
-        semantic_engine_pb2_grpc = None
+    logger.warning("⚠️  Warning: Could not import Synapse protobufs. Budgeting disabled.")
+    semantic_engine_pb2 = None
+    semantic_engine_pb2_grpc = None
 
 # --- Constants ---
 # Pricing per 1K tokens (approximate for GPT-4o)

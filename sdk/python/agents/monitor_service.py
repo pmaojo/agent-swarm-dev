@@ -14,21 +14,16 @@ from datetime import datetime
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters
 
-# Ensure we can import synapse_proto
-current_dir = os.path.dirname(os.path.abspath(__file__))
-proto_dir = os.path.join(current_dir, 'proto')
-if proto_dir not in sys.path:
-    sys.path.insert(0, proto_dir)
+# Add path to lib and agents
+SDK_PYTHON_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, SDK_PYTHON_PATH)
+sys.path.insert(0, os.path.join(SDK_PYTHON_PATH, "lib"))
+sys.path.insert(0, os.path.join(SDK_PYTHON_PATH, "agents"))
 
 try:
-    import semantic_engine_pb2
-    import semantic_engine_pb2_grpc
+    from synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
 except ImportError:
-    try:
-        from agents.proto import semantic_engine_pb2, semantic_engine_pb2_grpc
-    except ImportError:
-        print("❌ Could not import Synapse protobufs. Monitor service will fail.")
-        sys.exit(1)
+    from agents.synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
 
 # Configuration
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")

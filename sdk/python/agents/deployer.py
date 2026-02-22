@@ -10,18 +10,17 @@ import sys
 import time
 from typing import Dict, Any, List, Optional
 
-# Add path to lib and root
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'lib'))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+# Add path to lib and agents
+SDK_PYTHON_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, SDK_PYTHON_PATH)
+sys.path.insert(0, os.path.join(SDK_PYTHON_PATH, "lib"))
+sys.path.insert(0, os.path.join(SDK_PYTHON_PATH, "agents"))
 
 try:
-    from synapse.infrastructure.web import semantic_engine_pb2, semantic_engine_pb2_grpc
+    from synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
 except ImportError:
-    try:
-        from agents.proto import semantic_engine_pb2, semantic_engine_pb2_grpc
-    except ImportError:
-        from synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
-from agents.tools.shell import execute_command
+    from agents.synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
+from tools.shell import execute_command
 
 class DeployerAgent:
     def __init__(self):

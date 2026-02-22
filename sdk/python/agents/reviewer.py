@@ -11,22 +11,16 @@ import sys
 import time
 from typing import Dict, Any, List, Optional
 
-# Add path to lib and root
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'lib'))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-
-# Add path to proto for generated code imports
-proto_dir = os.path.join(os.path.dirname(__file__), 'proto')
-if proto_dir not in sys.path:
-    sys.path.insert(0, proto_dir)
+# Add path to lib and agents
+SDK_PYTHON_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, SDK_PYTHON_PATH)
+sys.path.insert(0, os.path.join(SDK_PYTHON_PATH, "lib"))
+sys.path.insert(0, os.path.join(SDK_PYTHON_PATH, "agents"))
 
 try:
-    from synapse.infrastructure.web import semantic_engine_pb2, semantic_engine_pb2_grpc
+    from synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
 except ImportError:
-    try:
-        from agents.proto import semantic_engine_pb2, semantic_engine_pb2_grpc
-    except ImportError:
-        from synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
+    from agents.synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
 
 from llm import LLMService
 from git_service import GitService

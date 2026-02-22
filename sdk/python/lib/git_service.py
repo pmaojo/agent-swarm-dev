@@ -7,22 +7,15 @@ import json
 from typing import List, Dict, Optional
 
 # --- Synapse/Proto Imports ---
-current_dir = os.path.dirname(os.path.abspath(__file__))
-proto_dir = os.path.join(current_dir, '..', 'agents', 'proto')
-if proto_dir not in sys.path:
-    sys.path.insert(0, proto_dir)
+SDK_PYTHON_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if SDK_PYTHON_PATH not in sys.path:
+    sys.path.insert(0, SDK_PYTHON_PATH)
 
 try:
-    import semantic_engine_pb2
-    import semantic_engine_pb2_grpc
+    from agents.synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
 except ImportError:
-    # Fallback for different environments
-    try:
-        from agents.proto import semantic_engine_pb2, semantic_engine_pb2_grpc
-    except ImportError:
-        print("⚠️  Warning: Could not import Synapse protobufs in GitService.")
-        semantic_engine_pb2 = None
-        semantic_engine_pb2_grpc = None
+    semantic_engine_pb2 = None
+    semantic_engine_pb2_grpc = None
 
 SWARM = "http://swarm.os/ontology/"
 NIST = "http://nist.gov/caisi/"

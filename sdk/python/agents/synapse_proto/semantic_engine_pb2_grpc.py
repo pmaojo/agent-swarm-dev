@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-import semantic_engine_pb2 as semantic__engine__pb2
+from . import semantic_engine_pb2 as semantic__engine__pb2
 
 GRPC_GENERATED_VERSION = '1.78.1'
 GRPC_VERSION = grpc.__version__
