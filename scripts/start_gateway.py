@@ -3,6 +3,10 @@ import os
 import sys
 import json
 import uvicorn
+from dotenv import load_dotenv
+
+# Load .env variables before anything else
+load_dotenv()
 
 # Add project root to path
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))

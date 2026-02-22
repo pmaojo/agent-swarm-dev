@@ -54,5 +54,10 @@ func _on_request_completed(result, response_code, headers, body):
     var data = json.get_data()
     print("Game State Update: ", data)
 
-    # TODO: Update 3D Scene based on data
-    # _update_scene(data)
+    # Update UI Label
+    if get_node_or_null("CanvasLayer/RichTextLabel"):
+        $CanvasLayer/RichTextLabel.text = JSON.stringify(data, "  ")
+        
+    # Update 3D Hex Grid
+    if get_node_or_null("HexGridManager"):
+        $HexGridManager.update_grid(data)

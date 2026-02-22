@@ -8,21 +8,8 @@ mkdir -p synapse-data
 
 # Check for protoc
 if ! command -v protoc &> /dev/null; then
-    echo "⚠️  protoc not found. Installing locally..."
-    mkdir -p protoc
-    # Check if we already have it
-    if [ ! -f "protoc/bin/protoc" ]; then
-        echo "⬇️  Downloading protoc..."
-        # Use a stable version suitable for most environments
-        curl -L -o protoc.zip https://github.com/protocolbuffers/protobuf/releases/download/v25.1/protoc-25.1-linux-x86_64.zip
-        unzip -o protoc.zip -d protoc > /dev/null
-        rm protoc.zip
-        chmod +x protoc/bin/protoc
-    fi
-    # Add to PATH and set PROTOC env var
-    export PATH="$(pwd)/protoc/bin:$PATH"
-    export PROTOC="$(pwd)/protoc/bin/protoc"
-    echo "✅ protoc installed at $(pwd)/protoc/bin/protoc"
+    echo "❌ protoc not found. Please install it first (e.g. 'brew install protobuf' on macOS or 'apt install protobuf-compiler' on Ubuntu)."
+    exit 1
 else
     echo "✅ protoc found at $(which protoc)"
 fi

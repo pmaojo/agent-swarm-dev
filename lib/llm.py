@@ -54,6 +54,8 @@ class LLMService:
         self.api_key = os.getenv("OPENAI_API_KEY")
         self.model = os.getenv("LLM_MODEL", "gpt-4o")
 
+        self.base_url = os.getenv("OPENAI_BASE_URL")
+
         if self.mock_mode:
             logger.info("🤖 LLMService initialized in MOCK MODE.")
             self.client = None
@@ -64,7 +66,7 @@ class LLMService:
                 self.client = None
             else:
                 logger.info(f"🟢 LLMService initialized (Model: {self.model})")
-                self.client = OpenAI(api_key=self.api_key)
+                self.client = OpenAI(api_key=self.api_key, base_url=self.base_url)
 
         # Synapse Connection
         self.grpc_host = os.getenv("SYNAPSE_GRPC_HOST", "localhost")
@@ -82,9 +84,15 @@ class LLMService:
             return
         try:
             self.channel = grpc.insecure_channel(f"{self.grpc_host}:{self.grpc_port}")
-            self.stub = semantic_engine_pb2_grpc.SemanticEngineStub(self.channel)
+            try:
+                grpc.channel_ready_future(self.channel).result(timeout=2)
+                self.stub = semantic_engine_pb2_grpc.SemanticEngineStub(self.channel)
+            except grpc.FutureTimeoutError:
+                logger.warning("⚠️  Synapse not reachable within 2s timeout. Budgeting disabled.")
+                self.stub = None
         except Exception as e:
             logger.warning(f"⚠️  LLMService failed to connect to Synapse: {e}")
+            self.stub = None
 
     def ensure_finance_node(self):
         """Ensure the finance node exists with the max budget."""
