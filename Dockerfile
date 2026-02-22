@@ -19,8 +19,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy source code
-COPY lib ./lib
-COPY agents ./agents
+COPY sdk/python/lib ./sdk/python/lib
+COPY sdk/python/agents ./sdk/python/agents
 COPY scripts ./scripts
 COPY scenarios ./scenarios
 COPY swarm_schema.yaml .
@@ -33,9 +33,13 @@ COPY --from=frontend-builder /app/commander-dashboard/dist ./commander-dashboard
 # Environment variables
 ENV PORT=18789
 ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app/sdk/python/lib:/app/sdk/python
 
 # Expose port
 EXPOSE 18789
 
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD curl --fail http://127.0.0.1:18789/status || exit 1
+
 # Run application
-CMD ["python", "lib/gateway_runtime.py"]
+CMD ["python", "-m", "gateway_runtime"]

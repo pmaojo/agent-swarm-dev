@@ -84,6 +84,28 @@ python3 scripts/swarm_flow.py "Create a REST API"
 python3 scripts/swarm_flow.py "Implement user authentication" --verbose
 ```
 
+
+## 🐳 Gateway Container: Build/Run Reproducible Flow
+
+Use the following exact commands to build and validate the gateway container end-to-end:
+
+```bash
+# 1) Build image
+docker build -t agent-swarm-gateway:local .
+
+# 2) Run container
+docker run --rm -p 18789:18789 --name agent-swarm-gateway agent-swarm-gateway:local
+
+# 3) Health and smoke checks (run in another terminal)
+curl --fail http://127.0.0.1:18789/status
+curl --fail http://127.0.0.1:18789/api/v1/game-state
+```
+
+Notes:
+- The image copies runtime sources from `sdk/python/lib` and `sdk/python/agents`.
+- `PYTHONPATH` is configured to resolve `gateway_runtime` and package imports from `sdk/python`.
+- Entrypoint uses `python -m gateway_runtime` for stable module resolution.
+
 ## 🤖 Autonomous GSD Workflow (Trello + OpenSpec)
 
 This system implements a fully autonomous "Get Shit Done" (GSD) workflow driven by Trello state transitions and OpenSpec documents.
