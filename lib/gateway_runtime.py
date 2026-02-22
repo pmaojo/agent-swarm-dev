@@ -250,6 +250,49 @@ def fetch_graph_nodes() -> Dict[str, Any]:
         print(f"Error fetching graph nodes: {e}")
         return {"elements": {"nodes": [], "edges": []}}
 
+def fetch_codegraph() -> Dict[str, Any]:
+    """Fetch CodeGraph for visualization."""
+    try:
+        query = """
+        PREFIX swarm: <http://swarm.os/ontology/>
+        PREFIX codegraph: <http://swarm.os/ontology/codegraph/>
+
+        SELECT ?s ?type ?p ?o WHERE {
+            ?s a ?type .
+            FILTER(?type IN (codegraph:File, codegraph:Class, codegraph:Function))
+            OPTIONAL {
+                ?s ?p ?o .
+                FILTER(?p IN (swarm:calls, swarm:references, swarm:inheritsFrom, swarm:hasSymbol))
+            }
+        }
+        """
+        results = orch.query_graph(query)
+
+        nodes = {}
+        edges = []
+
+        for row in results:
+            s_uri = row.get("?s") or row.get("s")
+            sType = row.get("?type") or row.get("type")
+
+            # Add Node
+            if s_uri and s_uri not in nodes:
+                label = s_uri.split('/')[-1]
+                if '#' in label: label = label.split('#')[-1]
+                nodes[s_uri] = {"id": s_uri, "type": str(sType).split('/')[-1], "label": label}
+
+            # Add Edge
+            p = row.get("?p") or row.get("p")
+            o = row.get("?o") or row.get("o")
+            if p and o:
+                p_label = str(p).split('/')[-1].split('#')[-1]
+                edges.append({"from": s_uri, "to": str(o), "type": p_label})
+
+        return {"nodes": list(nodes.values()), "edges": edges}
+    except Exception as e:
+        print(f"Error fetching CodeGraph: {e}")
+        return {"nodes": [], "edges": []}
+
 async def broadcast_stats_loop():
     """Background task to push stats."""
     while True:
@@ -295,6 +338,18 @@ async def get_agent_script(): return {"script": AGENT_UNIT_GD}
 
 @app.get("/api/v1/godot/scripts/fog")
 async def get_fog_script(): return {"script": FOG_MANAGER_GD}
+
+@app.websocket("/api/v1/codegraph/stream")
+async def codegraph_stream(websocket: WebSocket):
+    """Streams the CodeGraph to Godot."""
+    await websocket.accept()
+    try:
+        while True:
+            graph_data = await asyncio.to_thread(fetch_codegraph)
+            await websocket.send_json(graph_data)
+            await asyncio.sleep(5)
+    except WebSocketDisconnect:
+        print("CodeGraph Client disconnected")
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):

@@ -1,0 +1,67 @@
+@prefix : <http://swarm.os/ontology/codegraph/> .
+@prefix swarm: <http://swarm.os/ontology/> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+:CodeNode a owl:Class ;
+    rdfs:label "Code Node" ;
+    rdfs:comment "A node in the code graph representing a file, class, or function." .
+
+:File a owl:Class ;
+    rdfs:subClassOf :CodeNode ;
+    rdfs:label "Source File" .
+
+:Class a owl:Class ;
+    rdfs:subClassOf :CodeNode ;
+    rdfs:label "Class Definition" .
+
+:Function a owl:Class ;
+    rdfs:subClassOf :CodeNode ;
+    rdfs:label "Function Definition" .
+
+:Variable a owl:Class ;
+    rdfs:subClassOf :CodeNode ;
+    rdfs:label "Variable" .
+
+# Properties
+swarm:hasSymbol a owl:ObjectProperty ;
+    rdfs:domain :File ;
+    rdfs:range :CodeNode ;
+    rdfs:label "has symbol" ;
+    rdfs:comment "Relates a file to the symbols (classes/functions) defined within it." .
+
+swarm:calls a owl:ObjectProperty ;
+    rdfs:domain :Function ;
+    rdfs:range :Function ;
+    rdfs:label "calls" ;
+    rdfs:comment "Indicates one function calls another." .
+
+swarm:references a owl:ObjectProperty ;
+    rdfs:domain :CodeNode ;
+    rdfs:range :CodeNode ;
+    rdfs:label "references" ;
+    rdfs:comment "Indicates a usage of a variable or constant." .
+
+swarm:inheritsFrom a owl:ObjectProperty ;
+    rdfs:domain :Class ;
+    rdfs:range :Class ;
+    rdfs:label "inherits from" ;
+    rdfs:comment "Indicates class inheritance." .
+
+swarm:startLine a owl:DatatypeProperty ;
+    rdfs:domain :CodeNode ;
+    rdfs:range xsd:integer ;
+    rdfs:label "start line" .
+
+swarm:endLine a owl:DatatypeProperty ;
+    rdfs:domain :CodeNode ;
+    rdfs:range xsd:integer ;
+    rdfs:label "end line" .
+
+swarm:nodeHash a owl:DatatypeProperty ;
+    rdfs:domain :CodeNode ;
+    rdfs:range xsd:string ;
+    rdfs:label "node hash" ;
+    rdfs:comment "Hash of the node's content for change detection." .
