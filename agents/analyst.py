@@ -7,7 +7,6 @@ import sys
 import json
 import grpc
 import yaml
-import time
 import uuid
 from collections import defaultdict
 from typing import List, Dict, Any, Optional
@@ -248,6 +247,9 @@ class AnalystAgent:
         # 0. Discovery Debug
         # self.debug_discovery()
 
+        # New: Detect Schema Gaps
+        self.detect_schema_gaps()
+
         print("🔍 Analyst scanning for failure patterns...")
         failures = self.find_unconsolidated_failures()
         print(f"Found {len(failures)} unconsolidated failures.")
@@ -306,6 +308,73 @@ class AnalystAgent:
                     print(f"⛔ Rule rejected due to validation failure.")
 
         print(f"🏁 Consolidation complete. Consolidated {consolidated_count} lessons. Generated {len(new_rules)} new rules.")
+
+    def detect_schema_gaps(self):
+        print("🔍 Analyst scanning for schema gaps...")
+        # Query for errors related to ontology/schema
+        query = f"""
+        PREFIX swarm: <{SWARM}>
+        PREFIX skos: <{SKOS}>
+        PREFIX nist: <{NIST}>
+        PREFIX rdf: <{RDF}>
+        SELECT ?note ?execId
+        WHERE {{
+            ?execId rdf:type swarm:ExecutionRecord .
+            ?execId nist:resultState "on_failure" .
+            ?execId skos:historyNote ?note .
+            FILTER (REGEX(?note, "schema", "i") || REGEX(?note, "ontology", "i") || REGEX(?note, "type", "i") || REGEX(?note, "class", "i"))
+            FILTER NOT EXISTS {{ ?execId swarm:isConsolidated "true" }}
+        }}
+        """
+        results = self.query_graph(query)
+
+        if not results:
+            return
+
+        print(f"⚠️ Found {len(results)} potential schema issues.")
+
+        # Aggregate notes
+        notes = []
+        execIds = []
+        for r in results:
+            note = r.get("?note") or r.get("note")
+            if isinstance(note, dict): note = note.get('value', '')
+            notes.append(note)
+            execIds.append(r.get("?execId") or r.get("execId"))
+
+        # Ask LLM to propose schema update
+        prompt = f"""
+        You are an Ontology Engineer.
+        Analyze these error logs and identify missing concepts in the Swarm Ontology (namespace: {SWARM}).
+        Logs:
+        {json.dumps(notes[:10])}
+
+        Propose a Turtle (.ttl) schema update to fix these gaps.
+        Focus on adding missing Classes or Properties.
+        Return ONLY the .ttl content. Start with @prefix.
+        """
+        try:
+            ttl_content = self.llm.completion(prompt)
+
+            if "@prefix" in ttl_content or "PREFIX" in ttl_content:
+                filename = f"schema_update_{uuid.uuid4()}.ttl"
+                path = os.path.join(os.path.dirname(__file__), '..', 'scenarios', 'suggested_schema', filename)
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with open(path, 'w') as f:
+                    f.write(ttl_content)
+                print(f"📝 Proposed Schema Update saved to {path}")
+
+                # Mark as consolidated
+                triples = []
+                for eid in execIds:
+                    triples.append({
+                        "subject": eid if isinstance(eid, str) else eid.get('value'),
+                        "predicate": f"{SWARM}isConsolidated",
+                        "object": '"true"'
+                    })
+                self.ingest_triples(triples)
+        except Exception as e:
+            print(f"❌ Schema update proposal failed: {e}")
 
     def append_to_ttl(self, subject, rule_text):
         path = os.path.join(os.path.dirname(__file__), '..', 'consolidated_wisdom.ttl')

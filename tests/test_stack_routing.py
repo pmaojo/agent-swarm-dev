@@ -76,7 +76,10 @@ class TestStackRouting(unittest.TestCase):
                 'stack': {'value': '"python"'}
             })
 
-        analyst.query_graph = MagicMock(side_effect=[failures])
+        # Mock query_graph response:
+        # 1. detect_schema_gaps -> [] (No gaps found)
+        # 2. find_unconsolidated_failures -> failures
+        analyst.query_graph = MagicMock(side_effect=[[], failures])
 
         # Mock ingest_triples
         analyst.ingest_triples = MagicMock()

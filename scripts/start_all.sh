@@ -51,6 +51,17 @@ else
     echo "✅ Synapse already running"
 fi
 
+# 4. Start Monitor Service (Heart of the System)
+if ! pgrep -f "agents/monitor_service.py" > /dev/null; then
+    echo "▶️  Starting Monitor Service..."
+    # Ensure PYTHONPATH includes agents/proto if needed, but script handles it.
+    nohup python3 agents/monitor_service.py > monitor.log 2>&1 &
+    sleep 2
+else
+    echo "✅ Monitor Service already running"
+fi
+
 echo "🎉 All services ready!"
 echo "   - FastEmbed: http://localhost:11434"
 echo "   - Synapse: localhost:50051 (Data: ./synapse-data)"
+echo "   - Monitor: Active (Logs: monitor.log)"
