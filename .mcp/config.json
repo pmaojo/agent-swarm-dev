@@ -12,6 +12,11 @@
       "command": "python3",
       "args": ["scripts/swarm_mcp.py"],
       "description": "Agent Swarm Control - Run agents and query memory"
+    },
+    "apicentric": {
+      "command": "./apicentric_repo/target/release/apicentric",
+      "args": ["mcp"],
+      "description": "Apicentric API Simulator - Mock APIs and Contract Testing"
     }
   },
   "tools": {
@@ -26,6 +31,22 @@
     "query_memory": {
       "server": "swarm",
       "description": "Query or update Synapse memory"
+    },
+    "create_service": {
+      "server": "apicentric",
+      "description": "Create a new mock service from a YAML definition"
+    },
+    "start_service": {
+      "server": "apicentric",
+      "description": "Start a specific mock service"
+    },
+    "stop_service": {
+      "server": "apicentric",
+      "description": "Stop a running service"
+    },
+    "get_service_logs": {
+      "server": "apicentric",
+      "description": "Retrieve logs for a service"
     }
   }
 }

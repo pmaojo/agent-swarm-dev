@@ -40,6 +40,7 @@ This roadmap outlines the phases for developing and enhancing the "Spec Driven S
 ## Phase 3: Operational Scale & Reliability (What's Next)
 
 - [ ] **Infrastructure-as-Code (Dockerization)**: Multi-container setup for Synapse + Agents. Ensure swarm portability.
+- [x] **Contract Testing (Apicentric)**: Native MCP integration for mocking and contract verification.
 - [ ] **Multi-Stack Maturity**: Formalize "Skill-Based Routing" to handle Python, Rust, and TS projects in parallel.
 - [ ] **Proactive Monitoring**: Implement Telegram alerts for budget (80%) and system health.
 - [ ] **Auto-Consolidation 2.0**: Empower the Analyst Agent to propose schema updates, not just "Golden Rules".

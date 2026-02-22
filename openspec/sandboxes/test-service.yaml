@@ -1,0 +1,37 @@
+name: sample-api
+version: 1.0.0
+description: null
+server:
+  port: null
+  base_path: /api/v1
+  proxy_base_url: null
+  cors: null
+  record_unknown: false
+models: null
+fixtures: null
+bucket: null
+endpoints:
+- kind: http
+  method: GET
+  path: /hello
+  header_match: null
+  description: Say Hello
+  parameters: null
+  request_body: null
+  responses:
+    200:
+      condition: null
+      content_type: application/json
+      body: |-
+        {
+          "message": "Hello World"
+        }
+      schema: null
+      script: null
+      headers: null
+      side_effects: null
+  scenarios: null
+  stream: null
+graphql: null
+behavior: null
+twin: null

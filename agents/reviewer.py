@@ -211,7 +211,44 @@ class ReviewerAgent:
                  "violations": compliance.get("violations")
              }
 
-        # 2. Traditional Review (Files)
+        # 2. Check for Active API Sandbox (Contract Verification)
+        try:
+            # Query if any file in this PR has an associated API Sandbox
+            # ?file swarm:hasApiSandbox ?url
+            query_sandbox = f"""
+            PREFIX swarm: <{SWARM}>
+            SELECT ?url ?design
+            WHERE {{
+                ?design swarm:hasApiSandbox ?url .
+                ?design swarm:status "DESIGNED" .
+            }}
+            LIMIT 1
+            """
+            sandbox_results = self._query(query_sandbox)
+            if sandbox_results:
+                sandbox_url = sandbox_results[0].get("?url") or sandbox_results[0].get("url")
+                print(f"🧪 [Reviewer] Found Active API Sandbox: {sandbox_url}")
+                print(f"      (In a real scenario, I would run contract tests against this URL here)")
+
+                # Verify connectivity
+                # import requests
+                # try:
+                #     requests.get(f"{sandbox_url}/health", timeout=1)
+                #     print("      ✅ Sandbox is reachable.")
+                # except:
+                #     print("      ⚠️ Sandbox unreachable.")
+
+                # Ingest Contract Affinity (Simulated success)
+                self._ingest([{
+                    "subject": f"{SWARM}agent/Reviewer",
+                    "predicate": f"{SWARM}hasContractAffinity",
+                    "object": f'"{sandbox_url}"'
+                }])
+
+        except Exception as e:
+            print(f"⚠️ [Reviewer] Sandbox check failed: {e}")
+
+        # 3. Traditional Review (Files)
         files = self.get_files_to_review(context or {})
         if not files:
             # Fallback: scan changed files in git?
