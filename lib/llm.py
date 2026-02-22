@@ -44,9 +44,22 @@ class BudgetExceededException(Exception):
 
 class LLMService:
     def __init__(self):
+        self.mock_mode = os.getenv("MOCK_LLM", "false").lower() == "true"
+
         self.api_key = os.getenv("OPENAI_API_KEY")
         self.model = os.getenv("LLM_MODEL", "gpt-4o")
-        self.client = OpenAI(api_key=self.api_key)
+
+        if self.mock_mode:
+            print("🤖 LLMService initialized in MOCK MODE.")
+            self.client = None
+        else:
+            if not self.api_key:
+                print("⚠️  OPENAI_API_KEY not found. Defaulting to MOCK MODE.")
+                self.mock_mode = True
+                self.client = None
+            else:
+                print(f"🟢 LLMService initialized (Model: {self.model})")
+                self.client = OpenAI(api_key=self.api_key)
 
         # Synapse Connection
         self.grpc_host = os.getenv("SYNAPSE_GRPC_HOST", "localhost")
@@ -133,7 +146,7 @@ class LLMService:
         chat_id = os.getenv("TELEGRAM_CHAT_ID")
 
         if not token or not chat_id:
-            print(f"⚠️ Telegram Alert skipped (Missing Token/ChatID): {message}")
+            # print(f"⚠️ Telegram Alert skipped (Missing Token/ChatID): {message}")
             return
 
         try:
@@ -220,8 +233,7 @@ class LLMService:
         Returns content string if no tools used, otherwise returns the message object.
         If `messages` is provided, it overrides prompt/system_prompt construction.
         """
-        # Mock Mode for CI/Testing
-        if os.getenv("MOCK_LLM", "false").lower() == "true":
+        if self.mock_mode:
             print(f"🤖 [MOCK LLM] Prompt: {prompt[:50]}...")
             if json_mode:
                 return '{"status": "success", "mock": true, "principles": ["Mock Principle"]}'
@@ -267,6 +279,9 @@ class LLMService:
         """
         content = self.completion(prompt, system_prompt, json_mode=True)
         try:
+            if hasattr(content, 'content'): # Handle tool/message object if returned
+                content = content.content
+
             return json.loads(content)
         except json.JSONDecodeError:
             # Fallback: try to extract JSON from markdown code blocks if present

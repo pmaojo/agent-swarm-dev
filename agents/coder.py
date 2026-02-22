@@ -16,6 +16,11 @@ from typing import Dict, Any, Optional, List
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'lib'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
+# Add path to proto for generated code imports
+proto_dir = os.path.join(os.path.dirname(__file__), 'proto')
+if proto_dir not in sys.path:
+    sys.path.insert(0, proto_dir)
+
 try:
     from synapse.infrastructure.web import semantic_engine_pb2, semantic_engine_pb2_grpc
 except ImportError:

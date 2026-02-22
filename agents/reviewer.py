@@ -5,6 +5,7 @@ Real implementation using Static Analysis + LLM + Synapse Memory + Neurosymbolic
 """
 import os
 import json
+import requests
 import grpc
 import sys
 import time
@@ -13,6 +14,11 @@ from typing import Dict, Any, List, Optional
 # Add path to lib and root
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'lib'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
+# Add path to proto for generated code imports
+proto_dir = os.path.join(os.path.dirname(__file__), 'proto')
+if proto_dir not in sys.path:
+    sys.path.insert(0, proto_dir)
 
 try:
     from synapse.infrastructure.web import semantic_engine_pb2, semantic_engine_pb2_grpc
@@ -183,18 +189,39 @@ class ReviewerAgent:
             if not os.path.exists(file_path): continue
             file_results = {"pylint": [], "flake8": [], "bandit": []}
 
+            # Pylint
             try:
-                # Mocking static analysis calls for speed/demo if tools missing,
-                # but utilizing execute_command as required.
-                # In real env, these run.
                 cmd = f"pylint --output-format=json {file_path}"
                 res = execute_command(cmd, reason="Static Analysis")
                 if res.get("stdout"):
-                    try: file_results["pylint"] = json.loads(res.get("stdout"))
-                    except: pass
-            except: pass
+                    try:
+                        file_results["pylint"] = json.loads(res.get("stdout"))
+                    except json.JSONDecodeError:
+                         print(f"⚠️ Failed to parse pylint output for {file_path}")
+            except Exception as e:
+                print(f"⚠️ Pylint execution failed for {file_path}: {e}")
 
-            # ... (Other tools similar to previous version, omitted for brevity but assumed present)
+            # Flake8
+            try:
+                cmd = f"flake8 --format=default {file_path}"
+                res = execute_command(cmd, reason="Static Analysis")
+                if res.get("stdout"):
+                     lines = res.get("stdout").splitlines()
+                     file_results["flake8"] = lines
+            except Exception as e:
+                 print(f"⚠️ Flake8 execution failed for {file_path}: {e}")
+
+            # Bandit
+            try:
+                cmd = f"bandit -f json -r {file_path}"
+                res = execute_command(cmd, reason="Static Analysis")
+                if res.get("stdout"):
+                    try:
+                        file_results["bandit"] = json.loads(res.get("stdout")).get("results", [])
+                    except json.JSONDecodeError:
+                         print(f"⚠️ Failed to parse bandit output for {file_path}")
+            except Exception as e:
+                 print(f"⚠️ Bandit execution failed for {file_path}: {e}")
 
             results[file_path] = file_results
         return results
@@ -214,7 +241,6 @@ class ReviewerAgent:
         # 2. Check for Active API Sandbox (Contract Verification)
         try:
             # Query if any file in this PR has an associated API Sandbox
-            # ?file swarm:hasApiSandbox ?url
             query_sandbox = f"""
             PREFIX swarm: <{SWARM}>
             SELECT ?url ?design
@@ -228,38 +254,48 @@ class ReviewerAgent:
             if sandbox_results:
                 sandbox_url = sandbox_results[0].get("?url") or sandbox_results[0].get("url")
                 print(f"🧪 [Reviewer] Found Active API Sandbox: {sandbox_url}")
-                print(f"      (In a real scenario, I would run contract tests against this URL here)")
 
                 # Verify connectivity
-                # import requests
-                # try:
-                #     requests.get(f"{sandbox_url}/health", timeout=1)
-                #     print("      ✅ Sandbox is reachable.")
-                # except:
-                #     print("      ⚠️ Sandbox unreachable.")
-
-                # Ingest Contract Affinity (Simulated success)
-                self._ingest([{
-                    "subject": f"{SWARM}agent/Reviewer",
-                    "predicate": f"{SWARM}hasContractAffinity",
-                    "object": f'"{sandbox_url}"'
-                }])
+                try:
+                    resp = requests.get(f"{sandbox_url}/health", timeout=2)
+                    if resp.status_code == 200:
+                         print("      ✅ Sandbox is reachable.")
+                         # Ingest Contract Affinity
+                         self._ingest([{
+                             "subject": f"{SWARM}agent/Reviewer",
+                             "predicate": f"{SWARM}hasContractAffinity",
+                             "object": f'"{sandbox_url}"'
+                         }])
+                    else:
+                         print(f"      ⚠️ Sandbox reachable but returned {resp.status_code}")
+                except requests.exceptions.RequestException as e:
+                     print(f"      ⚠️ Sandbox unreachable: {e}")
 
         except Exception as e:
             print(f"⚠️ [Reviewer] Sandbox check failed: {e}")
 
         # 3. Traditional Review (Files)
         files = self.get_files_to_review(context or {})
-        if not files:
-            # Fallback: scan changed files in git?
-            pass
+        static_analysis_results = self.run_static_analysis(files)
 
-        # ... (Existing logic) ...
+        # 4. LLM Code Review
+        # Consolidated feedback from Static Analysis + LLM
+        review_summary = "Review Passed."
+        if static_analysis_results:
+            has_issues = False
+            for f, res in static_analysis_results.items():
+                if res.get("pylint") or res.get("flake8") or res.get("bandit"):
+                    has_issues = True
+                    break
+
+            if has_issues:
+                review_summary = "Static Analysis found issues. Check logs."
 
         return {
             "status": "success",
-            "message": "Approved",
-            "compliance": compliance
+            "message": review_summary,
+            "compliance": compliance,
+            "static_analysis": static_analysis_results
         }
 
 if __name__ == "__main__":
