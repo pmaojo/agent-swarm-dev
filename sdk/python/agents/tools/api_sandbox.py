@@ -25,7 +25,6 @@ class ApiSandboxTool:
         os.makedirs(SANDBOX_DIR, exist_ok=True)
         self.simulator_process = None
         self.binary_path = self._find_binary()
-        self.start_simulator_if_needed()
 
     def _find_binary(self) -> str:
         if os.path.exists(APICENTRIC_BIN_LINK):
@@ -93,6 +92,7 @@ class ApiSandboxTool:
         """
         Takes an OpenAPI spec content, creates a mock service, and returns the base URL.
         """
+        self.start_simulator_if_needed()
         logger.info(f"🛠️ Creating API Sandbox for {service_name}...")
 
         # 1. Save spec to temp file

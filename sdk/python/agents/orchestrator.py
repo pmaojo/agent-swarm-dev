@@ -52,6 +52,7 @@ class OrchestratorAgent:
         self.channel = None
         self.stub = None
         self.namespace = "default"
+        self.agents = {}
 
         # Services
         self.bridge = TrelloBridge()
@@ -313,6 +314,8 @@ class OrchestratorAgent:
         results = self.query_graph(query, namespace="default")
         if results:
             val = results[0].get("?turn") or results[0].get("turn")
+            if val and isinstance(val, str):
+                val = val.strip('"')
             return int(val) if val else 0
         return 0
 
