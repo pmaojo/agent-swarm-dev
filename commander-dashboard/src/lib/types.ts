@@ -21,6 +21,15 @@ export interface Quest {
   assigned_agent?: string;
 }
 
+export interface Repository {
+  id: string;
+  name: string;
+  path: string;
+  tasks_pending: number;
+  status: "ok" | "error";
+  size: number;
+}
+
 export interface DailyBudget {
   max: number;
   spent: number;
@@ -32,6 +41,7 @@ export interface GameState {
   daily_budget: DailyBudget;
   party: Agent[];
   active_quests: Quest[];
+  repositories: Repository[];
   guardrail_log: GuardrailEntry[];
 }
 
