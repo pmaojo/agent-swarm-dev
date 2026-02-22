@@ -5,8 +5,32 @@ class_name HexGrid
 # KayKit Assets
 var _hex_grass_scene = preload("res://addons/kaykit_medieval_hexagon_pack/Assets/gltf/tiles/base/hex_grass.gltf")
 var _cloud_scene = preload("res://addons/kaykit_medieval_hexagon_pack/Assets/gltf/decoration/nature/cloud_big.gltf")
-var _country_building_scene = preload("res://addons/kaykit_medieval_hexagon_pack/Assets/gltf/buildings/blue/building_tower_A_blue.gltf")
-var _agent_token_scene = preload("res://addons/kaykit_medieval_hexagon_pack/Assets/gltf/decoration/props/tent.gltf")
+
+const BUILDING_ASSET_TEMPLATES = {
+	"blue": "res://addons/kaykit_medieval_hexagon_pack/Assets/gltf/buildings/blue/building_castle_blue.gltf",
+	"red": "res://addons/kaykit_medieval_hexagon_pack/Assets/gltf/buildings/red/building_castle_red.gltf",
+	"green": "res://addons/kaykit_medieval_hexagon_pack/Assets/gltf/buildings/green/building_castle_green.gltf",
+	"yellow": "res://addons/kaykit_medieval_hexagon_pack/Assets/gltf/buildings/yellow/building_castle_yellow.gltf",
+	"neutral": "res://addons/kaykit_medieval_hexagon_pack/Assets/gltf/buildings/neutral/building_tower_A_neutral.gltf"
+}
+
+const AGENT_ASSET_TEMPLATES = {
+	"ProductManager": "res://addons/kaykit_character_pack_adventures/Characters/gltf/Mage.glb",
+	"Architect": "res://addons/kaykit_character_pack_adventures/Characters/gltf/Knight.glb",
+	"Coder": "res://addons/kaykit_character_pack_adventures/Characters/gltf/Rogue.glb",
+	"Reviewer": "res://addons/kaykit_character_pack_adventures/Characters/gltf/Barbarian.glb",
+	"Deployer": "res://addons/kaykit_character_pack_adventures/Characters/gltf/Knight.glb",
+	"Analyst": "res://addons/kaykit_character_pack_adventures/Characters/gltf/Mage.glb",
+	"Security": "res://addons/kaykit_character_pack_adventures/Characters/gltf/Rogue_Hooded.glb",
+	"Default": "res://addons/kaykit_character_pack_adventures/Characters/gltf/Barbarian.glb"
+}
+
+const COUNTRY_COLORS = {
+	"The Swarm Motherland": "blue",
+	"The Core Empire": "red",
+	"The Front-End Republic": "green",
+	"The Security Kingdom": "yellow"
+}
 
 # Hex Dimensions
 var hex_size : float = 1.0 
@@ -86,19 +110,29 @@ func _spawn_hex(q: int, r: int):
 func _spawn_building(q: int, r: int, label_text: String):
 	var pos = axial_to_world(q, r)
 	pos.y = 0.5
-	var bldg = _country_building_scene.instantiate()
+	
+	var color = COUNTRY_COLORS.get(label_text, "neutral")
+	var b_path = BUILDING_ASSET_TEMPLATES.get(color, BUILDING_ASSET_TEMPLATES["neutral"])
+	var bldg = load(b_path).instantiate()
+	
 	bldg.position = pos
 	add_child(bldg)
 	spawned_nodes.append(bldg)
 	
-	_add_floating_text(pos + Vector3(0, 2, 0), label_text, Color.AQUA)
+	_add_floating_text(pos + Vector3(0, 2.5, 0), label_text, Color.AQUA)
 
 func _spawn_agent(q: int, r: int, agent_info: Dictionary):
 	var pos = axial_to_world(q, r)
 	pos.y = 0.5
-	var token = _agent_token_scene.instantiate()
+	
+	var agent_class = agent_info.get("class", "Default")
+	var location_name = agent_info.get("location", "")
+	var color = COUNTRY_COLORS.get(location_name, "neutral")
+	
+	var a_path = AGENT_ASSET_TEMPLATES.get(agent_class, AGENT_ASSET_TEMPLATES["Default"])
+	var token = load(a_path).instantiate()
 	token.position = pos
-	token.scale = Vector3(0.5, 0.5, 0.5)
+	token.scale = Vector3(0.6, 0.6, 0.6) # Humanoids look better at 0.6
 	add_child(token)
 	spawned_nodes.append(token)
 	
@@ -106,11 +140,11 @@ func _spawn_agent(q: int, r: int, agent_info: Dictionary):
 	var status = agent_info.get("current_action", "Standby")
 	var display_text = agent_id + "\n[" + status + "]"
 	
-	var color = Color.YELLOW
+	var color_label = Color.YELLOW
 	if status != "Standby":
-		color = Color.GREEN_YELLOW
+		color_label = Color.GREEN_YELLOW
 		
-	_add_floating_text(pos + Vector3(0, 1.2, 0), display_text, color)
+	_add_floating_text(pos + Vector3(0, 1.2, 0), display_text, color_label)
 
 func _add_floating_text(pos: Vector3, text: String, color: Color):
 	var label = Label3D.new()
