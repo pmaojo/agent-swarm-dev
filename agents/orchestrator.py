@@ -383,8 +383,26 @@ class OrchestratorAgent:
         try:
             res = self.llm.get_structured_completion(task, system_prompt)
             subtasks = res.get("subtasks", [])
-            print(f"📋 Decomposition: {json.dumps(subtasks, indent=2)}")
-            return subtasks
+
+            # Validation
+            if not isinstance(subtasks, list):
+                raise ValueError("LLM response 'subtasks' is not a list")
+
+            validated = []
+            for t in subtasks:
+                 if isinstance(t, dict) and "description" in t and "stack" in t:
+                     if t["stack"] in ["python", "rust", "typescript", "javascript"]:
+                         validated.append(t)
+                     else:
+                         print(f"⚠️ Unknown stack '{t.get('stack')}', defaulting to python.")
+                         t["stack"] = "python"
+                         validated.append(t)
+
+            if not validated:
+                raise ValueError("No valid subtasks found in LLM response")
+
+            print(f"📋 Decomposition: {json.dumps(validated, indent=2)}")
+            return validated
         except Exception as e:
             print(f"❌ Decomposition failed: {e}")
             return [{"description": task, "stack": "python"}] # Fallback

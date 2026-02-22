@@ -356,23 +356,35 @@ class AnalystAgent:
         try:
             ttl_content = self.llm.completion(prompt)
 
-            if "@prefix" in ttl_content or "PREFIX" in ttl_content:
-                filename = f"schema_update_{uuid.uuid4()}.ttl"
-                path = os.path.join(os.path.dirname(__file__), '..', 'scenarios', 'suggested_schema', filename)
-                os.makedirs(os.path.dirname(path), exist_ok=True)
-                with open(path, 'w') as f:
-                    f.write(ttl_content)
-                print(f"📝 Proposed Schema Update saved to {path}")
+            # Security: Validate Content Size (Max 10KB)
+            if len(ttl_content.encode('utf-8')) > 10 * 1024:
+                print("❌ Schema update rejected: Content too large (>10KB)")
+                return
 
-                # Mark as consolidated
-                triples = []
-                for eid in execIds:
-                    triples.append({
-                        "subject": eid if isinstance(eid, str) else eid.get('value'),
-                        "predicate": f"{SWARM}isConsolidated",
-                        "object": '"true"'
-                    })
-                self.ingest_triples(triples)
+            # Security: Basic Syntax Check
+            if ("@prefix" not in ttl_content and "PREFIX" not in ttl_content) or "." not in ttl_content:
+                print("❌ Schema update rejected: Invalid Turtle syntax (missing prefix or dot)")
+                return
+
+            filename = f"schema_update_{uuid.uuid4()}.ttl"
+            # Canonical Path Resolution to prevent Traversal
+            base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'scenarios', 'suggested_schema'))
+            os.makedirs(base_dir, exist_ok=True)
+            path = os.path.join(base_dir, filename)
+
+            with open(path, 'w', encoding='utf-8') as f:
+                f.write(ttl_content)
+            print(f"📝 Proposed Schema Update saved to {path}")
+
+            # Mark as consolidated
+            triples = []
+            for eid in execIds:
+                triples.append({
+                    "subject": eid if isinstance(eid, str) else eid.get('value'),
+                    "predicate": f"{SWARM}isConsolidated",
+                    "object": '"true"'
+                })
+            self.ingest_triples(triples)
         except Exception as e:
             print(f"❌ Schema update proposal failed: {e}")
 

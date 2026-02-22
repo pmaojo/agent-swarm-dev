@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Install Rust
-        uses: dtolnay/rust-action@stable
+        uses: dtolnay/rust-action@e79d50a273e99084807469a93077977051375d0b # v1
 
       - name: Clone Synapse
         run: |
@@ -58,7 +58,7 @@ except Exception as e:
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust
-        uses: dtolnay/rust-action@stable
+        uses: dtolnay/rust-action@e79d50a273e99084807469a93077977051375d0b # v1
       - name: Build Apicentric
         run: |
           if [ -d "apicentric_repo" ]; then
@@ -129,7 +129,7 @@ except Exception as e:
 
           # 1. Integrity Tests
           echo "🧪 Running CodeGraph Tests..."
-          python3 -m pytest tests/test_codegraph.py || echo "⚠️ Tests failed (non-blocking for now)"
+          python3 -m pytest tests/test_codegraph.py
 
           # 2. Orchestrator Simulation (Multi-Stack)
           echo "🚀 Running Orchestrator Simulation (Rust Stack)..."
