@@ -11,6 +11,14 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
 echo "📦 Starting Agent Swarm Dev Services..."
 
+# Load .env if present
+if [ -f "$PROJECT_DIR/.env" ]; then
+    echo "📄 Loading environment from $PROJECT_DIR/.env..."
+    set -a
+    source "$PROJECT_DIR/.env"
+    set +a
+fi
+
 # 1. Build Synapse
 echo "🔨 Ensuring Synapse is built..."
 cd "$PROJECT_DIR"
@@ -32,9 +40,9 @@ fi
 # 3. Check for Synapse
 if ! curl -s http://localhost:50051 >/dev/null 2>&1; then
     echo "▶️  Starting Synapse..."
-    # Use local synapse-data
-    export GRAPH_STORAGE_PATH="./synapse-data"
-    export EMBEDDING_PROVIDER="remote"
+    # Use local synapse-data (respect env var)
+    export GRAPH_STORAGE_PATH="${GRAPH_STORAGE_PATH:-./synapse-data}"
+    export EMBEDDING_PROVIDER="${EMBEDDING_PROVIDER:-remote}"
 
     # Run synapse in background
     ./synapse > synapse.log 2>&1 &

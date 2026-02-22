@@ -165,5 +165,19 @@ class KiloShell:
         self.context_parser.close()
 
 if __name__ == "__main__":
+    # Ensure onboarding is available (same directory)
+    try:
+        import onboarding
+        onboarding.check_or_run()
+    except ImportError:
+        # Fallback if running from a different context where import fails
+        # Try to add current dir to path
+        sys.path.append(os.path.dirname(__file__))
+        try:
+            import onboarding
+            onboarding.check_or_run()
+        except ImportError:
+            print("⚠️  Warning: Onboarding module not found. Skipping config check.")
+
     shell = KiloShell()
     shell.start()
