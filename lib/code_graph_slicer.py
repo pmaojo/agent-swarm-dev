@@ -196,9 +196,11 @@ class CodeGraphSlicer:
 
         # Map URI to status
         uri_status = {}
+        target_found = False
         for node in related_nodes:
             if node['uri'] == target_uri:
                 uri_status[node['uri']] = 'FULL'
+                target_found = True
             else:
                 uri_status[node['uri']] = 'SKELETON'
 
@@ -212,10 +214,30 @@ class CodeGraphSlicer:
             status = 'PRUNE' # Default
 
             # Check overlap with related nodes
+            # A symbol might cover a related node (container)
+            # Or be covered by a related node (member)
+
+            # Case 1: Exact Match (It IS the related node)
             for node in related_nodes:
                 if node['start'] == sym['start_line'] and node['end'] == sym['end_line']:
                     status = uri_status.get(node['uri'], 'SKELETON')
                     break
+
+            # Case 2: Containment (If parent is FULL, child is FULL)
+            # Actually, bubble down is safer for FULL.
+            # But here we bubble up SKELETON in step 1b.
+
+            # If no direct match, check if it contains a related node?
+            # Step 1b handles "If child is interesting, parent must be SKELETON".
+
+            # What if parent is related (SKELETON)? Should children be SKELETON or PRUNE?
+            # If Class A is SKELETON, its methods should be SKELETON (signatures visible).
+            # But currently default is PRUNE.
+            # So we need "Bubble Down" logic too?
+            # If Parent is SKELETON -> Children are SKELETON (signatures)
+            # If Parent is FULL -> Children are FULL.
+
+            symbol_status[idx] = status
 
             # Check Safety (NIST)
             # Scan lines of symbol
@@ -226,22 +248,46 @@ class CodeGraphSlicer:
 
             symbol_status[idx] = status
 
-        # 1b. Propagate status up (Bubble Up)
-        # If a child is FULL or SKELETON, parent must be at least SKELETON.
+        # 1b. Propagate status (Bubble Up and Bubble Down)
+
+        # Bubble Up: If child is interesting, parent must be SKELETON (to show container)
         changed = True
         while changed:
             changed = False
             for idx, sym in enumerate(all_symbols):
                 if symbol_status[idx] == 'PRUNE':
-                    # Check if it contains any non-PRUNE symbol
                     for child_idx, child in enumerate(all_symbols):
                         if idx == child_idx: continue
-                        # Check containment: child inside sym
                         if child['start_line'] >= sym['start_line'] and child['end_line'] <= sym['end_line']:
                             if symbol_status[child_idx] != 'PRUNE':
                                 symbol_status[idx] = 'SKELETON'
                                 changed = True
                                 break
+
+        # Bubble Down: If parent is SKELETON, children should be SKELETON (signatures)
+        # Unless explicitly PRUNE? No, usually we want to see members of a related class.
+        # But we only want to see *signatures*.
+        # Wait, if `method` was not in `related_nodes`, it is PRUNE.
+        # But if `Class A` is related (SKELETON), we expect to see `def method(...)` inside.
+        # So we MUST bubble down SKELETON status to children.
+
+        # Sort by size (largest first) to propagate down
+        # Actually just iterate: for each symbol, if SKELETON/FULL, set children.
+
+        # We need to be careful not to overwrite FULL with SKELETON.
+
+        for idx, sym in enumerate(all_symbols):
+            parent_status = symbol_status[idx]
+            if parent_status in ['SKELETON', 'FULL']:
+                target_child_status = 'SKELETON' if parent_status == 'SKELETON' else 'FULL'
+
+                for child_idx, child in enumerate(all_symbols):
+                    if idx == child_idx: continue
+                    if child['start_line'] >= sym['start_line'] and child['end_line'] <= sym['end_line']:
+                        current_child = symbol_status[child_idx]
+                        if current_child == 'PRUNE':
+                             symbol_status[child_idx] = target_child_status
+                        # Don't downgrade FULL to SKELETON
 
         # 2. Iterate lines with stack
         generated = []
@@ -276,6 +322,7 @@ class CodeGraphSlicer:
             for sym in starting_syms:
                 status = symbol_status[sym['idx']]
                 stack.append({
+                    'start': sym['start'],
                     'end': sym['end'],
                     'status': status,
                     'type': sym['type']
