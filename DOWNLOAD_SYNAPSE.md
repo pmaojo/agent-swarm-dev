@@ -16,3 +16,18 @@ cd synapse-engine
 cargo build --release --no-default-features -p synapse-core
 cp target/release/synapse ../agent-swarm-dev/
 ```
+
+## Source provisioning fallback (clone + vendor)
+
+The startup flow now uses `scripts/ensure_synapse_engine.sh` automatically when you run `source scripts/start_all.sh` (via `scripts/setup_synapse.sh`) to:
+
+1. Reuse an existing `synapse-engine/` checkout.
+2. Clone `https://github.com/pmaojo/synapse-engine.git` when missing.
+3. Keep a vendored fallback at `vendor/synapse-engine` after a successful clone.
+4. Restore from the vendored fallback if future clone attempts fail.
+
+You can run it manually:
+
+```bash
+bash scripts/ensure_synapse_engine.sh
+```
