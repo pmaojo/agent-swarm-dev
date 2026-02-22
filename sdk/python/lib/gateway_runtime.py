@@ -23,6 +23,23 @@ from agents.orchestrator import OrchestratorAgent
 
 # Godot Integration
 from lib.godot_bridge.fog import FogService
+from lib.contracts import (
+    ActiveQuest,
+    ControlCommand,
+    ControlCommandAck,
+    EventAck,
+    EventType,
+    GameState,
+    GatewayEvent,
+    GraphData,
+    GraphEdge,
+    GraphNode,
+    PartyMember,
+    PartyStats,
+    QuestStatus,
+    RepositoryState,
+    SystemStatus,
+)
 from lib.godot_bridge.templates import (
     AGENT_UNIT_GD,
     FOG_MANAGER_GD,
@@ -208,15 +225,21 @@ def fetch_game_state() -> Dict[str, Any]:
 
         # 4. Active Quests (Trello)
         active_quests = []
+        status_map = {
+            "REQUIREMENTS": QuestStatus.REQUIREMENTS,
+            "DESIGN": QuestStatus.DESIGN,
+            "TODO": QuestStatus.READY,
+            "IN PROGRESS": QuestStatus.IN_PROGRESS,
+        }
         try:
             for card in orch.bridge.get_cards_in_list("REQUIREMENTS"):
-                active_quests.append({"id": card['id'], "title": card['name'], "stage": "Requirements", "difficulty": "Medium", "rewards": ["XP"]})
+                active_quests.append(ActiveQuest(id=card['id'], title=card['name'], status=status_map["REQUIREMENTS"]))
             for card in orch.bridge.get_cards_in_list("DESIGN"):
-                active_quests.append({"id": card['id'], "title": card['name'], "stage": "Design", "difficulty": "Hard", "rewards": ["Wisdom"]})
+                active_quests.append(ActiveQuest(id=card['id'], title=card['name'], status=status_map["DESIGN"]))
             for card in orch.bridge.get_cards_in_list("TODO"):
-                 active_quests.append({"id": card['id'], "title": card['name'], "stage": "Ready", "difficulty": "Normal", "rewards": ["Gold"]})
+                 active_quests.append(ActiveQuest(id=card['id'], title=card['name'], status=status_map["TODO"]))
             for card in orch.bridge.get_cards_in_list("IN PROGRESS"):
-                 active_quests.append({"id": card['id'], "title": card['name'], "stage": "In Progress", "difficulty": "Hard", "rewards": ["Loot"]})
+                 active_quests.append(ActiveQuest(id=card['id'], title=card['name'], status=status_map["IN PROGRESS"]))
         except Exception: pass
 
         # 5. Fog of War
@@ -227,25 +250,31 @@ def fetch_game_state() -> Dict[str, Any]:
         # For now, default to the current root "." and identify by folder name.
         repositories = []
         try:
-             # Basic implementation: Just one repo for now, can be expanded to query CodeGraph for distinct roots.
-            repositories.append({
-                "id": "repo-root",
-                "name": "Main Citadel",
-                "path": ".",
-                "tasks_pending": pending, # reuse pending task count
-                "status": "error" if failed > 0 else "ok", # show error if failures exist
-                "size": 100 # Mock size
-            })
+            repositories.append(RepositoryState(id="repo-root", name="Main Citadel", swarm=[]))
         except Exception: pass
 
-        return {
-            "system_status": status,
-            "daily_budget": daily_budget,
-            "party": party,
-            "active_quests": active_quests,
-            "fog_map": fog_map,
-            "repositories": repositories # New
-        }
+        normalized_status = status if status in {s.value for s in SystemStatus} else SystemStatus.UNKNOWN.value
+        game_state = GameState(
+            system_status=normalized_status,
+            daily_budget=daily_budget,
+            party=[
+                PartyMember(
+                    id=item["id"],
+                    name=item["name"],
+                    **{"class": item["class"]},
+                    level=item["level"],
+                    stats=PartyStats(**item["stats"]),
+                    current_action=item["current_action"],
+                    location=item["location"],
+                )
+                for item in party
+            ],
+            active_quests=active_quests,
+            fog_map=fog_map,
+            repositories=repositories,
+        )
+
+        return game_state.model_dump(by_alias=True)
 
     except Exception as e:
         print(f"Error fetching game state: {e}")
@@ -257,15 +286,15 @@ def fetch_graph_nodes() -> Dict[str, Any]:
         query = "SELECT ?s ?p ?o WHERE { ?s ?p ?o . } LIMIT 20"
         results = orch.query_graph(query)
 
-        nodes = []
-        edges = []
+        nodes: List[GraphNode] = []
+        edges: List[GraphEdge] = []
         node_ids = set()
 
         def add_node(uri_or_literal, node_type="unknown"):
             n_id = str(uri_or_literal).strip('<>"')
             label = n_id.split('/')[-1] if '/' in n_id else n_id
             if n_id not in node_ids:
-                nodes.append({"data": { "id": n_id, "label": label, "type": node_type }})
+                nodes.append(GraphNode(id=n_id, label=label, type=node_type))
                 node_ids.add(n_id)
             return n_id
 
@@ -277,12 +306,12 @@ def fetch_graph_nodes() -> Dict[str, Any]:
                 s_id = add_node(s, "subject")
                 o_id = add_node(o, "object")
                 p_label = str(p).strip('<>').split('/')[-1].split('#')[-1]
-                edges.append({"data": { "source": s_id, "target": o_id, "label": p_label }})
+                edges.append(GraphEdge(source=s_id, target=o_id, label=p_label))
 
-        return {"elements": {"nodes": nodes, "edges": edges}}
+        return GraphData(nodes=nodes, edges=edges).model_dump(by_alias=True)
     except Exception as e:
         print(f"Error fetching graph nodes: {e}")
-        return {"elements": {"nodes": [], "edges": []}}
+        return GraphData().model_dump(by_alias=True)
 
 def fetch_codegraph() -> Dict[str, Any]:
     """Fetch CodeGraph for visualization."""
@@ -374,6 +403,18 @@ async def get_game_state(): return await asyncio.to_thread(fetch_game_state)
 @app.get("/api/v1/graph-nodes")
 async def get_graph_nodes(): return await asyncio.to_thread(fetch_graph_nodes)
 
+
+@app.post("/api/v1/control/commands")
+async def post_control_command(command: ControlCommand):
+    await manager.broadcast({"type": "CONTROL_COMMAND", "payload": command.model_dump()})
+    return ControlCommandAck(command=command).model_dump()
+
+
+@app.post("/api/v1/events")
+async def post_event(event: GatewayEvent):
+    await manager.broadcast({"type": event.type, "payload": event.model_dump()})
+    return EventAck(event=event).model_dump()
+
 # --- Godot Script Endpoints ---
 @app.get("/api/v1/godot/scripts/agent")
 async def get_agent_script(): return {"script": AGENT_UNIT_GD}
@@ -402,12 +443,10 @@ async def assign_mission(mission: MissionAssignment):
     Broadcasts the event to Godot.
     """
     try:
-        payload = {
-            "type": "mission_assigned",
-            "payload": mission.dict()
-        }
+        command = ControlCommand(command="ASSIGN_MISSION", agent_id=mission.agent_id, repo_id=mission.repo_id, task=mission.task)
+        payload = {"type": EventType.MISSION_ASSIGNED, "payload": command.model_dump()}
         await manager.broadcast(payload)
-        return {"status": "assigned", "mission": mission}
+        return ControlCommandAck(command=command).model_dump()
     except Exception as e:
         print(f"Error assigning mission: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -478,12 +517,16 @@ async def receive_hardening_event(event: HardeningEvent):
     Receives hardening events from agents/LLM and broadcasts them to Godot.
     """
     try:
-        payload = {
-            "type": "HARDENING_EVENT",
-            "payload": event.dict()
-        }
+        gateway_event = GatewayEvent(
+            type=EventType.HARDENING_EVENT,
+            message=event.message,
+            details=event.details,
+            severity=event.severity,
+            timestamp=event.timestamp,
+        )
+        payload = {"type": gateway_event.type, "payload": gateway_event.model_dump()}
         await manager.broadcast(payload)
-        return {"status": "broadcasted", "event": event}
+        return EventAck(event=gateway_event).model_dump()
     except Exception as e:
         print(f"Error broadcasting hardening event: {e}")
         raise HTTPException(status_code=500, detail=str(e))
