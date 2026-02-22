@@ -1,6 +1,6 @@
 [submodule "synapse-engine"]
 	path = synapse-engine
-	url = https://github.com/pmaojo/synapse-engine
+	url = https://github.com/synapse-engine/synapse.git
 
 [submodule "apicentric_repo"]
 	path = apicentric_repo
