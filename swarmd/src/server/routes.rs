@@ -58,22 +58,34 @@ pub async fn get_game_state(State(state): State<AppState>) -> Json<Value> {
     // 3. Fetch Tasks/Quests from Trello Ingestion
     let tasks_query = r#"
         PREFIX swarm: <http://swarm.os/ontology/>
-        SELECT ?id ?state WHERE {
+        SELECT ?id ?state ?title WHERE {
             ?id a swarm:Task .
             ?id swarm:internalState ?state .
+            OPTIONAL { ?id swarm:title ?title }
         }
     "#;
     
     let mut active_quests = serde_json::json!([]);
     if let Ok(res_json) = state.synapse.query(tasks_query).await {
+        info!("Task Query Result: {}", res_json);
         if let Ok(parsed) = serde_json::from_str::<Vec<serde_json::Value>>(&res_json) {
             let mut quests = Vec::new();
             for item in parsed {
-                if let (Some(id), Some(state)) = (item.get("id"), item.get("state")) {
+                let id = item.get("id").or_else(|| item.get("?id"));
+                let state = item.get("state").or_else(|| item.get("?state"));
+                
+                if let (Some(id_val), Some(state_val)) = (id, state) {
+                    let id_str = id_val.as_str().unwrap_or("");
+                    let title_val = item.get("title").or_else(|| item.get("?title"));
+                    let title_str = title_val
+                        .and_then(|t| t.as_str())
+                        .map(|t| t.to_string())
+                        .unwrap_or_else(|| id_str.split('/').last().unwrap_or("Task").replace('-', " "));
+
                     quests.push(serde_json::json!({
-                        "id": id.as_str().unwrap_or(""),
-                        "status": state.as_str().unwrap_or("UNKNOWN"),
-                        "title": id.as_str().unwrap_or("").split('/').last().unwrap_or("Task")
+                        "id": id_str,
+                        "status": state_val.as_str().unwrap_or("UNKNOWN"),
+                        "title": title_str
                     }));
                 }
             }

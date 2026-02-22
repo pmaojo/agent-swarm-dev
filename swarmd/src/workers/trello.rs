@@ -77,7 +77,8 @@ async fn check_list_cards(
                     let subject = format!("http://swarm.os/trello/card/{}", card_id);
                     let _ = synapse.ingest(vec![
                         (&subject, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type", "http://swarm.os/ontology/Task"),
-                        (&subject, "http://swarm.os/ontology/internalState", &format!("\"{}\"", list_name))
+                        (&subject, "http://swarm.os/ontology/internalState", &format!("\"{}\"", list_name)),
+                        (&subject, "http://swarm.os/ontology/title", &format!("\"{}\"", card_name))
                     ]).await;
 
                     processed_cards.insert(state_key);
