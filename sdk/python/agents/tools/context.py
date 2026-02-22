@@ -8,32 +8,27 @@ import sys
 import grpc
 import json
 from typing import Dict, List, Any, Tuple
+# --- Synapse/Proto Imports ---
+SDK_PYTHON_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if SDK_PYTHON_PATH not in sys.path:
+    sys.path.insert(0, SDK_PYTHON_PATH)
+    sys.path.insert(0, os.path.join(SDK_PYTHON_PATH, "lib"))
+    sys.path.insert(0, os.path.join(SDK_PYTHON_PATH, "agents"))
 
-# Import Tools
-try:
-    from tools.files import read_file
-except ImportError:
-    from agents.tools.files import read_file
-
-# Import CodeGraph Slicer
+from tools.files import read_file
 try:
     from lib.code_graph_slicer import CodeGraphSlicer
 except ImportError:
     CodeGraphSlicer = None
 
-# Import Synapse gRPC
 try:
-    from synapse.infrastructure.web import semantic_engine_pb2, semantic_engine_pb2_grpc
+    from synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
 except ImportError:
     try:
-        from agents.proto import semantic_engine_pb2, semantic_engine_pb2_grpc
+        from agents.synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
     except ImportError:
-        # Fallback for some environments
-        try:
-            from synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
-        except ImportError:
-            semantic_engine_pb2 = None
-            semantic_engine_pb2_grpc = None
+        semantic_engine_pb2 = None
+        semantic_engine_pb2_grpc = None
 
 # Namespaces
 SWARM = "http://swarm.os/ontology/"

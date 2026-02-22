@@ -10,25 +10,19 @@ import requests
 import json
 from typing import Dict, Any, Optional
 
-# --- Import Proto ---
-current_dir = os.path.dirname(os.path.abspath(__file__))
-# Attempt to find proto directory relative to this file
-# agents/tools/ -> agents/proto
-proto_dir = os.path.join(current_dir, '..', 'proto')
-if proto_dir not in sys.path:
-    sys.path.insert(0, proto_dir)
-
-# Also try root level proto
-root_proto = os.path.join(current_dir, '..', '..', 'proto')
-if root_proto not in sys.path:
-    sys.path.insert(0, root_proto)
+# --- Synapse/Proto Imports ---
+SDK_PYTHON_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if SDK_PYTHON_PATH not in sys.path:
+    sys.path.insert(0, SDK_PYTHON_PATH)
+    # Ensure sub-modules are discoverable
+    sys.path.insert(0, os.path.join(SDK_PYTHON_PATH, "lib"))
+    sys.path.insert(0, os.path.join(SDK_PYTHON_PATH, "agents"))
 
 try:
-    import semantic_engine_pb2
-    import semantic_engine_pb2_grpc
+    from synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
 except ImportError:
     try:
-        from agents.proto import semantic_engine_pb2, semantic_engine_pb2_grpc
+        from agents.synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
     except ImportError:
         semantic_engine_pb2 = None
         semantic_engine_pb2_grpc = None

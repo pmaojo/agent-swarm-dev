@@ -9,18 +9,21 @@ import grpc
 import json
 import time
 
-# Import Synapse gRPC
+# --- Synapse/Proto Imports ---
+SDK_PYTHON_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if SDK_PYTHON_PATH not in sys.path:
+    sys.path.insert(0, SDK_PYTHON_PATH)
+    sys.path.insert(0, os.path.join(SDK_PYTHON_PATH, "lib"))
+    sys.path.insert(0, os.path.join(SDK_PYTHON_PATH, "agents"))
+
 try:
-    from synapse.infrastructure.web import semantic_engine_pb2, semantic_engine_pb2_grpc
+    from synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
 except ImportError:
     try:
-        from agents.proto import semantic_engine_pb2, semantic_engine_pb2_grpc
+        from agents.synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
     except ImportError:
-        try:
-            from synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
-        except ImportError:
-            semantic_engine_pb2 = None
-            semantic_engine_pb2_grpc = None
+        semantic_engine_pb2 = None
+        semantic_engine_pb2_grpc = None
 
 # Namespaces
 SWARM = "http://swarm.os/ontology/"
