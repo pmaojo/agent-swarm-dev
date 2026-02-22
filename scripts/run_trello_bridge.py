@@ -18,6 +18,7 @@ from trello_bridge import TrelloBridge
 from product_manager import ProductManagerAgent
 from architect import ArchitectAgent
 from orchestrator import OrchestratorAgent
+from lib.code_graph_indexer import CodeGraphIndexer
 
 # Configure Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -25,6 +26,14 @@ logger = logging.getLogger("SwarmController")
 
 def main():
     logger.info("🤖 Starting Swarm Trello Controller...")
+
+    # 0. Initialize CodeGraph (Index Repository)
+    logger.info("🔍 Initializing CodeGraph Indexing...")
+    try:
+        indexer = CodeGraphIndexer()
+        indexer.index_repository()
+    except Exception as e:
+        logger.error(f"❌ CodeGraph Indexing failed: {e}")
 
     # Initialize Bridge (Shared Instance? Or let each agent have one?)
     # Agents currently instantiate their own bridge.

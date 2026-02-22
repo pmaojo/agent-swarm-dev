@@ -15,6 +15,12 @@ try:
 except ImportError:
     from agents.tools.files import read_file
 
+# Import CodeGraph Slicer
+try:
+    from lib.code_graph_slicer import CodeGraphSlicer
+except ImportError:
+    CodeGraphSlicer = None
+
 # Import Synapse gRPC
 try:
     from synapse.infrastructure.web import semantic_engine_pb2, semantic_engine_pb2_grpc
@@ -39,6 +45,7 @@ class ContextParser:
         self.grpc_port = int(os.getenv("SYNAPSE_GRPC_PORT", "50051"))
         self.channel = None
         self.stub = None
+        self.slicer = CodeGraphSlicer() if CodeGraphSlicer else None
         self.connect()
 
     def connect(self):
@@ -173,28 +180,71 @@ class ContextParser:
 
     def expand_context(self, text: str) -> str:
         """
-        Parses @file:path and injects content + Synapse knowledge.
-        TODO: Implement @symbol:name parsing.
+        Parses @file:path and @symbol:name, injecting content + Synapse knowledge.
+        Uses CodeGraphSlicer for @symbol (Skeleton View).
         """
-        # Regex for @file:path
-        file_pattern = r'@file:([\w\./\-_]+)'
-
-        matches = re.findall(file_pattern, text)
-        if not matches:
-            return text
-
         expanded_text = text + "\n\n--- Context ---\n"
+        has_expansions = False
 
-        for filename in matches:
+        # 1. Handle @symbol:name (Surgical Slicing)
+        symbol_pattern = r'@symbol:([\w\.]+)'
+        symbol_matches = re.findall(symbol_pattern, text)
+
+        for symbol_name in symbol_matches:
+            has_expansions = True
+            if self.slicer:
+                # Resolve symbol URI
+                # Heuristic: Find symbol URI ending with symbol_name
+                # We need a SPARQL query to find it.
+                uri = self._resolve_symbol_uri(symbol_name)
+                if uri:
+                    result = self.slicer.get_pruned_context(uri)
+                    context_code = result.get("context", "")
+                    savings = result.get("savings_percent", 0.0)
+
+                    expanded_text += f"\n### CodeGraph Slice: {symbol_name} (Savings: {savings:.1f}%)\n{context_code}\n"
+                else:
+                    expanded_text += f"\n[Warning] Symbol '{symbol_name}' not found in CodeGraph.\n"
+            else:
+                 expanded_text += f"\n[Warning] CodeGraph Slicer not available for '{symbol_name}'.\n"
+
+        # 2. Handle @file:path (Full Content)
+        file_pattern = r'@file:([\w\./\-_]+)'
+        file_matches = re.findall(file_pattern, text)
+
+        for filename in file_matches:
+            has_expansions = True
             # 1. Read File Content
             content = read_file(filename)
 
-            # 2. Fetch Synapse Knowledge (passing full text context for hybrid search)
+            # 2. Fetch Synapse Knowledge
             knowledge = self._get_file_knowledge(filename, text)
 
             expanded_text += f"\nFile: {filename}\n```\n{content}\n```\n{knowledge}\n"
 
-        return expanded_text
+        return expanded_text if has_expansions else text
+
+    def _resolve_symbol_uri(self, symbol_name: str) -> str:
+        """Finds a symbol URI by name suffix."""
+        if not self.stub:
+            return ""
+
+        # Try exact match on qualified name suffix
+        # URI format: .../symbol/{path}#{qname}
+        # Regex filter might be slow, but for now ok.
+        query = f"""
+        PREFIX swarm: <{SWARM}>
+        SELECT ?s WHERE {{
+            ?s a <http://swarm.os/ontology/codegraph/CodeNode> .
+            FILTER(STRENDS(STR(?s), "#{symbol_name}"))
+        }}
+        LIMIT 1
+        """
+
+        results = self._query_synapse(query)
+        if results:
+            return results[0].get("s", {}).get("value", "")
+        return ""
 
 if __name__ == "__main__":
     # Test
