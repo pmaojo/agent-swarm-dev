@@ -181,7 +181,8 @@ class ReviewerAgent:
                 "severity": "CRITICAL" if event_type == "CONTRACT_FAILURE" else "WARNING",
                 "details": details
             }, timeout=2)
-        except: pass
+        except Exception:
+            pass
 
     def run_contract_tests(self, context: Dict) -> Dict[str, Any]:
         """
@@ -240,6 +241,9 @@ class ReviewerAgent:
         except Exception as e:
              print(f"❌ Test execution error: {e}")
              return {"status": "error", "error": str(e)}
+        finally:
+            # Ensure simulator is cleaned up
+            self.sandbox_tool.stop_simulator()
 
     def get_files_to_review(self, context: Dict) -> List[str]:
         """Extract file paths from previous Coder output in history."""

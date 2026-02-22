@@ -16,3 +16,9 @@ else
     cargo build --release --features mcp
     echo "✅ Apicentric build complete."
 fi
+
+# Create symlink
+echo "🔗 Linking binary to lib/bin/apicentric..."
+mkdir -p ../lib/bin
+ln -sf "$(pwd)/target/release/apicentric" "../lib/bin/apicentric"
+echo "✅ Symlink created."

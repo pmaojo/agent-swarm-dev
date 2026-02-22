@@ -2,7 +2,7 @@ import asyncio
 import json
 import uuid
 import time
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Literal
 from contextlib import asynccontextmanager
 from datetime import datetime
 
@@ -397,7 +397,7 @@ class HardeningEvent(BaseModel):
     type: str # "ALERT", "STATIC_ANALYSIS", "CONTRACT_FAILURE"
     message: str
     details: Dict[str, Any] = {}
-    severity: str = "INFO" # "INFO", "WARNING", "CRITICAL"
+    severity: Literal["INFO", "WARNING", "CRITICAL"] = "INFO"
     timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
 
 @app.post("/api/v1/events/hardening")

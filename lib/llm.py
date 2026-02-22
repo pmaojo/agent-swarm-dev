@@ -155,7 +155,8 @@ class LLMService:
                 "severity": "WARNING",
                 "details": {"source": "LLMService"}
             }, timeout=2)
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Failed to broadcast hardening event: {e}")
             pass # Fail silently if gateway is down
 
         # 2. Telegram API
