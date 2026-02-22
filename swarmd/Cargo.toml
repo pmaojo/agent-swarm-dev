@@ -1,0 +1,24 @@
+[package]
+name = "swarmd"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tonic.workspace = true
+prost.workspace = true
+
+axum = "0.7"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+dotenvy = "0.15"
+chrono = { version = "0.4.43", features = ["serde"] }
+
+[build-dependencies]
+tonic-build = "0.11"

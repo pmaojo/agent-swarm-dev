@@ -51,17 +51,21 @@ else
     echo "✅ Synapse already running"
 fi
 
-# 4. Start Monitor Service (Heart of the System)
-if ! pgrep -f "agents/monitor_service.py" > /dev/null; then
-    echo "▶️  Starting Monitor Service..."
-    # Ensure PYTHONPATH includes agents/proto if needed, but script handles it.
-    nohup python3 agents/monitor_service.py > monitor.log 2>&1 &
+# 4. Start Unified Swarmd Orchestrator
+if ! pgrep -f "swarmd" > /dev/null; then
+    echo "▶️  Starting Swarm Orchestrator (swarmd)..."
+    # Ensure swarmd is built
+    if [ ! -f "$PROJECT_DIR/target/release/swarmd" ]; then
+        echo "🔨 Building swarmd..."
+        cargo build --release -p swarmd > /dev/null 2>&1
+    fi
+    nohup ./target/release/swarmd > swarmd.log 2>&1 &
     sleep 2
 else
-    echo "✅ Monitor Service already running"
+    echo "✅ Swarm Orchestrator already running"
 fi
 
 echo "🎉 All services ready!"
 echo "   - FastEmbed: http://localhost:11434"
 echo "   - Synapse: localhost:50051 (Data: ./synapse-data)"
-echo "   - Monitor: Active (Logs: monitor.log)"
+echo "   - Swarmd (Gateway/Web/Bots): Active (Logs: swarmd.log)"
