@@ -14,7 +14,7 @@ echo "🤖 Running agent: $AGENT_NAME"
 echo "📋 Task: $TASK"
 
 SCRIPT_DIR=$(dirname "$0")
-AGENTS_DIR="$SCRIPT_DIR/../agents"
+AGENTS_DIR="$SCRIPT_DIR/../sdk/python/agents"
 
 case $AGENT_NAME in
   orchestrator)

@@ -27,8 +27,8 @@ pub async fn discover_repositories(synapse: &SynapseClient, _project_root: &str)
 
     // Associate agents with the Motherland by default for now
     let agents = vec![
-        ("agent-productmanager", "ProductManager", "Bard"),
-        ("agent-coder", "Coder", "Warrior"),
+        ("ProductManager", "ProductManager", "Bard"),
+        ("Coder", "Coder", "Warrior"),
     ];
     for (agent_id, name, class) in agents {
         let agent_subject = format!("http://swarm.os/agent/{}", agent_id);
