@@ -82,3 +82,23 @@ def test_falls_back_to_vendor_when_clone_fails(tmp_path: Path) -> None:
     assert result.returncode == 0
     assert "vendored fallback" in result.stdout
     assert (tmp_path / "synapse-engine" / "Cargo.toml").read_text().find("fallback") != -1
+
+
+def test_existing_checkout_refreshes_vendor_snapshot(tmp_path: Path) -> None:
+    synapse_dir = tmp_path / "synapse-engine"
+    synapse_dir.mkdir()
+    (synapse_dir / "Cargo.toml").write_text("[package]\nname='fresh'\n")
+
+    vendor_dir = tmp_path / "vendor" / "synapse-engine"
+    vendor_dir.mkdir(parents=True)
+    (vendor_dir / "Cargo.toml").write_text("[package]\nname='stale'\n")
+
+    mock_bin = tmp_path / "bin"
+    mock_bin.mkdir()
+    _write_mock_git(mock_bin, "failure")
+
+    result = _run_script(tmp_path, f"{mock_bin}:{os.environ['PATH']}")
+
+    assert result.returncode == 0
+    assert "Updating vendor fallback" in result.stdout
+    assert (vendor_dir / "Cargo.toml").read_text().find("fresh") != -1

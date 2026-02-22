@@ -38,6 +38,8 @@ restore_from_vendor() {
 
 if has_synapse_checkout "$SYNAPSE_DIR"; then
     echo "✅ synapse-engine checkout found at $SYNAPSE_DIR"
+    echo "🔄 Updating vendor fallback at $VENDOR_DIR"
+    sync_to_vendor "$SYNAPSE_DIR" "$VENDOR_DIR"
     exit 0
 fi
 
