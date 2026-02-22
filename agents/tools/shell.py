@@ -186,12 +186,16 @@ def is_safe(command: str) -> bool:
     # Better to default to restricted.
     return False
 
-def run_shell_raw(command: str) -> Dict[str, Any]:
+def run_shell_raw(command: str, env: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
     """Raw execution without guardrails (for approved commands)."""
     try:
         # Use shell=True for complex commands (pipes, etc)
         # Security Note: Only call this for SAFE or APPROVED commands.
-        result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=120)
+        run_env = os.environ.copy()
+        if env:
+            run_env.update(env)
+
+        result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=120, env=run_env)
         return {
             "status": "success" if result.returncode == 0 else "failure",
             "stdout": result.stdout,
@@ -201,7 +205,7 @@ def run_shell_raw(command: str) -> Dict[str, Any]:
     except Exception as e:
         return {"status": "failure", "error": str(e)}
 
-def execute_command(command: str, reason: str = "Task execution") -> Dict[str, Any]:
+def execute_command(command: str, reason: str = "Task execution", env: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
     """
     Execute a shell command with guardrails.
     Returns a dict with 'status' (success, failure, pending_approval) and 'output' or 'uuid'.
@@ -217,7 +221,7 @@ def execute_command(command: str, reason: str = "Task execution") -> Dict[str, A
 
     if is_safe(command):
         print(f"✅ Executing Safe Command: {command}")
-        return run_shell_raw(command)
+        return run_shell_raw(command, env=env)
     else:
         print(f"🛑 Restricted Command Detected: {command}")
         cmd_uuid = f"{NIST}request/{uuid.uuid4()}"
