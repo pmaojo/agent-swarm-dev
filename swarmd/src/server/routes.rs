@@ -55,7 +55,33 @@ pub async fn get_game_state(State(state): State<AppState>) -> Json<Value> {
         "unit": "USD"
     });
 
-    // 3. Mock Party / Pending structure (for now, equivalent to python basic response)
+    // 3. Fetch Tasks/Quests from Trello Ingestion
+    let tasks_query = r#"
+        PREFIX swarm: <http://swarm.os/ontology/>
+        SELECT ?id ?state WHERE {
+            ?id a swarm:Task .
+            ?id swarm:internalState ?state .
+        }
+    "#;
+    
+    let mut active_quests = serde_json::json!([]);
+    if let Ok(res_json) = state.synapse.query(tasks_query).await {
+        if let Ok(parsed) = serde_json::from_str::<Vec<serde_json::Value>>(&res_json) {
+            let mut quests = Vec::new();
+            for item in parsed {
+                if let (Some(id), Some(state)) = (item.get("id"), item.get("state")) {
+                    quests.push(serde_json::json!({
+                        "id": id.as_str().unwrap_or(""),
+                        "status": state.as_str().unwrap_or("UNKNOWN"),
+                        "title": id.as_str().unwrap_or("").split('/').last().unwrap_or("Task")
+                    }));
+                }
+            }
+            active_quests = serde_json::json!(quests);
+        }
+    }
+
+    // 4. Mock Party structure
     let party = serde_json::json!([
         {
             "id": "agent-productmanager",
@@ -81,7 +107,7 @@ pub async fn get_game_state(State(state): State<AppState>) -> Json<Value> {
         "system_status": current_status,
         "daily_budget": daily_budget,
         "party": party,
-        "active_quests": [],
+        "active_quests": active_quests,
         "fog_map": {},
         "repositories": []
     });
