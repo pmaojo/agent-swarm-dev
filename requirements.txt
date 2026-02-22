@@ -17,3 +17,6 @@ tree-sitter-python
 tree-sitter-rust
 tree-sitter-javascript
 tree-sitter-cpp
+python-telegram-bot
+fastapi
+uvicorn

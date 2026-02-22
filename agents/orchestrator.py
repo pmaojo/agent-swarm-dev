@@ -10,7 +10,6 @@ import json
 import grpc
 import sys
 import yaml
-import time
 import uuid
 import asyncio
 from datetime import datetime
@@ -30,6 +29,7 @@ except ImportError:
     except ImportError:
         from proto import semantic_engine_pb2, semantic_engine_pb2_grpc
 
+from llm import LLMService
 from coder import CoderAgent
 from reviewer import ReviewerAgent
 from deployer import DeployerAgent
@@ -58,6 +58,7 @@ class OrchestratorAgent:
         self.bridge = TrelloBridge()
         self.git = GitService()
         self.cloud_factory = CloudGatewayFactory()
+        self.llm = LLMService()
 
         # Connect to Synapse
         self.connect()
@@ -370,17 +371,76 @@ class OrchestratorAgent:
 
         return {"final_status": "success", "history": history}
 
+    def decompose_task(self, task: str) -> List[Dict[str, str]]:
+        """Decompose a complex task into stack-specific subtasks."""
+        print("🧩 Decomposing task via LLM...")
+        system_prompt = """
+        You are a Technical Project Manager.
+        Decompose the user's request into distinct subtasks, each assigned to a specific tech stack.
+        Supported stacks: 'python', 'rust', 'typescript', 'javascript'.
+        Return a JSON object: {"subtasks": [{"description": "...", "stack": "..."}]}
+        """
+        try:
+            res = self.llm.get_structured_completion(task, system_prompt)
+            subtasks = res.get("subtasks", [])
+
+            # Validation
+            if not isinstance(subtasks, list):
+                raise ValueError("LLM response 'subtasks' is not a list")
+
+            validated = []
+            for t in subtasks:
+                 if isinstance(t, dict) and "description" in t and "stack" in t:
+                     if t["stack"] in ["python", "rust", "typescript", "javascript"]:
+                         validated.append(t)
+                     else:
+                         print(f"⚠️ Unknown stack '{t.get('stack')}', defaulting to python.")
+                         t["stack"] = "python"
+                         validated.append(t)
+
+            if not validated:
+                raise ValueError("No valid subtasks found in LLM response")
+
+            print(f"📋 Decomposition: {json.dumps(validated, indent=2)}")
+            return validated
+        except Exception as e:
+            print(f"❌ Decomposition failed: {e}")
+            return [{"description": task, "stack": "python"}] # Fallback
+
     async def execute_parallel(self, task: str, stack: str, session_id: str):
         print("⚔️  Mode: WAR ROOM (Parallel). Launching concurrent swarm.")
-        subtasks = [f"{task} (Part A)", f"{task} (Part B)"] # Mock decomposition
 
-        async def worker(subtask):
-            branch = await asyncio.to_thread(self.git.create_branch, str(uuid.uuid4())[:8], "Coder")
-            print(f"⚡ Worker started on {branch}: {subtask}")
-            # Run Coder Directly (Simplified)
-            res = await asyncio.to_thread(self.agents["Coder"].run, subtask)
-            print(f"✅ Worker finished on {branch}")
-            return res
+        # 1. Decompose
+        subtasks = await asyncio.to_thread(self.decompose_task, task)
+        if not subtasks:
+            subtasks = [{"description": task, "stack": stack}]
+
+        # 2. Parallel Execution
+        async def worker(subtask_def):
+            desc = subtask_def.get("description", task)
+            stk = subtask_def.get("stack", stack)
+
+            # Get Specialized Agent (Thread-safe wrapper)
+            agent_name = await asyncio.to_thread(self.get_specialized_agent, stk)
+
+            # Create Branch
+            branch_name = f"feat/{stk}/{str(uuid.uuid4())[:6]}"
+            await asyncio.to_thread(self.git.create_branch, branch_name, agent_name)
+
+            print(f"⚡ Worker {agent_name} started on {branch_name}: {desc}")
+
+            # Run Agent
+            # Note: run_agent handles compliance, lessons, etc.
+            res = await asyncio.to_thread(
+                self.run_agent,
+                agent_name,
+                desc,
+                {"history": []}, # context
+                "FeatureImplementationTask", # task_type
+                stk # stack
+            )
+            print(f"✅ Worker {agent_name} finished on {branch_name}")
+            return {"stack": stk, "agent": agent_name, "result": res}
 
         results = await asyncio.gather(*(worker(t) for t in subtasks))
         return {"final_status": "success", "results": results}
