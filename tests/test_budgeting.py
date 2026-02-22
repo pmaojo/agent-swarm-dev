@@ -3,16 +3,15 @@ from unittest.mock import MagicMock
 import os
 import sys
 import json
+import importlib
 
 # Add lib to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'lib'))
-# Do NOT add agents/proto to prevent real import during mock setup
 
-# Mock modules
-sys.modules['semantic_engine_pb2'] = MagicMock()
-sys.modules['semantic_engine_pb2_grpc'] = MagicMock()
-
-# Now import LLMService (which will use mocked modules)
+# Ensure we import fresh LLMService
+if 'llm' in sys.modules:
+    del sys.modules['llm']
+import llm
 from llm import LLMService, BudgetExceededException
 
 class TestBudgeting(unittest.TestCase):
@@ -20,9 +19,12 @@ class TestBudgeting(unittest.TestCase):
         # Set low budget and dummy API key
         os.environ["MAX_DAILY_BUDGET"] = "0.0001"
         os.environ["OPENAI_API_KEY"] = "sk-dummy"
+        os.environ["MOCK_LLM"] = "false" # Force Real Mode for Logic Testing
+
+        # Reload to pick up env vars if needed (though LLMService reads in __init__)
         self.llm = LLMService()
 
-        # Manually ensure stub is mocked (LLMService creates it using mocked grpc)
+        # Manually ensure stub is mocked
         self.llm.stub = MagicMock()
         self.llm.channel = MagicMock()
 
@@ -47,7 +49,7 @@ class TestBudgeting(unittest.TestCase):
         def side_effect(*args, **kwargs):
             side_effect.counter += 1
             # First 2 queries (check_budget, log_spend of first call) return 0
-            if side_effect.counter <= 2:
+            if getattr(side_effect, 'counter', 0) <= 2:
                 return resp_zero
             else:
                 return resp_high

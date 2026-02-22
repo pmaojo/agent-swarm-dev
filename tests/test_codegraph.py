@@ -4,6 +4,8 @@ import sys
 import json
 import grpc
 import time
+import importlib
+from unittest.mock import MagicMock
 
 # Add agents/proto to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'agents', 'proto'))
@@ -20,6 +22,23 @@ except ImportError:
 
 class TestCodeGraph(unittest.TestCase):
     def setUp(self):
+        # Ensure we have real modules, not mocks from other tests
+        if 'semantic_engine_pb2' in sys.modules and isinstance(sys.modules['semantic_engine_pb2'], MagicMock):
+            del sys.modules['semantic_engine_pb2']
+        if 'semantic_engine_pb2_grpc' in sys.modules and isinstance(sys.modules['semantic_engine_pb2_grpc'], MagicMock):
+            del sys.modules['semantic_engine_pb2_grpc']
+
+        # Reload to get real ones
+        global semantic_engine_pb2, semantic_engine_pb2_grpc
+        try:
+            if 'semantic_engine_pb2' in sys.modules: importlib.reload(sys.modules['semantic_engine_pb2'])
+            else: import semantic_engine_pb2
+
+            if 'semantic_engine_pb2_grpc' in sys.modules: importlib.reload(sys.modules['semantic_engine_pb2_grpc'])
+            else: import semantic_engine_pb2_grpc
+        except ImportError:
+            pass
+
         if not semantic_engine_pb2:
             self.skipTest("Proto not found")
 

@@ -8,27 +8,23 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'lib')))
 
-# Mock modules before import
-sys.modules['agents.proto'] = MagicMock()
-sys.modules['proto'] = MagicMock()
-sys.modules['synapse.infrastructure.web'] = MagicMock()
-sys.modules['semantic_engine_pb2'] = MagicMock()
-sys.modules['semantic_engine_pb2_grpc'] = MagicMock()
-sys.modules['grpc'] = MagicMock()
-sys.modules['requests'] = MagicMock() # Mock requests
-sys.modules['llm'] = MagicMock() # Mock llm module
-
 from agents.coder import CoderAgent
 
 class TestToolCalling(unittest.TestCase):
     def setUp(self):
-        # Patch grpc constructor or just rely on mocked module
-        # Since we mocked grpc, CoderAgent constructor calling grpc.insecure_channel will use mock
+        # Instantiate real agent (dependencies might fail connection but that's handled)
         self.agent = CoderAgent()
+
+        # Mock Stub
         self.agent.stub = MagicMock()
-        # Mock LLM instance created in constructor
-        # self.agent.llm is a mock object from sys.modules['llm'].LLMService()
+
+        # Mock LLM
         self.agent.llm = MagicMock()
+
+        # Mock Browser and ContextParser to avoid external calls
+        self.agent.browser = MagicMock()
+        self.agent.context_parser = MagicMock()
+        self.agent.context_parser.expand_context.side_effect = lambda x: x
 
     def test_tool_execution(self):
         # 1. Tool Call Message

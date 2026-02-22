@@ -16,6 +16,11 @@ from typing import List, Dict, Any, Optional
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'lib'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'agents'))
 
+# Add path to proto for generated code imports
+proto_dir = os.path.join(os.path.dirname(__file__), 'proto')
+if proto_dir not in sys.path:
+    sys.path.insert(0, proto_dir)
+
 try:
     from synapse.infrastructure.web import semantic_engine_pb2, semantic_engine_pb2_grpc
 except ImportError:
@@ -46,7 +51,7 @@ class AnalystAgent:
         self.connect()
         self.config = self.load_config()
         self.threshold = self.config.get('memory_settings', {}).get('consolidation_threshold', 5)
-        self.mock_llm = os.getenv("MOCK_LLM", "true").lower() == "true"
+        self.mock_llm = os.getenv("MOCK_LLM", "false").lower() == "true"
         self.sanity_suite = self.load_sanity_suite()
 
     def connect(self):

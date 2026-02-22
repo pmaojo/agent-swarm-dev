@@ -133,7 +133,16 @@ class CommandGuard:
             request = semantic_engine_pb2.SparqlRequest(query=query, namespace="default")
             response = self.stub.QuerySparql(request)
             result_json = json.loads(response.results_json)
-            is_halted = result_json.get("boolean", False)
+
+            # Handle potential list response (if Synapse treats ASK oddly or returns empty set)
+            if isinstance(result_json, dict):
+                is_halted = result_json.get("boolean", False)
+            elif isinstance(result_json, list) and result_json and isinstance(result_json[0], dict):
+                # Fallback if wrapped in list
+                is_halted = result_json[0].get("boolean", False)
+            else:
+                is_halted = False
+
             if is_halted:
                 print("🛑 SYSTEM HALTED (Kill Switch Active)")
             return is_halted

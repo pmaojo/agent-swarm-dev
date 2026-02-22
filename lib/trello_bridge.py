@@ -27,11 +27,18 @@ class TrelloBridge:
         self.mock_card = {'id': 'mock_card_1', 'name': 'Test Feature', 'desc': 'Build a login page', 'idList': 'mock_list_id', 'labels': []}
         self.mock_current_list = "INBOX" # Start in INBOX
 
+        self.mock_mode = False
+
         if not all([self.api_key, self.token, self.board_id]):
-            logger.warning("⚠️ Trello credentials missing. Bridge will run in Mock Mode.")
-            self.mock_mode = True
+            # Check for explicit mock mode request
+            if os.getenv("TRELLO_MOCK_MODE", "false").lower() == "true":
+                logger.warning("⚠️ Trello credentials missing. Bridge will run in MOCK MODE as requested.")
+                self.mock_mode = True
+            else:
+                logger.error("❌ Trello credentials missing (TRELLO_API_KEY, TRELLO_TOKEN, TRELLO_BOARD_ID).")
+                logger.error("Set TRELLO_MOCK_MODE=true to run in mock mode explicitly.")
+                raise ValueError("Trello credentials missing and mock mode not explicitly requested.")
         else:
-            self.mock_mode = False
             self.refresh_lists()
 
     def _request(self, method: str, endpoint: str, params: Dict = None, data: Dict = None) -> Optional[Dict]:

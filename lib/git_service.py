@@ -152,36 +152,61 @@ class GitService:
 
     def create_pr(self, title: str, body: str, agent_name: str) -> str:
         """
-        Simulates creating a PR (or uses gh cli if available) and updates Synapse.
+        Creates a PR using 'gh' CLI if available, otherwise mocks it.
+        Updates Synapse with traceability.
         """
         branch_name = self.get_current_branch()
-        print(f"🚀 pushing branch {branch_name}...")
+        print(f"🚀 Pushing branch {branch_name}...")
+
+        has_remote = False
         try:
-            # Check if remote exists, mock if not
             remotes = self._run_git(["remote"])
             if remotes:
                 self._run_git(["push", "-u", "origin", branch_name])
+                has_remote = True
             else:
                 print("⚠️ No remote found, skipping push (local simulation).")
         except Exception as e:
              print(f"⚠️ Push failed (likely permissions or mock env): {e}")
 
-        # Generate PR URI
-        pr_id = str(uuid.uuid4())[:8]
-        pr_uri = f"{SWARM}pr/{pr_id}"
-        branch_uri = f"{SWARM}branch/{branch_name}"
+        pr_uri = None
 
-        print(f"📋 Creating PR: {title}")
+        # Try using GH CLI if remote exists and push succeeded
+        if has_remote:
+            try:
+                # Check for gh cli
+                subprocess.run(["gh", "--version"], check=True, capture_output=True)
+
+                print(f"gh CLI found. Creating real PR: {title}")
+                cmd = ["gh", "pr", "create", "--title", title, "--body", body, "--head", branch_name, "--base", "main"]
+                result = subprocess.run(cmd, capture_output=True, text=True, cwd=self.repo_path)
+
+                if result.returncode == 0:
+                    # Parse PR URL from stdout (usually the last line)
+                    # Output: https://github.com/org/repo/pull/123
+                    pr_url = result.stdout.strip().split('\n')[-1]
+                    if pr_url.startswith("http"):
+                        pr_uri = pr_url
+                        print(f"✅ PR Created: {pr_uri}")
+                else:
+                    print(f"⚠️ gh pr create failed: {result.stderr}")
+            except FileNotFoundError:
+                print("ℹ️ gh CLI not installed. Skipping real PR creation.")
+            except Exception as e:
+                print(f"⚠️ Failed to invoke gh CLI: {e}")
+
+        if not pr_uri:
+             # Fallback to simulated PR URI
+             pr_id = str(uuid.uuid4())[:8]
+             pr_uri = f"{SWARM}pr/{pr_id}"
+             print(f"📋 [Simulation] Created PR: {title} (URI: {pr_uri})")
 
         # Ingest PR Status
         triples = [
             {"subject": pr_uri, "predicate": f"{RDF}type", "object": f"{SWARM}PullRequest"},
             {"subject": pr_uri, "predicate": f"{SWARM}title", "object": f'"{title}"'},
-            {"subject": pr_uri, "predicate": f"{SWARM}sourceBranch", "object": branch_uri},
+            {"subject": pr_uri, "predicate": f"{SWARM}sourceBranch", "object": f"{SWARM}branch/{branch_name}"},
             {"subject": pr_uri, "predicate": f"{SWARM}status", "object": '"PENDING_NEURO_REVIEW"'},
-            # Link back to branch's origin task
-            # We can't query efficiently here inside the method without doing a query first,
-            # but the Branch URI is already linked to the Task.
         ]
         self._ingest(triples)
         return pr_uri
