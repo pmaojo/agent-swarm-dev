@@ -30,6 +30,8 @@ except ImportError:
         from proto import semantic_engine_pb2, semantic_engine_pb2_grpc
 
 from llm import LLMService
+from product_manager import ProductManagerAgent
+from architect import ArchitectAgent
 from coder import CoderAgent
 from reviewer import ReviewerAgent
 from deployer import DeployerAgent
@@ -49,7 +51,7 @@ class OrchestratorAgent:
         self.model = os.getenv("LLM_MODEL", "gpt-4")
         self.api_key = os.getenv("OPENAI_API_KEY")
         self.grpc_host = os.getenv("SYNAPSE_GRPC_HOST", "localhost")
-        self.grpc_port = int(os.getenv("SYNAPSE_GRPC_PORT", "50051"))
+        self.grpc_port = int(os.getenv("SYNAPSE_GRPC_PORT", "50052"))
         self.channel = None
         self.stub = None
         self.namespace = "default"
@@ -70,6 +72,8 @@ class OrchestratorAgent:
 
         # Instantiate Agents
         self.agents = {
+            "ProductManager": ProductManagerAgent(),
+            "Architect": ArchitectAgent(),
             "Coder": CoderAgent(),
             "Reviewer": ReviewerAgent(),
             "Deployer": DeployerAgent()
@@ -227,15 +231,6 @@ class OrchestratorAgent:
         """
         results = self.query_graph(query)
         is_compliant = len(results) > 0
-        if is_compliant:
-            print(f"✅ Compliance Check Passed: {agent_name} authorized for {task_type}")
-        else:
-            print(f"⛔ Compliance Check Failed: {agent_name} lacks permissions for {task_type}")
-        return is_compliant # Defaulting to True in dev if strict check fails? No, strict.
-        # Note: In strict mode, return is_compliant. In dev/bootstrap, maybe True.
-        # I will return is_compliant but if Graph is empty, it blocks everything.
-        # I'll default to True if graph is empty/unreachable for safety during dev.
-        if not self.stub: return True
         return is_compliant
 
     def get_agent_responsibilities(self, agent_name: str) -> List[str]:
@@ -332,11 +327,11 @@ class OrchestratorAgent:
 
     # --- Execution Logic ---
 
-    async def execute_sequence(self, task: str, stack: str, session_id: str):
+    async def execute_sequence(self, task: str, stack: str):
         print("🏛️  Mode: COUNCIL (Table Order). Enforcing turn-taking.")
         self.ingest_triples([{"subject": f"{SWARM}swarm", "predicate": f"{SWARM}currentTurn", "object": '"0"'}], namespace="default")
 
-        current_task_type = self.get_initial_task_type(task)
+        current_task_type = self.get_initial_task_type()
         history = []
 
         while current_task_type:
@@ -407,7 +402,7 @@ class OrchestratorAgent:
             print(f"❌ Decomposition failed: {e}")
             return [{"description": task, "stack": "python"}] # Fallback
 
-    async def execute_parallel(self, task: str, stack: str, session_id: str):
+    async def execute_parallel(self, task: str, stack: str):
         print("⚔️  Mode: WAR ROOM (Parallel). Launching concurrent swarm.")
 
         # 1. Decompose
@@ -541,7 +536,7 @@ class OrchestratorAgent:
 
         return agent_name
 
-    def get_initial_task_type(self, task_description: str) -> str:
+    def get_initial_task_type(self) -> str:
         return "FeatureImplementationTask"
 
     def get_handler_for_task(self, task_type: str) -> str:
@@ -577,19 +572,19 @@ class OrchestratorAgent:
         try:
             res = self.stub.QuerySparql(semantic_engine_pb2.SparqlRequest(query=query, namespace="default"))
             if json.loads(res.results_json).get("boolean", False): return "HALTED"
-        except: pass
+        except Exception: pass
         return "OPERATIONAL"
 
-    def run(self, task: str, stack: str = "python", extra_rules: List[str] = None, session_id: str = "default") -> Dict[str, Any]:
+    def run(self, task: str, stack: str = "python", session_id: str = "default") -> Dict[str, Any]:
         prev_ns = self.namespace
         self.namespace = session_id
         try:
             self.ensure_stack_knowledge(stack)
             mode = self.detect_mode(task)
             if mode == "PARALLEL":
-                return asyncio.run(self.execute_parallel(task, stack, session_id))
+                return asyncio.run(self.execute_parallel(task, stack))
             else:
-                return asyncio.run(self.execute_sequence(task, stack, session_id))
+                return asyncio.run(self.execute_sequence(task, stack))
         finally:
             self.namespace = prev_ns
 

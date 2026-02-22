@@ -2,6 +2,7 @@ use std::time::Duration;
 use tokio::time::sleep;
 use tracing::{info, error};
 use crate::synapse::SynapseClient;
+use serde_json::Value;
 
 pub async fn start_agency(synapse: SynapseClient) {
     info!("🤖 Agent Agency system initialized. Monitoring for new tasks...");
@@ -13,11 +14,11 @@ pub async fn start_agency(synapse: SynapseClient) {
         // 3. Assign task to agent by updating agent's status
         
         let query = r#"
-            PREFIX swarm: <http://swarm.os/>
+            PREFIX swarm: <http://swarm.os/ontology/>
             SELECT ?task ?title ?agent
             WHERE {
                 ?task a swarm:Task ;
-                      swarm:status "REQUIREMENTS" ;
+                      swarm:internalState "REQUIREMENTS" ;
                       swarm:title ?title .
                 ?agent a swarm:Agent ;
                        swarm:status "Standby" .
@@ -26,22 +27,51 @@ pub async fn start_agency(synapse: SynapseClient) {
         "#;
 
         match synapse.query(query).await {
-            Ok(results) => {
-                if !results.is_empty() {
-                    let task_id = &results[0]["?task"];
-                    let title = &results[0]["?title"];
-                    let agent_id = &results[0]["?agent"];
-                    
-                    info!("Assigning task {} to agent {}", title, agent_id);
-                    
-                    // Update agent status to working on the task
-                    let working_status = format!("\"Working on: {}\"", title.trim_matches('"'));
-                    let ingest_res = synapse.ingest(vec![
-                        (agent_id, "http://swarm.os/status", &working_status)
-                    ]).await;
+            Ok(res_json) => {
+                if let Ok(parsed) = serde_json::from_str::<Vec<Value>>(&res_json) {
+                    if let Some(item) = parsed.first() {
+                        let task_id = item.get("?task").or_else(|| item.get("task"));
+                        let title = item.get("?title").or_else(|| item.get("title"));
+                        let agent_id = item.get("?agent").or_else(|| item.get("agent"));
+                        
+                        if let (Some(tid), Some(t), Some(aid)) = (task_id, title, agent_id) {
+                            let tid_str = clean_val(tid);
+                            let title_str = clean_val(t);
+                            let aid_str = clean_val(aid);
+                            
+                            info!("🚀 LAUNCHING REAL AGENT: Orchestrating task '{}' via agent {}", title_str, aid_str);
+                            
+                            // 1. Transition Task to PROCESSING to avoid race conditions
+                            let _ = synapse.ingest(vec![
+                                (&tid_str, "http://swarm.os/ontology/internalState", "\"PROCESSING\""),
+                                (&aid_str, "http://swarm.os/ontology/status", &format!("\"Working on: {}\"", title_str))
+                            ]).await;
 
-                    if let Err(e) = ingest_res {
-                        error!("Failed to update agent status: {}", e);
+                            // 2. Spawn Real Python Orchestrator
+                            let title_clone = title_str.clone();
+                            tokio::spawn(async move {
+                                info!("🐍 [Python] Spawning Orchestrator for: {}", title_clone);
+                                let output = tokio::process::Command::new("python3")
+                                    .arg("sdk/python/agents/orchestrator.py")
+                                    .arg(&title_clone)
+                                    .output()
+                                    .await;
+
+                                match output {
+                                    Ok(out) => {
+                                        if out.status.success() {
+                                            info!("✅ [Python] Task '{}' completed successfully.", title_clone);
+                                        } else {
+                                            let err_msg = String::from_utf8_lossy(&out.stderr);
+                                            error!("❌ [Python] Task '{}' failed: {}", title_clone, err_msg);
+                                        }
+                                    }
+                                    Err(e) => {
+                                        error!("❌ [Python] Failed to spawn process: {}", e);
+                                    }
+                                }
+                            });
+                        }
                     }
                 }
             }
@@ -52,4 +82,12 @@ pub async fn start_agency(synapse: SynapseClient) {
 
         sleep(Duration::from_secs(15)).await;
     }
+}
+
+fn clean_val(val: &Value) -> String {
+    let s = match val {
+        Value::String(s) => s.as_str(),
+        _ => "",
+    };
+    s.trim_matches(|c| c == '"' || c == '<' || c == '>').to_string()
 }

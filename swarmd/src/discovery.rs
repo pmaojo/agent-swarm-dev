@@ -1,8 +1,7 @@
 use crate::synapse::SynapseClient;
 use tracing::{info, error};
-use std::path::Path;
 
-pub async fn discover_repositories(synapse: &SynapseClient, project_root: &str) {
+pub async fn discover_repositories(synapse: &SynapseClient, _project_root: &str) {
     info!("🌍 Starting Geopolitical Discovery (Repositories as Countries)...");
 
     // For now, let's manually register the main ones and look for others
@@ -36,6 +35,7 @@ pub async fn discover_repositories(synapse: &SynapseClient, project_root: &str) 
         let motherland = "http://swarm.os/repository/agent-swarm-dev";
         
         let _ = synapse.ingest(vec![
+            (&agent_subject, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type", "http://swarm.os/ontology/Agent"),
             (&motherland, "http://swarm.os/ontology/hasPopulation", &agent_subject),
             (&agent_subject, "http://swarm.os/ontology/name", &format!("\"{}\"", name)),
             (&agent_subject, "http://swarm.os/ontology/class", &format!("\"{}\"", class)),

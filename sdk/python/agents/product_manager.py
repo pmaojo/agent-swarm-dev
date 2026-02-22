@@ -158,8 +158,21 @@ class ProductManagerAgent:
         # Move to REQUIREMENTS
         self.bridge.move_card(card_id, "REQUIREMENTS")
 
-    def run(self):
-        """Start the agent in listening mode."""
+    def run(self, task: str, context: Optional[dict] = None) -> dict:
+        """Invoked by Orchestrator to generate specifications."""
+        spec_content = self.generate_openspec(task)
+        if spec_content:
+            file_path = self.save_spec_file(task[:20].strip(), spec_content)
+            return {
+                "status": "success", 
+                "artifact": file_path, 
+                "content": spec_content,
+                "agent": "ProductManager"
+            }
+        return {"status": "failure", "error": "Spec generation failed"}
+
+    def listen(self):
+        """Start the agent in listening mode (renamed from run)."""
         print("👀 Product Manager Agent watching [INBOX]...")
         # Register callback for INBOX list
         self.bridge.register_callback("INBOX", self.process_card)
@@ -167,4 +180,8 @@ class ProductManagerAgent:
 
 if __name__ == "__main__":
     agent = ProductManagerAgent()
-    agent.run()
+    if len(sys.argv) > 1:
+        task_str = " ".join(sys.argv[1:])
+        print(agent.run(task_str))
+    else:
+        agent.listen()

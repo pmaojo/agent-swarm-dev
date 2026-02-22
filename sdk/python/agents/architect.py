@@ -87,7 +87,7 @@ class ArchitectAgent:
         """
         Takes an OpenSpec and generates a Technical Design (OpenSpec Change Proposal).
         """
-        print(f"📐 [Architect] Designing solution based on spec...")
+        print("📐 [Architect] Designing solution based on spec...")
 
         system_prompt = """
         You are a Senior System Architect using the OpenSpec framework.
@@ -202,7 +202,7 @@ class ArchitectAgent:
                 yaml_content = design_content[start:end].strip()
 
                 if "openapi" in yaml_content:
-                    print(f"🏗️ [Architect] Detected OpenAPI spec. Creating Sandbox...")
+                    print("🏗️ [Architect] Detected OpenAPI spec. Creating Sandbox...")
                     tool = ApiSandboxTool()
                     safe_name = "".join([c if c.isalnum() else "-" for c in name.lower()])
                     sandbox_url = tool.create_sandbox(yaml_content, safe_name)
@@ -224,12 +224,37 @@ class ArchitectAgent:
         # 6. Move to DESIGN (Wait for Approval)
         self.bridge.move_card(card_id, "DESIGN")
 
-    def run(self):
-        """Start the agent in listening mode."""
+    def run(self, task: str, context: Optional[dict] = None) -> dict:
+        """Invoked by Orchestrator to generate technical designs."""
+        # Try to extract spec from context if available
+        spec_content = task
+        if context and context.get("history"):
+            for entry in reversed(context["history"]):
+                if entry.get("agent") == "ProductManager" and entry.get("result", {}).get("content"):
+                    spec_content = entry["result"]["content"]
+                    break
+        
+        design_content = self.generate_design(spec_content)
+        if design_content:
+            file_path = self.save_design_file(task[:20].strip(), design_content)
+            return {
+                "status": "success", 
+                "artifact": file_path, 
+                "content": design_content,
+                "agent": "Architect"
+            }
+        return {"status": "failure", "error": "Design generation failed"}
+
+    def listen(self):
+        """Start the agent in listening mode (renamed from run)."""
         print("👀 Architect Agent watching [REQUIREMENTS]...")
         self.bridge.register_callback("REQUIREMENTS", self.process_card)
         self.bridge.sync_loop()
 
 if __name__ == "__main__":
     agent = ArchitectAgent()
-    agent.run()
+    if len(sys.argv) > 1:
+        task_str = " ".join(sys.argv[1:])
+        print(agent.run(task_str))
+    else:
+        agent.listen()
