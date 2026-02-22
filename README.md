@@ -4,6 +4,12 @@
 
 A neuro-symbolic agent swarm with graph-driven orchestration using Synapse knowledge graphs.
 
+## ✨ Key Features
+* **Fog of War:** Agent visibility is limited by "fog", which is revealed by exploring the graph or generating new knowledge.
+* **Economic Constraints:** LLM usage is tracked against a daily budget. Overspending triggers a "HALT" state.
+* **Temporal Shadowing:** Agents can only act if the "Time Crystal" (global clock) permits.
+* **CodeGraph Intelligence:** Advanced code parsing and graph-based analysis for optimized context retrieval.
+
 ## 🧠 Architecture
 
 ```
@@ -47,7 +53,7 @@ A neuro-symbolic agent swarm with graph-driven orchestration using Synapse knowl
 
 ```bash
 # Python dependencies
-pip install fastembed flask grpcio-tools synapse-sdk pyyaml openai pylint flake8 bandit tenacity
+pip install fastembed flask grpcio-tools synapse-sdk pyyaml openai pylint flake8 bandit tenacity tree-sitter tree-sitter-python tree-sitter-rust tree-sitter-javascript tree-sitter-cpp
 
 # Synapse binary (light mode)
 # Download from https://github.com/synapse-engine/synapse/releases
