@@ -31,6 +31,7 @@ except ImportError:
 from llm import LLMService
 from git_service import GitService
 from agents.tools.shell import execute_command
+from agents.tools.api_sandbox import ApiSandboxTool
 
 SWARM = "http://swarm.os/ontology/"
 NIST = "http://nist.gov/caisi/"
@@ -43,6 +44,7 @@ class ReviewerAgent:
         self.namespace = "default"
         self.llm = LLMService()
         self.git = GitService()
+        self.sandbox_tool = ApiSandboxTool()
         self.channel = None
         self.stub = None
         self.connect()
@@ -171,6 +173,73 @@ class ReviewerAgent:
             print(f"❌ Verification Logic Failed: {e}")
             return {"compliant": False, "error": str(e)}
 
+    def broadcast_hardening_event(self, event_type: str, message: str, details: Dict):
+        try:
+            requests.post("http://localhost:18789/api/v1/events/hardening", json={
+                "type": event_type,
+                "message": message,
+                "severity": "CRITICAL" if event_type == "CONTRACT_FAILURE" else "WARNING",
+                "details": details
+            }, timeout=2)
+        except: pass
+
+    def run_contract_tests(self, context: Dict) -> Dict[str, Any]:
+        """
+        Executes tests against the Apicentric Mock.
+        """
+        print("🛡️  Starting Contract Tests (Apicentric)...")
+
+        # 1. Identify OpenAPI Spec
+        spec_content = None
+        service_name = "unknown-service"
+
+        # Try to find openapi.yaml in the repo
+        potential_specs = [f for f in os.listdir(".") if f.endswith("openapi.yaml") or f.endswith("swagger.yaml")]
+        # Also check openspec/
+        if os.path.exists("openspec"):
+            potential_specs.extend([os.path.join("openspec", f) for f in os.listdir("openspec") if f.endswith(".yaml")])
+
+        if potential_specs:
+            # Pick the first one for now
+            fname = potential_specs[0]
+            try:
+                with open(fname, "r") as f:
+                    spec_content = f.read()
+                service_name = os.path.basename(fname).replace(".yaml", "").replace(".json", "")
+            except Exception as e:
+                print(f"⚠️ Failed to read spec {fname}: {e}")
+
+        if not spec_content:
+            print("⚠️  No OpenAPI spec found. Skipping Contract Tests.")
+            return {"status": "skipped", "reason": "No spec found"}
+
+        # 2. Start Sandbox
+        try:
+            mock_url = self.sandbox_tool.create_sandbox(spec_content, service_name)
+            if "Error" in mock_url:
+                raise Exception(mock_url)
+        except Exception as e:
+            print(f"❌ Failed to start sandbox: {e}")
+            return {"status": "error", "error": str(e)}
+
+        # 3. Run Tests with BASE_URL
+        print(f"🧪 Running tests against Mock: {mock_url}")
+
+        cmd = "pytest tests/ --maxfail=5" # Fail fast
+
+        try:
+            result = execute_command(cmd, reason="Contract Testing", env={"BASE_URL": mock_url})
+            if result.get('status') == 'success':
+                print("✅ Contract Tests Passed.")
+                return {"status": "success"}
+            else:
+                print("⛔ Contract Tests Failed!")
+                # Broadcast Hardening Event
+                self.broadcast_hardening_event("CONTRACT_FAILURE", f"Tests failed against {mock_url}", {"stdout": result.get('stdout'), "stderr": result.get('stderr')})
+                return {"status": "failure", "output": result.get('stdout')}
+        except Exception as e:
+             print(f"❌ Test execution error: {e}")
+             return {"status": "error", "error": str(e)}
 
     def get_files_to_review(self, context: Dict) -> List[str]:
         """Extract file paths from previous Coder output in history."""
@@ -238,41 +307,15 @@ class ReviewerAgent:
                  "violations": compliance.get("violations")
              }
 
-        # 2. Check for Active API Sandbox (Contract Verification)
-        try:
-            # Query if any file in this PR has an associated API Sandbox
-            query_sandbox = f"""
-            PREFIX swarm: <{SWARM}>
-            SELECT ?url ?design
-            WHERE {{
-                ?design swarm:hasApiSandbox ?url .
-                ?design swarm:status "DESIGNED" .
-            }}
-            LIMIT 1
-            """
-            sandbox_results = self._query(query_sandbox)
-            if sandbox_results:
-                sandbox_url = sandbox_results[0].get("?url") or sandbox_results[0].get("url")
-                print(f"🧪 [Reviewer] Found Active API Sandbox: {sandbox_url}")
-
-                # Verify connectivity
-                try:
-                    resp = requests.get(f"{sandbox_url}/health", timeout=2)
-                    if resp.status_code == 200:
-                         print("      ✅ Sandbox is reachable.")
-                         # Ingest Contract Affinity
-                         self._ingest([{
-                             "subject": f"{SWARM}agent/Reviewer",
-                             "predicate": f"{SWARM}hasContractAffinity",
-                             "object": f'"{sandbox_url}"'
-                         }])
-                    else:
-                         print(f"      ⚠️ Sandbox reachable but returned {resp.status_code}")
-                except requests.exceptions.RequestException as e:
-                     print(f"      ⚠️ Sandbox unreachable: {e}")
-
-        except Exception as e:
-            print(f"⚠️ [Reviewer] Sandbox check failed: {e}")
+        # 2. Mandatory Contract Testing (Apicentric)
+        contract_results = self.run_contract_tests(context or {})
+        if contract_results.get("status") == "failure":
+             return {
+                 "status": "failure",
+                 "error": "CONTRACT_VIOLATION",
+                 "violations": ["Contract Tests Failed against Apicentric Mock"],
+                 "details": contract_results
+             }
 
         # 3. Traditional Review (Files)
         files = self.get_files_to_review(context or {})
@@ -286,6 +329,8 @@ class ReviewerAgent:
             for f, res in static_analysis_results.items():
                 if res.get("pylint") or res.get("flake8") or res.get("bandit"):
                     has_issues = True
+                    # Broadcast Static Analysis Failure
+                    self.broadcast_hardening_event("STATIC_ANALYSIS", f"Issues found in {f}", {"pylint": res.get("pylint"), "bandit": res.get("bandit")})
                     break
 
             if has_issues:

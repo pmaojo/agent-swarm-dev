@@ -5,10 +5,15 @@ import time
 import uuid
 import grpc
 import requests
+import logging
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 from openai import OpenAI
 from tenacity import retry, stop_after_attempt, wait_random_exponential, retry_if_not_exception_type
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger("LLMService")
 
 # --- Synapse/Proto Imports ---
 # Add agents/proto to path if not present, to support imports
@@ -25,7 +30,7 @@ except ImportError:
     try:
         from agents.proto import semantic_engine_pb2, semantic_engine_pb2_grpc
     except ImportError:
-        print("⚠️  Warning: Could not import Synapse protobufs. Budgeting disabled.")
+        logger.warning("⚠️  Warning: Could not import Synapse protobufs. Budgeting disabled.")
         semantic_engine_pb2 = None
         semantic_engine_pb2_grpc = None
 
@@ -50,15 +55,15 @@ class LLMService:
         self.model = os.getenv("LLM_MODEL", "gpt-4o")
 
         if self.mock_mode:
-            print("🤖 LLMService initialized in MOCK MODE.")
+            logger.info("🤖 LLMService initialized in MOCK MODE.")
             self.client = None
         else:
             if not self.api_key:
-                print("⚠️  OPENAI_API_KEY not found. Defaulting to MOCK MODE.")
+                logger.warning("⚠️  OPENAI_API_KEY not found. Defaulting to MOCK MODE.")
                 self.mock_mode = True
                 self.client = None
             else:
-                print(f"🟢 LLMService initialized (Model: {self.model})")
+                logger.info(f"🟢 LLMService initialized (Model: {self.model})")
                 self.client = OpenAI(api_key=self.api_key)
 
         # Synapse Connection
@@ -79,7 +84,7 @@ class LLMService:
             self.channel = grpc.insecure_channel(f"{self.grpc_host}:{self.grpc_port}")
             self.stub = semantic_engine_pb2_grpc.SemanticEngineStub(self.channel)
         except Exception as e:
-            print(f"⚠️  LLMService failed to connect to Synapse: {e}")
+            logger.warning(f"⚠️  LLMService failed to connect to Synapse: {e}")
 
     def ensure_finance_node(self):
         """Ensure the finance node exists with the max budget."""
@@ -104,7 +109,7 @@ class LLMService:
         try:
             self.stub.IngestTriples(request)
         except Exception as e:
-            print(f"❌ Ingest failed: {e}")
+            logger.error(f"❌ Ingest failed: {e}")
 
     def _query(self, query: str) -> List[Dict]:
         if not self.stub or not semantic_engine_pb2: return []
@@ -114,9 +119,7 @@ class LLMService:
             response = self.stub.QuerySparql(request)
             return json.loads(response.results_json)
         except Exception as e:
-            print(f"❌ Query failed: {repr(e)}")
-            # import traceback
-            # traceback.print_exc()
+            logger.error(f"❌ Query failed: {repr(e)}")
             return []
 
     def get_daily_spend(self) -> float:
@@ -141,12 +144,26 @@ class LLMService:
             return 0.0
 
     def send_telegram_alert(self, message: str):
-        """Send alert via Telegram API."""
+        """Send alert via Telegram API and Hardening Stream."""
+        logger.warning(f"🚨 ALERT: {message}")
+
+        # 1. Broadcast to Godot (Hardening Event)
+        try:
+            requests.post("http://localhost:18789/api/v1/events/hardening", json={
+                "type": "ALERT",
+                "message": message,
+                "severity": "WARNING",
+                "details": {"source": "LLMService"}
+            }, timeout=2)
+        except Exception:
+            pass # Fail silently if gateway is down
+
+        # 2. Telegram API
         token = os.getenv("TELEGRAM_BOT_TOKEN")
         chat_id = os.getenv("TELEGRAM_CHAT_ID")
 
         if not token or not chat_id:
-            # print(f"⚠️ Telegram Alert skipped (Missing Token/ChatID): {message}")
+            logger.debug("Telegram token/chat_id missing. Skipping Telegram API call.")
             return
 
         try:
@@ -154,7 +171,7 @@ class LLMService:
             payload = {"chat_id": chat_id, "text": message}
             requests.post(url, json=payload, timeout=5)
         except Exception as e:
-            print(f"❌ Failed to send Telegram alert: {e}")
+            logger.error(f"❌ Failed to send Telegram alert: {e}")
 
     def check_budget_warning(self, current_spend: float):
         """Check if 80% threshold exceeded and alert."""
@@ -177,7 +194,7 @@ class LLMService:
             results = self._query(query)
 
             if not results:
-                print("⚠️  80% Budget Warning Triggered!")
+                logger.warning("⚠️  80% Budget Warning Triggered!")
                 msg = f"⚠️ Budget Warning: 80% of daily limit reached (${current_spend:.2f} / ${self.max_daily_budget:.2f})"
                 self.send_telegram_alert(msg)
 
@@ -234,7 +251,7 @@ class LLMService:
         If `messages` is provided, it overrides prompt/system_prompt construction.
         """
         if self.mock_mode:
-            print(f"🤖 [MOCK LLM] Prompt: {prompt[:50]}...")
+            logger.info(f"🤖 [MOCK LLM] Prompt: {prompt[:50]}...")
             if json_mode:
                 return '{"status": "success", "mock": true, "principles": ["Mock Principle"]}'
             return "Mock LLM Response: Task Completed."
@@ -270,7 +287,7 @@ class LLMService:
         except BudgetExceededException:
             raise # Propagate up
         except Exception as e:
-            print(f"Error calling LLM: {e}")
+            logger.error(f"Error calling LLM: {e}")
             raise
 
     def get_structured_completion(self, prompt: str, system_prompt: str) -> Dict[str, Any]:

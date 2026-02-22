@@ -8,6 +8,7 @@ from datetime import datetime
 
 from fastapi import FastAPI, WebSocket, Request, HTTPException, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
 from agents.orchestrator import OrchestratorAgent
 
 # Godot Integration
@@ -391,6 +392,29 @@ async def websocket_endpoint(websocket: WebSocket):
     except Exception as e:
         print(f"WebSocket error: {e}")
         manager.disconnect(websocket)
+
+class HardeningEvent(BaseModel):
+    type: str # "ALERT", "STATIC_ANALYSIS", "CONTRACT_FAILURE"
+    message: str
+    details: Dict[str, Any] = {}
+    severity: str = "INFO" # "INFO", "WARNING", "CRITICAL"
+    timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
+
+@app.post("/api/v1/events/hardening")
+async def receive_hardening_event(event: HardeningEvent):
+    """
+    Receives hardening events from agents/LLM and broadcasts them to Godot.
+    """
+    try:
+        payload = {
+            "type": "HARDENING_EVENT",
+            "payload": event.dict()
+        }
+        await manager.broadcast(payload)
+        return {"status": "broadcasted", "event": event}
+    except Exception as e:
+        print(f"Error broadcasting hardening event: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/webhook/{channel}")
 async def inbound_webhook(channel: str, request: Request):
