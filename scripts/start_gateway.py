@@ -6,7 +6,7 @@ import uvicorn
 from dotenv import load_dotenv
 
 # Load .env variables before anything else
-load_dotenv()
+load_dotenv(override=True)
 
 # Add project root to path
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))

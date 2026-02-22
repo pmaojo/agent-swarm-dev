@@ -4,12 +4,15 @@ import sys
 import json
 import logging
 import grpc
+from dotenv import load_dotenv
+
+load_dotenv(override=True)
 from typing import List, Dict
 import uuid
 from datetime import datetime
 
 from telegram import Update
-from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler
+from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters
 
 # Ensure we can import proto
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -159,6 +162,16 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ Status check failed: {e}")
 
+async def help_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = (
+        "👋 ¡Hola! Soy el Bot Monitor del Enjambre.\n"
+        "Solo respondo a comandos específicos. Prueba:\n"
+        "/status - Ver estado del sistema y presupuesto\n"
+        "/stop_all - Parada de emergencia\n"
+        "/resume - Reanudar sistema"
+    )
+    await update.message.reply_text(msg)
+
 async def monitor_loop(context: ContextTypes.DEFAULT_TYPE):
     """Background task to monitor budget and errors."""
     try:
@@ -253,6 +266,7 @@ if __name__ == '__main__':
     application.add_handler(CommandHandler('stop_all', stop_all))
     application.add_handler(CommandHandler('resume', resume))
     application.add_handler(CommandHandler('status', status_command))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, help_message))
 
     # Add Monitor Job (runs every 60s)
     if application.job_queue:
