@@ -1,6 +1,7 @@
 use reqwest::Client;
 pub mod telegram;
 pub mod trello;
+pub mod agency;
 
 use std::time::Duration;
 use tracing::info;
@@ -31,4 +32,7 @@ pub async fn start_background_workers(
         info!("📱 Spawning Trello Background Poller...");
         tokio::spawn(trello::poll_trello(api_key, token, board_id, synapse.clone(), client.clone(), tx.clone()));
     }
+
+    info!("🤖 Spawning Agent Agency worker...");
+    tokio::spawn(agency::start_agency(synapse.clone()));
 }
