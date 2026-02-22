@@ -69,7 +69,56 @@ class ContextParser:
             print(f"⚠️ [ContextParser] SPARQL Query Error: {e}")
             return []
 
-    def _get_file_knowledge(self, filename: str) -> str:
+    def _hybrid_search(self, query_text: str) -> str:
+        """Fallback Hybrid Search for 'Intuition Mode'."""
+        if not self.stub or not semantic_engine_pb2:
+            return ""
+
+        try:
+            # Determine Hybrid Mode
+            # Prefer SearchMode.HYBRID if available, otherwise use value 2
+            hybrid_mode = 2
+            if hasattr(semantic_engine_pb2, 'SearchMode'):
+                if hasattr(semantic_engine_pb2.SearchMode, 'HYBRID'):
+                    hybrid_mode = semantic_engine_pb2.SearchMode.HYBRID
+                elif hasattr(semantic_engine_pb2.SearchMode, 'Value'):
+                    try:
+                        hybrid_mode = semantic_engine_pb2.SearchMode.Value('HYBRID')
+                    except Exception:
+                        pass
+            elif hasattr(semantic_engine_pb2, 'HYBRID'):
+                hybrid_mode = semantic_engine_pb2.HYBRID
+
+            request = semantic_engine_pb2.HybridSearchRequest(
+                query=query_text,
+                namespace="default",
+                vector_k=5,
+                graph_depth=2,
+                mode=hybrid_mode,
+                limit=5
+            )
+            response = self.stub.HybridSearch(request)
+
+            if not response.results:
+                return ""
+
+            # Filter and Format
+            # Threshold: 0.65
+            results_text = "\n\n### 🌌 Ecos de la Forja (Intuición de Synapse):\n"
+            found_any = False
+
+            for result in response.results:
+                if result.score >= 0.65:
+                    found_any = True
+                    results_text += f"- [Related] {result.content} (Afinidad: {result.score:.2f})\n"
+
+            return results_text if found_any else ""
+
+        except Exception as e:
+            print(f"⚠️ [ContextParser] Hybrid Search Error: {e}")
+            return ""
+
+    def _get_file_knowledge(self, filename: str, context_text: str = "") -> str:
         """Fetches constraints and lessons learned for a file/stack."""
         if not self.stub:
             return ""
@@ -106,17 +155,21 @@ class ContextParser:
 
         results = self._query_synapse(query)
 
-        if not results:
-            return ""
+        if results:
+            knowledge = "\n\n### Synapse Knowledge & Constraints:\n"
+            for r in results:
+                rule_text = r.get("rule", {}).get("value", "")
+                rule_type = r.get("type", {}).get("value", "Rule")
+                if rule_text:
+                    knowledge += f"- [{rule_type}] {rule_text}\n"
+            return knowledge
 
-        knowledge = "\n\n### Synapse Knowledge & Constraints:\n"
-        for r in results:
-            rule_text = r.get("rule", {}).get("value", "")
-            rule_type = r.get("type", {}).get("value", "Rule")
-            if rule_text:
-                knowledge += f"- [{rule_type}] {rule_text}\n"
-
-        return knowledge
+        # Fallback: Intuition Mode (Hybrid Search)
+        # Query = Filename + Context Snippet
+        # We take first 200 chars of context to capture intent
+        snippet = context_text[:200].replace('\n', ' ')
+        search_query = f"{filename} {snippet}".strip()
+        return self._hybrid_search(search_query)
 
     def expand_context(self, text: str) -> str:
         """
@@ -136,8 +189,8 @@ class ContextParser:
             # 1. Read File Content
             content = read_file(filename)
 
-            # 2. Fetch Synapse Knowledge
-            knowledge = self._get_file_knowledge(filename)
+            # 2. Fetch Synapse Knowledge (passing full text context for hybrid search)
+            knowledge = self._get_file_knowledge(filename, text)
 
             expanded_text += f"\nFile: {filename}\n```\n{content}\n```\n{knowledge}\n"
 
