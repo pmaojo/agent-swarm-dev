@@ -14,12 +14,22 @@ else
     echo "✅ protoc found at $(which protoc)"
 fi
 
-# Initialize submodule
-if [ -d "synapse-engine" ]; then
-    echo "🔄 Skipping synapse-engine submodule update to preserve local patches..."
+# Validate synapse-engine checkout
+if [ -d "synapse-engine" ] && [ -f "synapse-engine/Cargo.toml" ]; then
+    echo "🔄 Found synapse-engine checkout. Skipping submodule update to preserve local patches..."
     # git submodule update --init --recursive
 else
-    echo "⚠️  synapse-engine directory not found. Please run: git submodule add https://github.com/pmaojo/synapse-engine synapse-engine"
+    if [ -x "./synapse" ]; then
+        echo "⚠️  synapse-engine is missing or incomplete, but a prebuilt ./synapse binary exists."
+        echo "✅ Using existing ./synapse binary and skipping source build."
+        exit 0
+    fi
+
+    echo "❌ synapse-engine is missing or incomplete (expected synapse-engine/Cargo.toml)."
+    echo "   This usually means submodule clone failed or is private in this environment."
+    echo "   Use one of the following options:"
+    echo "   1) Restore submodule contents (if you have access)"
+    echo "   2) Download a prebuilt binary into ./synapse (see DOWNLOAD_SYNAPSE.md)"
     exit 1
 fi
 
