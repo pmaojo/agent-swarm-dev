@@ -97,6 +97,15 @@ class AnalystAgent:
         request = semantic_engine_pb2.IngestRequest(triples=pb_triples, namespace=self.namespace)
         self.stub.IngestTriples(request)
 
+    def optimize_prompt(self, prompt_text: str) -> str:
+        """
+        Removes stop words and redundant whitespace to optimize token usage.
+        """
+        stop_words = {"the", "a", "an", "is", "are", "was", "were", "of", "to", "in", "for", "on", "with", "at", "by", "from", "up", "about", "into", "over", "after"}
+        words = prompt_text.split()
+        optimized_words = [word for word in words if word.lower() not in stop_words]
+        return " ".join(optimized_words)
+
     def find_unconsolidated_failures(self):
         # Strict Namespace Query with Literal Matching
         query = f"""
@@ -192,7 +201,12 @@ class AnalystAgent:
         The rule should be a short, imperative sentence (e.g., "Always verify hook order").
         Return ONLY the rule text.
         """
-        return self.llm.completion(prompt).strip().strip('"')
+
+        # Optimize prompt before sending
+        optimized_prompt = self.optimize_prompt(prompt)
+        print(f"📉 Optimized prompt length: {len(prompt)} -> {len(optimized_prompt)}")
+
+        return self.llm.completion(optimized_prompt).strip().strip('"')
 
     def validate_rule(self, rule_text: str, stack: str) -> bool:
         """Run sanity checks (dry-run) to validate the new rule."""

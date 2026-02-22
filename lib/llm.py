@@ -5,6 +5,7 @@ import time
 import uuid
 import grpc
 import requests
+import hashlib
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 from openai import OpenAI
@@ -55,6 +56,10 @@ class LLMService:
         self.channel = None
         self.stub = None
         self.namespace = "default"
+
+        # Simple In-Memory Cache
+        self._cache = {}
+        self._cache_size = 100 # LRU size
 
         self.connect_synapse()
         self.ensure_finance_node()
@@ -209,6 +214,11 @@ class LLMService:
         self._ingest(triples)
         # print(f"💰 Cost logged: ${cost:.6f}")
 
+    def _get_cache_key(self, prompt: str, system_prompt: str, tools_json: str = "") -> str:
+        """Generate a stable hash for the prompt."""
+        key_str = f"{prompt}|{system_prompt}|{tools_json}"
+        return hashlib.sha256(key_str.encode("utf-8")).hexdigest()
+
     @retry(
         wait=wait_random_exponential(min=1, max=60),
         stop=stop_after_attempt(6),
@@ -216,10 +226,16 @@ class LLMService:
     )
     def completion(self, prompt: str, system_prompt: str = "You are a helpful assistant.", json_mode: bool = False, tools: Optional[List[Dict]] = None, tool_choice: Any = None, messages: Optional[List[Dict]] = None) -> Any:
         """
-        Generate a completion using the configured LLM, with Budget Enforcement.
-        Returns content string if no tools used, otherwise returns the message object.
-        If `messages` is provided, it overrides prompt/system_prompt construction.
+        Generate a completion using the configured LLM, with Budget Enforcement and Caching.
         """
+        # Caching Logic
+        # (Only cache if not using tools for now, as tools/messages complexity is higher)
+        if not tools and not messages:
+            cache_key = self._get_cache_key(prompt, system_prompt)
+            if cache_key in self._cache:
+                print("🧠 [LLM] Cache Hit!")
+                return self._cache[cache_key]
+
         self.check_budget()
 
         if messages is None:
@@ -245,9 +261,19 @@ class LLMService:
             if usage:
                 self.log_spend(usage.prompt_tokens, usage.completion_tokens)
 
+            result = None
             if tools:
-                return response.choices[0].message
-            return response.choices[0].message.content
+                result = response.choices[0].message
+            else:
+                result = response.choices[0].message.content
+
+            # Update Cache
+            if not tools and not messages and result:
+                if len(self._cache) >= self._cache_size:
+                    self._cache.pop(next(iter(self._cache))) # Remove oldest
+                self._cache[cache_key] = result
+
+            return result
         except BudgetExceededException:
             raise # Propagate up
         except Exception as e:
