@@ -61,15 +61,27 @@ print('✅ Model ready!')
           cp -r fastembed ~/.cache/ 2>/dev/null || true
           mkdir -p data
 
-      - name: Test Synapse
+      - name: Install dependencies
         run: |
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Agent Simulation & Test
+        env:
+          MOCK_LLM: true
+          OPENAI_API_KEY: dummy
+        run: |
+          # Start Synapse
           GRAPH_STORAGE_PATH=./data ./dist/synapse --mcp &
           sleep 5
 
-          pip install synapse-sdk
-          python3 -c "
-from synapse import get_client
-client = get_client()
-client.ingest_triples([{'subject': 'test', 'predicate': 'works', 'object': 'yes'}])
-print('✅ Synapse v0.8.5 working!')
-"
+          # Generate Protobufs (Ensure python path has agents/proto)
+          export PYTHONPATH=$PYTHONPATH:$(pwd)/agents/proto
+
+          # Run CodeGraph Integrity Test
+          echo "🧪 Running CodeGraph Tests..."
+          python3 -m pytest tests/test_codegraph.py
+
+          # Run Agent Mock Mission
+          echo "🚀 Running Agent Mock Mission (Rust Stack)..."
+          python3 agents/orchestrator.py "Develop a Hello World in Rust" --stack rust

@@ -220,6 +220,13 @@ class LLMService:
         Returns content string if no tools used, otherwise returns the message object.
         If `messages` is provided, it overrides prompt/system_prompt construction.
         """
+        # Mock Mode for CI/Testing
+        if os.getenv("MOCK_LLM", "false").lower() == "true":
+            print(f"🤖 [MOCK LLM] Prompt: {prompt[:50]}...")
+            if json_mode:
+                return '{"status": "success", "mock": true, "principles": ["Mock Principle"]}'
+            return "Mock LLM Response: Task Completed."
+
         self.check_budget()
 
         if messages is None:

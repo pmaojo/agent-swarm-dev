@@ -13,6 +13,7 @@ import yaml
 import time
 import uuid
 import asyncio
+from datetime import datetime
 from typing import List, Dict, Any, Optional
 
 # Add path to lib and agents
@@ -339,7 +340,13 @@ class OrchestratorAgent:
 
         while current_task_type:
             agent_name = self.get_handler_for_task(current_task_type)
-            seat_index = self.seat_indices.get(agent_name, -1)
+
+            # Skill-Based Routing for Coder
+            if agent_name == "Coder":
+                agent_name = self.get_specialized_agent(stack)
+
+            # Dynamic Seat Index
+            seat_index = self.seat_indices.get(agent_name, self.seat_indices.get("Coder", 2))
 
             while True:
                 turn = self.get_current_turn()
@@ -381,13 +388,40 @@ class OrchestratorAgent:
     def run_agent_step(self, agent_name, task, task_type, stack, history):
         context = {"history": history}
 
+        # Ensure agent exists in memory
+        if agent_name not in self.agents and "Coder" in agent_name:
+             self.agents[agent_name] = CoderAgent()
+
         # P2P Negotiation
-        if task_type == "FeatureImplementationTask" and agent_name == "Coder":
-             res = self.agents["Coder"].negotiate(task, self.agents["Reviewer"], context)
-             return res, res.get("status", "failure")
+        if task_type == "FeatureImplementationTask" and "Coder" in agent_name:
+             coder = self.agents.get(agent_name)
+             if not coder: return {"status": "failure", "error": "Agent Missing"}, "failure"
+
+             res = coder.negotiate(task, self.agents["Reviewer"], context)
+
+             outcome = res.get("status", "failure")
+             self.record_execution(agent_name, task_type, outcome)
+             return res, outcome
 
         res = self.run_agent(agent_name, task, context, task_type=task_type, stack=stack)
-        return res, res.get("status", "failure")
+        outcome = res.get("status", "failure")
+        self.record_execution(agent_name, task_type or "UnknownTask", outcome)
+        return res, outcome
+
+    def record_execution(self, agent_name: str, task_type: str, outcome: str):
+        """Log execution result for monitoring."""
+        exec_id = f"{SWARM}execution/{uuid.uuid4()}"
+        agent_uri = f"{SWARM}agent/{agent_name}"
+        result_state = "success" if outcome == "success" else "on_failure"
+
+        triples = [
+            {"subject": exec_id, "predicate": f"{RDF}type", "object": f"{SWARM}ExecutionRecord"},
+            {"subject": exec_id, "predicate": f"{PROV}wasAssociatedWith", "object": agent_uri},
+            {"subject": exec_id, "predicate": f"{SWARM}relatedTask", "object": f"{SWARM}task/{task_type}"},
+            {"subject": exec_id, "predicate": f"{NIST}resultState", "object": f'"{result_state}"'},
+            {"subject": exec_id, "predicate": f"{PROV}generatedAtTime", "object": f'"{datetime.now().isoformat()}"'}
+        ]
+        self.ingest_triples(triples)
 
     def run_agent(self, agent_name: str, task_desc: str, context: Dict = None, task_type: str = None, stack: str = "python", extra_rules: List[str] = None) -> Dict:
         # 1. Compliance
@@ -410,6 +444,43 @@ class OrchestratorAgent:
         return agent.run(enhanced, context)
 
     # --- Helpers ---
+    def get_specialized_agent(self, stack: str) -> str:
+        """Find or create a specialized agent for the stack."""
+        query = f"""
+        PREFIX swarm: <{SWARM}>
+        SELECT ?agent
+        WHERE {{
+            ?agent swarm:specialty "{stack}" .
+            ?agent swarm:status "IDLE" .
+        }}
+        LIMIT 1
+        """
+        results = self.query_graph(query)
+        if results:
+            agent_uri = results[0].get("?agent") or results[0].get("agent")
+            agent_name = agent_uri.split("/")[-1]
+            print(f"✅ Found specialized agent: {agent_name}")
+            return agent_name
+
+        # Create new agent
+        agent_name = f"{stack.capitalize()}Coder"
+        print(f"🆕 Instantiating specialized agent: {agent_name}")
+
+        agent_uri = f"{SWARM}agent/{agent_name}"
+        triples = [
+            {"subject": agent_uri, "predicate": f"{RDF}type", "object": f"{SWARM}Agent"},
+            {"subject": agent_uri, "predicate": f"{RDF}type", "object": f"{SWARM}Coder"},
+            {"subject": agent_uri, "predicate": f"{SWARM}specialty", "object": f'"{stack}"'},
+            {"subject": agent_uri, "predicate": f"{SWARM}status", "object": '"IDLE"'}
+        ]
+        self.ingest_triples(triples)
+
+        # Instantiate in memory if needed (lazy load in run_agent, but we register name here)
+        if agent_name not in self.agents:
+            self.agents[agent_name] = CoderAgent()
+
+        return agent_name
+
     def get_initial_task_type(self, task_description: str) -> str:
         return "FeatureImplementationTask"
 
