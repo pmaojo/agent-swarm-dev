@@ -14,7 +14,7 @@ from datetime import datetime
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters
 
-# Ensure we can import proto
+# Ensure we can import synapse_proto
 current_dir = os.path.dirname(os.path.abspath(__file__))
 proto_dir = os.path.join(current_dir, 'proto')
 if proto_dir not in sys.path:

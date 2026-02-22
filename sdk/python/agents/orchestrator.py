@@ -27,7 +27,7 @@ except ImportError:
     try:
         from agents.proto import semantic_engine_pb2, semantic_engine_pb2_grpc
     except ImportError:
-        from proto import semantic_engine_pb2, semantic_engine_pb2_grpc
+        from synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
 
 from llm import LLMService
 from product_manager import ProductManagerAgent

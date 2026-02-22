@@ -30,7 +30,7 @@ except ImportError:
     except ImportError:
         # Fallback for some environments
         try:
-            from proto import semantic_engine_pb2, semantic_engine_pb2_grpc
+            from synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
         except ImportError:
             semantic_engine_pb2 = None
             semantic_engine_pb2_grpc = None
