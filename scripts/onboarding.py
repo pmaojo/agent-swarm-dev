@@ -22,7 +22,9 @@ ASCII_ART = r"""
       >>> SWARM ONBOARDING WIZARD <<<
 """
 
-ENV_FILE = ".env"
+# Determine project root dynamically
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ENV_FILE = os.path.join(PROJECT_ROOT, ".env")
 
 def clear_screen():
     os.system('cls' if os.name == 'nt' else 'clear')
@@ -141,22 +143,29 @@ def run_wizard():
 
     print("\n--- 🚀 Setup & Launch ---")
 
+    synapse_bin = os.path.join(PROJECT_ROOT, "synapse")
+    setup_script = os.path.join(PROJECT_ROOT, "scripts", "setup_synapse.sh")
+    start_script = os.path.join(PROJECT_ROOT, "scripts", "start_all.sh")
+    bridge_log = os.path.join(PROJECT_ROOT, "bridge_output.log")
+
     # Check if Synapse is built
-    if not os.path.exists("./synapse"):
+    if not os.path.exists(synapse_bin):
         build = ask("Synapse binary not found. Build it now? (Takes ~2 mins)", default="yes").lower()
         if build in ["y", "yes"]:
-            print("🔨 Running setup_synapse.sh...")
-            subprocess.run(["bash", "scripts/setup_synapse.sh"], check=False)
+            print(f"🔨 Running {setup_script}...")
+            # Run from PROJECT_ROOT
+            subprocess.run(["bash", setup_script], cwd=PROJECT_ROOT, check=False)
 
     start = ask("Start all services now? (Synapse + FastEmbed)", default="yes").lower()
     if start in ["y", "yes"]:
         print("🚀 Starting services...")
         # Detach process properly
-        with open("bridge_output.log", "a") as out, open("bridge_output.log", "a") as err:
-            subprocess.Popen(["bash", "scripts/start_all.sh"],
+        with open(bridge_log, "a") as out:
+            subprocess.Popen(["bash", start_script],
                              stdout=out,
-                             stderr=err,
+                             stderr=out, # Redirect stderr to stdout
                              stdin=subprocess.DEVNULL,
+                             cwd=PROJECT_ROOT, # Run from project root
                              start_new_session=True)
         print("Services started in background. Check bridge_output.log for details.")
         time.sleep(2) # Give it a moment

@@ -12,10 +12,10 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 echo "📦 Starting Agent Swarm Dev Services..."
 
 # Load .env if present
-if [ -f ".env" ]; then
-    echo "📄 Loading environment from .env..."
+if [ -f "$PROJECT_DIR/.env" ]; then
+    echo "📄 Loading environment from $PROJECT_DIR/.env..."
     set -a
-    source .env
+    source "$PROJECT_DIR/.env"
     set +a
 fi
 
