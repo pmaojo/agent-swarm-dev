@@ -20,3 +20,4 @@ tree-sitter-cpp
 python-telegram-bot
 fastapi
 uvicorn
+aiofiles

@@ -300,3 +300,13 @@ MIT
 - **Synapse**: Neuro-symbolic knowledge graph engine
 - **FastEmbed**: Lightweight vector embeddings
 - **Anthropic**: Swarm orchestration patterns
+
+## Godot Web Export
+
+To update the Godot game in the dashboard:
+
+1.  Open `visualizer/project.godot` in Godot Editor (4.x).
+2.  Go to **Project -> Export**.
+3.  Select **Web** preset.
+4.  Export project to `commander-dashboard/public/godot/index.html`.
+5.  Commit the generated files (`index.html`, `index.js`, `index.wasm`, `index.pck`).

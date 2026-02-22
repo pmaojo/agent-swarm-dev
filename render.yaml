@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: agent-swarm-gateway
+    env: docker
+    plan: free
+    region: frankfurt
+    repo: https://github.com/pmaojo/agent-swarm-dev
+    branch: feat/godot-gateway
+    envVars:
+      - key: PORT
+        value: 18789
+      - key: PYTHONUNBUFFERED
+        value: 1
+      # Add other necessary env vars like OPENAI_API_KEY if needed for runtime

@@ -119,14 +119,17 @@ export function CitadelControls({ agents, repositories }: CitadelControlsProps) 
         </CardContent>
       </Card>
 
-      <Card className="bg-black/40 border-white/10 flex-1">
-        <CardHeader>
-            <CardTitle className="text-white/60 text-sm">Active Deployments</CardTitle>
+      <Card className="bg-black/40 border-white/10 flex-1 overflow-hidden">
+        <CardHeader className="pb-2">
+            <CardTitle className="text-white/60 text-sm">Citadel Visualization (Godot)</CardTitle>
         </CardHeader>
-        <CardContent>
-            <div className="text-xs text-white/40 italic">
-                No active deployments tracked in this panel yet. Use the 3D Citadel view to monitor progress.
-            </div>
+        <CardContent className="h-full p-0 relative min-h-[400px]">
+             <iframe
+                src="/godot/index.html"
+                className="w-full h-full absolute inset-0 border-0 rounded-b-md"
+                title="Citadel Godot Visualization"
+                allow="cross-origin-isolated"
+             />
         </CardContent>
       </Card>
     </div>

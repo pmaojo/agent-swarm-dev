@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.pyc
+venv/
+.env
+
+# Node
+node_modules/
+npm-debug.log
+yarn-debug.log
+
+# Docker
+Dockerfile
+.dockerignore
+render.yaml
+
+# Data
+synapse-data/
+protoc/
+data/
+
+# OS
+.DS_Store
+
+# Git
+.git/
+.gitignore
+
+# Tests
+tests/
