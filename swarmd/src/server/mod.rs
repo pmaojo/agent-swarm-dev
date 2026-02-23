@@ -26,6 +26,9 @@ pub async fn start_server(port: u16, synapse: SynapseClient) -> anyhow::Result<(
         .route("/api/v1/control/commands", post(routes::post_control_command))
         .route("/api/v1/control/audit", get(routes::get_audit_log))
         .route("/api/v1/events", post(routes::post_event))
+        .route("/api/v1/mission/assign", post(routes::post_mission_assign))
+        .route("/api/v1/knowledge-tree/nodes", post(routes::post_knowledge_tree_node))
+        .route("/api/v1/knowledge-tree/nodes/{node_id}/documentation", get(routes::get_knowledge_node_documentation))
         .with_state(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));

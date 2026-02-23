@@ -266,3 +266,50 @@ pub struct EventAck {
     pub status: String,
     pub event: GatewayEvent,
 }
+
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct KnowledgeNodeDocumentationResponse {
+    pub node_id: String,
+    pub documentation: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct KnowledgeNodeIngestRequest {
+    pub node_id: String,
+    pub domain: String,
+    pub name: String,
+    pub capability: String,
+    pub level: i32,
+    pub budget_cost: f64,
+    pub time_cost_hours: i32,
+    #[serde(default)]
+    pub prerequisites: Vec<String>,
+    #[serde(default)]
+    pub docs_text: String,
+    #[serde(default = "default_source_type")]
+    pub source_type: String,
+    #[serde(default = "default_source_ref")]
+    pub source_ref: String,
+}
+
+fn default_source_type() -> String {
+    "custom".to_string()
+}
+
+fn default_source_ref() -> String {
+    "game://manual".to_string()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct IngestKnowledgeNodeResponse {
+    pub status: String,
+    pub node: KnowledgeNode,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MissionAssignment {
+    pub agent_id: String,
+    pub repo_id: String,
+    pub task: String,
+}

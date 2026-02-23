@@ -105,7 +105,7 @@ signal mission_assigned(mission)
 signal hardening_event(event)
 
 var _ws = WebSocketClient.new()
-var _url = "ws://localhost:18789/ws"
+var _url = "ws://localhost:18789/api/v1/events/combat/stream"
 
 func _ready():
     _ws.connect("connection_established", self, "_on_connection_established")
