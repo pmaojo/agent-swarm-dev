@@ -4,8 +4,9 @@ use serde_json::Value;
 use tracing::info;
 
 use crate::server::contracts::{
-    ActiveQuest, ControlCommand, ControlCommandAck, DailyBudget, EventAck, GatewayEvent, GameState,
-    GraphData, PartyMember, PartyStats, QuestStatus, RepositoryState, SystemStatus,
+    ActiveQuest, ControlCommand, ControlCommandAck, CountryState, DailyBudget, EventAck, GatewayEvent,
+    GameState, GraphData, PartyMember, PartyStats, QuestStatus, RepositoryState, ServiceHealth,
+    ServiceState, SystemStatus,
 };
 use crate::server::AppState;
 
@@ -167,6 +168,7 @@ pub async fn get_game_state(State(state): State<AppState>) -> Json<GameState> {
         active_quests,
         fog_map: serde_json::json!({}),
         repositories: repositories_out,
+        countries: build_countries(),
     })
 }
 
@@ -205,6 +207,55 @@ fn parse_system_status(raw: &str) -> SystemStatus {
     }
 }
 
+
+fn build_countries() -> Vec<CountryState> {
+    vec![
+        CountryState {
+            id: "country-core".to_string(),
+            name: "The Core Empire".to_string(),
+            services: vec![
+                ServiceState {
+                    id: "service-orchestrator".to_string(),
+                    name: "orchestrator".to_string(),
+                    health: ServiceHealth::Healthy,
+                },
+                ServiceState {
+                    id: "service-gateway".to_string(),
+                    name: "gateway".to_string(),
+                    health: ServiceHealth::Degraded,
+                },
+            ],
+        },
+        CountryState {
+            id: "country-frontend".to_string(),
+            name: "The Front-End Republic".to_string(),
+            services: vec![
+                ServiceState {
+                    id: "service-visualizer".to_string(),
+                    name: "visualizer".to_string(),
+                    health: ServiceHealth::Healthy,
+                },
+                ServiceState {
+                    id: "service-web".to_string(),
+                    name: "web".to_string(),
+                    health: ServiceHealth::UnderAttack,
+                },
+            ],
+        },
+        CountryState {
+            id: "country-security".to_string(),
+            name: "The Security Kingdom".to_string(),
+            services: vec![
+                ServiceState {
+                    id: "service-guardian".to_string(),
+                    name: "guardian".to_string(),
+                    health: ServiceHealth::Halted,
+                },
+            ],
+        },
+    ]
+}
+
 fn parse_quest_status(raw: &str) -> QuestStatus {
     match raw.to_uppercase().replace(' ', "_").as_str() {
         "REQUIREMENTS" => QuestStatus::Requirements,
@@ -238,12 +289,15 @@ mod tests {
             active_quests: vec![ActiveQuest { id: "q1".into(), title: "Quest".into(), status: QuestStatus::InProgress }],
             fog_map: serde_json::json!({}),
             repositories: vec![RepositoryState { id: "repo".into(), name: "main".into(), swarm: vec!["agent-1".into()] }],
+            countries: build_countries(),
         };
 
         let value = serde_json::to_value(state).expect("state should serialize");
         assert!(value.get("system_status").is_some());
         assert!(value.get("active_quests").is_some());
         assert!(value.get("repositories").is_some());
+        assert!(value.get("countries").is_some());
+        assert_eq!(value["countries"][0]["services"][0]["health"], "healthy");
     }
 
     #[tokio::test]
