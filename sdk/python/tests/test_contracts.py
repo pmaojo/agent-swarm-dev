@@ -18,6 +18,7 @@ from lib.contracts import (
     GameState,
     GatewayEvent,
     GraphData,
+    LoadoutAction,
     QuestStatus,
     SystemStatus,
 )
@@ -132,6 +133,10 @@ class ContractSerializationTests(unittest.TestCase):
 
         event = GatewayEvent(type=EventType.BUG_SPAWNED, message="Bug wave")
         self.assertEqual(event.type, EventType.BUG_SPAWNED)
+
+    def test_loadout_action_enum_values_are_stable(self):
+        self.assertEqual(LoadoutAction.APPLY.value, "apply")
+        self.assertEqual(LoadoutAction.CONFIRM.value, "confirm")
 
 
 if __name__ == "__main__":

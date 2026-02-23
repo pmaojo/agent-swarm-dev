@@ -27,6 +27,7 @@ from lib.character_profiles import CharacterRegistry, JsonCharacterProfileSource
 from lib.contracts import (
     ActiveQuest,
     CharacterLoadoutSelection,
+    LoadoutAction,
     ControlCommand,
     ControlCommandAck,
     EventAck,
@@ -541,11 +542,13 @@ class CharacterSelectionResponse(BaseModel):
 class CharacterLoadoutSaveRequest(BaseModel):
     character_id: str
     loadout: CharacterLoadoutSelection
+    action: LoadoutAction
 
 
 class CharacterLoadoutSaveResponse(BaseModel):
     selected_character_id: str
     selected_character_loadout: CharacterLoadoutSelection
+    action: LoadoutAction
 
 
 class KnowledgeNodeDocumentationResponse(BaseModel):
@@ -579,9 +582,25 @@ async def save_character_loadout(payload: CharacterLoadoutSaveRequest) -> Dict[s
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=f"Unknown character_id: {payload.character_id}") from exc
 
+    if payload.action == LoadoutAction.CONFIRM:
+        await manager.broadcast({
+            "type": EventType.MISSION_ASSIGNED.value,
+            "payload": {
+                "type": EventType.MISSION_ASSIGNED.value,
+                "message": f"Loadout confirmed for {selected_profile.display_name}",
+                "details": {
+                    "character_id": selected_profile.id,
+                    "action": payload.action.value,
+                },
+                "severity": "INFO",
+                "timestamp": datetime.now().isoformat(),
+            },
+        })
+
     return CharacterLoadoutSaveResponse(
         selected_character_id=selected_profile.id,
         selected_character_loadout=payload.loadout,
+        action=payload.action,
     ).model_dump()
 
 

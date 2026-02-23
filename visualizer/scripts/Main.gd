@@ -145,11 +145,11 @@ func _bind_controls() -> void:
 		)
 	if has_node("CanvasLayer/CharacterLab/Margin/VBox/Actions/ApplyButton"):
 		$CanvasLayer/CharacterLab/Margin/VBox/Actions/ApplyButton.pressed.connect(func() -> void:
-			_submit_character_loadout(false)
+			_submit_character_loadout("apply")
 		)
 	if has_node("CanvasLayer/CharacterLab/Margin/VBox/Actions/ConfirmButton"):
 		$CanvasLayer/CharacterLab/Margin/VBox/Actions/ConfirmButton.pressed.connect(func() -> void:
-			_submit_character_loadout(true)
+			_submit_character_loadout("confirm")
 		)
 	_bind_loadout_dirty_tracking()
 
@@ -421,12 +421,13 @@ func _render_knowledge_docs() -> void:
 			docs_text = "No docs available for selected knowledge node."
 		$CanvasLayer/CharacterLab/Margin/VBox/Docs.text = docs_text
 
-func _submit_character_loadout(confirm_action: bool) -> void:
+func _submit_character_loadout(action: String) -> void:
 	if not has_node("CharacterLoadoutRequest"):
 		return
 	var endpoint: String = url_base + "/api/v1/characters/loadout"
 	var payload: Dictionary = {
 		"character_id": _selected_character_id,
+		"action": action,
 		"loadout": _build_selected_loadout_payload(),
 	}
 	var headers_json: PackedStringArray = PackedStringArray(["Content-Type: application/json"])
@@ -435,7 +436,7 @@ func _submit_character_loadout(confirm_action: bool) -> void:
 		print("Character loadout request failed to send: ", err)
 		return
 	if has_node("CanvasLayer/CharacterLab/Margin/VBox/Status"):
-		$CanvasLayer/CharacterLab/Margin/VBox/Status.text = "Status: %s" % ("confirming..." if confirm_action else "applying...")
+		$CanvasLayer/CharacterLab/Margin/VBox/Status.text = "Status: %s..." % action
 
 func _build_selected_loadout_payload() -> Dictionary:
 	var profile_id: String = ""
@@ -504,10 +505,16 @@ func _serialize_skill_entries(skills: Array) -> String:
 		lines.append("%s:%s" % [str(entry.get("skill_id", "")), "on" if bool(entry.get("enabled", true)) else "off"])
 	return "\n".join(lines)
 
-func _on_character_loadout_request_completed(result: int, response_code: int, _headers: PackedStringArray, _body: PackedByteArray) -> void:
+func _on_character_loadout_request_completed(result: int, response_code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
 	if has_node("CanvasLayer/CharacterLab/Margin/VBox/Status"):
 		if result == HTTPRequest.RESULT_SUCCESS and response_code >= 200 and response_code < 300:
-			$CanvasLayer/CharacterLab/Margin/VBox/Status.text = "Status: loadout saved"
+			var response_payload: Dictionary = {}
+			var parser := JSON.new()
+			if parser.parse(body.get_string_from_utf8()) == OK:
+				response_payload = parser.get_data()
+			var action: String = str(response_payload.get("action", "apply"))
+			var status_verb: String = "applied" if action == "apply" else "confirmed"
+			$CanvasLayer/CharacterLab/Margin/VBox/Status.text = "Status: loadout %s" % status_verb
 			_character_lab_should_rehydrate_after_save = true
 			_is_user_editing_loadout = false
 			if has_node("GameStateRequest"):
