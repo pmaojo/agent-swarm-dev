@@ -60,6 +60,29 @@ pub struct RepositoryState {
     pub swarm: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ServiceHealth {
+    Healthy,
+    Degraded,
+    Halted,
+    UnderAttack,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ServiceState {
+    pub id: String,
+    pub name: String,
+    pub health: ServiceHealth,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CountryState {
+    pub id: String,
+    pub name: String,
+    pub services: Vec<ServiceState>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct GameState {
     pub system_status: SystemStatus,
@@ -68,6 +91,7 @@ pub struct GameState {
     pub active_quests: Vec<ActiveQuest>,
     pub fog_map: serde_json::Value,
     pub repositories: Vec<RepositoryState>,
+    pub countries: Vec<CountryState>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

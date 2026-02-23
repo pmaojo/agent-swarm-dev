@@ -29,6 +29,7 @@ from lib.contracts import (
     ControlCommandAck,
     EventAck,
     EventType,
+    CountryState,
     GameState,
     GatewayEvent,
     GraphData,
@@ -38,6 +39,8 @@ from lib.contracts import (
     PartyStats,
     QuestStatus,
     RepositoryState,
+    ServiceHealth,
+    ServiceState,
     SystemStatus,
 )
 from lib.godot_bridge.templates import (
@@ -253,6 +256,32 @@ def fetch_game_state() -> Dict[str, Any]:
             repositories.append(RepositoryState(id="repo-root", name="Main Citadel", swarm=[]))
         except Exception: pass
 
+        countries = [
+            CountryState(
+                id="country-core",
+                name="The Core Empire",
+                services=[
+                    ServiceState(id="service-orchestrator", name="orchestrator", health=ServiceHealth.HEALTHY),
+                    ServiceState(id="service-gateway", name="gateway", health=ServiceHealth.DEGRADED),
+                ],
+            ),
+            CountryState(
+                id="country-frontend",
+                name="The Front-End Republic",
+                services=[
+                    ServiceState(id="service-visualizer", name="visualizer", health=ServiceHealth.HEALTHY),
+                    ServiceState(id="service-web", name="web", health=ServiceHealth.UNDER_ATTACK),
+                ],
+            ),
+            CountryState(
+                id="country-security",
+                name="The Security Kingdom",
+                services=[
+                    ServiceState(id="service-guardian", name="guardian", health=ServiceHealth.HALTED),
+                ],
+            ),
+        ]
+
         normalized_status = status if status in {s.value for s in SystemStatus} else SystemStatus.UNKNOWN.value
         game_state = GameState(
             system_status=normalized_status,
@@ -272,6 +301,7 @@ def fetch_game_state() -> Dict[str, Any]:
             active_quests=active_quests,
             fog_map=fog_map,
             repositories=repositories,
+            countries=countries,
         )
 
         return game_state.model_dump(by_alias=True)

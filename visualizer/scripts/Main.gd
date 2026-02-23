@@ -6,6 +6,7 @@ extends Node
 
 var url_base = "http://localhost:18789"
 var poll_timer: Timer
+var _last_game_state_snapshot: String = ""
 
 func _ready():
     print("Godot Visualizer Started")
@@ -52,6 +53,11 @@ func _on_request_completed(result, response_code, headers, body):
         return
 
     var data = json.get_data()
+    var snapshot = JSON.stringify(data)
+    if snapshot == _last_game_state_snapshot:
+        return
+
+    _last_game_state_snapshot = snapshot
     print("Game State Update: ", data)
 
     # Update UI Label
