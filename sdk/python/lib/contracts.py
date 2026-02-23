@@ -50,6 +50,26 @@ class PartyMember(BaseModel):
     location: str
 
 
+class CharacterLoadout(BaseModel):
+    primary_weapon: str
+    secondary_item: str
+    armor: str
+    hit_points: int = Field(ge=0)
+    mana: int = Field(ge=0)
+
+
+class CharacterProfile(BaseModel):
+    id: str
+    agent_id: str
+    display_name: str
+    class_name: str
+    level: int = Field(ge=1)
+    location: str
+    current_action: str = "Idle"
+    base_success_rate: str = "95%"
+    loadout: CharacterLoadout
+
+
 class ActiveQuest(BaseModel):
     id: str
     title: str
@@ -86,6 +106,8 @@ class CountryState(BaseModel):
 
 class GameState(BaseModel):
     system_status: SystemStatus
+    selected_character_id: Optional[str] = None
+    selected_character_loadout: "CharacterLoadoutSelection" = Field(default_factory=lambda: CharacterLoadoutSelection())
     daily_budget: DailyBudget
     party: List[PartyMember] = Field(default_factory=list)
     active_quests: List[ActiveQuest] = Field(default_factory=list)
@@ -147,13 +169,48 @@ class ControlCommandType(str, Enum):
     ROLLBACK_SERVICE = "ROLLBACK_SERVICE"
     RESTART_SERVICE = "RESTART_SERVICE"
     ISOLATE_SERVICE = "ISOLATE_SERVICE"
+    CONFIGURE_CHARACTER_LOADOUT = "CONFIGURE_CHARACTER_LOADOUT"
+
+
+class PromptProfileRef(BaseModel):
+    profile_id: str
+    version: Optional[str] = None
+
+
+class ToolLoadout(BaseModel):
+    loadout_id: Optional[str] = None
+    tool_ids: List[str] = Field(default_factory=list)
+
+
+class DocPackRef(BaseModel):
+    pack_id: str
+    version: Optional[str] = None
+
+
+class SkillSelection(BaseModel):
+    skill_id: str
+    enabled: bool = True
+
+
+class CharacterLoadoutSelection(BaseModel):
+    prompt_profile: Optional[PromptProfileRef] = None
+    tool_loadout: Optional[ToolLoadout] = None
+    doc_packs: List[DocPackRef] = Field(default_factory=list)
+    skills: List[SkillSelection] = Field(default_factory=list)
+
+
+class LoadoutAction(str, Enum):
+    APPLY = "apply"
+    CONFIRM = "confirm"
 
 
 class ControlCommand(BaseModel):
     command: ControlCommandType
+    payload_version: Optional[str] = None
     agent_id: Optional[str] = None
     repo_id: Optional[str] = None
     task: Optional[str] = None
+    loadout: Optional[CharacterLoadoutSelection] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 

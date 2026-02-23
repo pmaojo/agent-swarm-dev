@@ -12,7 +12,7 @@ from fastapi import FastAPI, WebSocket, Request, HTTPException, WebSocketDisconn
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 # Add path to root
 SDK_PYTHON_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 import sys
@@ -23,8 +23,11 @@ from agents.orchestrator import OrchestratorAgent
 
 # Godot Integration
 from lib.godot_bridge.fog import FogService
+from lib.character_profiles import CharacterRegistry, JsonCharacterProfileSink, JsonCharacterProfileSource
 from lib.contracts import (
     ActiveQuest,
+    CharacterLoadoutSelection,
+    LoadoutAction,
     ControlCommand,
     ControlCommandAck,
     EventAck,
@@ -36,7 +39,6 @@ from lib.contracts import (
     GraphEdge,
     GraphNode,
     PartyMember,
-    PartyStats,
     QuestStatus,
     RepositoryState,
     ServiceHealth,
@@ -81,6 +83,12 @@ _service_metric_history: Dict[str, ServiceMetrics] = {}
 # Global Orchestrator instance
 orch = OrchestratorAgent()
 fog_service = FogService(orch)
+
+PROFILE_SOURCE_PATH = Path(__file__).resolve().parents[1] / "data" / "character_profiles.json"
+character_registry = CharacterRegistry(
+    JsonCharacterProfileSource(PROFILE_SOURCE_PATH),
+    sink=JsonCharacterProfileSink(PROFILE_SOURCE_PATH),
+)
 
 def fetch_stats() -> Dict[str, Any]:
     """Fetch real-time stats from Synapse."""
@@ -282,48 +290,40 @@ def fetch_game_state() -> Dict[str, Any]:
             "unit": "USD"
         }
 
-        # 3. Party (Agents)
+        # 3. Party (Character Profiles)
         party = []
-        known_agents = ["ProductManager", "Architect", "Coder", "Reviewer", "Deployer"]
-
-        rpg_classes = {
-            "ProductManager": "Bard",
-            "Architect": "Wizard",
-            "Coder": "Warrior",
-            "Reviewer": "Cleric",
-            "Deployer": "Rogue"
-        }
-
-        locations = {
-             "ProductManager": "The Requirements Hall",
-             "Architect": "The Tower of Design",
-             "Coder": "The Shell Dungeon",
-             "Reviewer": "The Gate of Judgment",
-             "Deployer": "The Cloud Kingdom"
-        }
-
-        for name in known_agents:
-            stats = { "hp": 100, "mana": 80, "success_rate": "95%" }
+        for profile in character_registry.list_profiles():
+            hp = profile.loadout.hit_points
             try:
-                fail_q = f'PREFIX nist: <http://nist.gov/caisi/> PREFIX prov: <http://www.w3.org/ns/prov#> SELECT (COUNT(?exec) as ?count) WHERE {{ ?exec prov:wasAssociatedWith <http://swarm.os/agent/{name}> ; nist:resultState "on_failure" }}'
+                fail_q = (
+                    'PREFIX nist: <http://nist.gov/caisi/> '
+                    'PREFIX prov: <http://www.w3.org/ns/prov#> '
+                    f'SELECT (COUNT(?exec) as ?count) WHERE {{ ?exec prov:wasAssociatedWith <http://swarm.os/agent/{profile.display_name}> ; nist:resultState "on_failure" }}'
+                )
                 fail_res = orch.query_graph(fail_q)
                 if fail_res:
                     val = fail_res[0].get('?count') or fail_res[0].get('count')
                     if val:
                         fails = int(val)
-                        stats["hp"] = max(0, 100 - (fails * 5))
-            except: pass
+                        hp = max(0, profile.loadout.hit_points - (fails * 5))
+            except Exception:
+                pass
 
-            agent_data = {
-                "id": f"agent-{name.lower()}",
-                "name": name,
-                "class": rpg_classes.get(name, "Villager"),
-                "level": 5,
-                "stats": stats,
-                "current_action": "Idle",
-                "location": locations.get(name, "Unknown")
-            }
-            party.append(agent_data)
+            party.append(
+                PartyMember(
+                    id=profile.agent_id,
+                    name=profile.display_name,
+                    **{"class": profile.class_name},
+                    level=profile.level,
+                    stats={
+                        "hp": hp,
+                        "mana": profile.loadout.mana,
+                        "success_rate": profile.base_success_rate,
+                    },
+                    current_action=profile.current_action,
+                    location=profile.location,
+                )
+            )
 
         # 4. Active Quests (Trello)
         active_quests = []
@@ -393,19 +393,10 @@ def fetch_game_state() -> Dict[str, Any]:
 
         game_state = GameState(
             system_status=normalized_status,
+            selected_character_id=character_registry.selected_character_id(),
+            selected_character_loadout=character_registry.selected_character_loadout(),
             daily_budget=daily_budget,
-            party=[
-                PartyMember(
-                    id=item["id"],
-                    name=item["name"],
-                    **{"class": item["class"]},
-                    level=item["level"],
-                    stats=PartyStats(**item["stats"]),
-                    current_action=item["current_action"],
-                    location=item["location"],
-                )
-                for item in party
-            ],
+            party=party,
             active_quests=active_quests,
             fog_map=fog_map,
             repositories=repositories,
@@ -543,8 +534,109 @@ async def get_game_state(): return await asyncio.to_thread(fetch_game_state)
 async def get_graph_nodes(): return await asyncio.to_thread(fetch_graph_nodes)
 
 
+class CharacterSelectionRequest(BaseModel):
+    character_id: str
+
+
+class CharacterSelectionResponse(BaseModel):
+    selected_character_id: str
+
+
+class CharacterLoadoutSaveRequest(BaseModel):
+    character_id: str
+    loadout: CharacterLoadoutSelection
+    action: LoadoutAction
+
+
+class CharacterLoadoutSaveResponse(BaseModel):
+    selected_character_id: str
+    selected_character_loadout: CharacterLoadoutSelection
+    action: LoadoutAction
+
+
+class KnowledgeNodeDocumentationResponse(BaseModel):
+    node_id: str
+    documentation: str
+
+
+@app.get("/api/v1/characters")
+async def get_characters() -> Dict[str, Any]:
+    selected_character_id = character_registry.selected_character_id()
+    return {
+        "selected_character_id": selected_character_id,
+        "characters": [profile.model_dump() for profile in character_registry.list_profiles()],
+    }
+
+
+@app.post("/api/v1/characters/select")
+async def select_character(payload: CharacterSelectionRequest) -> Dict[str, Any]:
+    try:
+        selected_profile = character_registry.select_character(payload.character_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Unknown character_id: {payload.character_id}") from exc
+
+    return CharacterSelectionResponse(selected_character_id=selected_profile.id).model_dump()
+
+
+@app.post("/api/v1/characters/loadout")
+async def save_character_loadout(payload: CharacterLoadoutSaveRequest) -> Dict[str, Any]:
+    try:
+        selected_profile = character_registry.configure_selected_loadout(payload.character_id, payload.loadout)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Unknown character_id: {payload.character_id}") from exc
+
+    if payload.action == LoadoutAction.CONFIRM:
+        await manager.broadcast({
+            "type": EventType.MISSION_ASSIGNED.value,
+            "payload": {
+                "type": EventType.MISSION_ASSIGNED.value,
+                "message": f"Loadout confirmed for {selected_profile.display_name}",
+                "details": {
+                    "character_id": selected_profile.id,
+                    "action": payload.action.value,
+                },
+                "severity": "INFO",
+                "timestamp": datetime.now().isoformat(),
+            },
+        })
+
+    return CharacterLoadoutSaveResponse(
+        selected_character_id=selected_profile.id,
+        selected_character_loadout=payload.loadout,
+        action=payload.action,
+    ).model_dump()
+
+
+@app.get("/api/v1/knowledge-tree/nodes/{node_id}/documentation")
+async def get_knowledge_node_documentation(node_id: str) -> Dict[str, Any]:
+    knowledge_tree = fetch_knowledge_tree(
+        query_graph=lambda query: orch.query_graph(query, namespace="default"),
+        ingest_triples=lambda triples: orch.ingest_triples(triples, namespace="default"),
+        catalog_assets=discover_catalog_assets(Path(__file__).resolve().parents[3]),
+    )
+    for node in knowledge_tree:
+        if node.id == node_id:
+            return KnowledgeNodeDocumentationResponse(
+                node_id=node.id,
+                documentation=node.documentation,
+            ).model_dump()
+    raise HTTPException(status_code=404, detail=f"Unknown knowledge node id: {node_id}")
+
+
+def _validate_control_command(payload: Dict[str, Any]) -> ControlCommand:
+    try:
+        return ControlCommand.model_validate(payload)
+    except ValidationError as exc:
+        errors = exc.errors()
+        loadout_errors = [err for err in errors if str(err.get("loc", "")).startswith("('loadout'")]
+        if loadout_errors:
+            raise HTTPException(status_code=422, detail=f"Invalid loadout payload: {loadout_errors}") from exc
+        raise HTTPException(status_code=422, detail=f"Invalid control command payload: {errors}") from exc
+
+
 @app.post("/api/v1/control/commands")
-async def post_control_command(command: ControlCommand):
+async def post_control_command(command_payload: Dict[str, Any]):
+    command = _validate_control_command(command_payload)
     await manager.broadcast({"type": "CONTROL_COMMAND", "payload": command.model_dump()})
     return ControlCommandAck(command=command).model_dump()
 

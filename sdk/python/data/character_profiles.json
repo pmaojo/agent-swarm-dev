@@ -1,0 +1,90 @@
+{
+  "selected_character_id": "char-coder",
+  "profiles": [
+    {
+      "id": "char-product-manager",
+      "agent_id": "agent-productmanager",
+      "display_name": "ProductManager",
+      "class_name": "Bard",
+      "level": 5,
+      "location": "The Requirements Hall",
+      "current_action": "Prioritizing backlog",
+      "base_success_rate": "95%",
+      "loadout": {
+        "primary_weapon": "Roadmap Lute",
+        "secondary_item": "Stakeholder Scroll",
+        "armor": "Silken Briefing Cloak",
+        "hit_points": 100,
+        "mana": 80
+      }
+    },
+    {
+      "id": "char-architect",
+      "agent_id": "agent-architect",
+      "display_name": "Architect",
+      "class_name": "Wizard",
+      "level": 5,
+      "location": "The Tower of Design",
+      "current_action": "Modeling system boundaries",
+      "base_success_rate": "95%",
+      "loadout": {
+        "primary_weapon": "Blueprint Staff",
+        "secondary_item": "ADR Tome",
+        "armor": "Pattern Ward",
+        "hit_points": 100,
+        "mana": 85
+      }
+    },
+    {
+      "id": "char-coder",
+      "agent_id": "agent-coder",
+      "display_name": "Coder",
+      "class_name": "Warrior",
+      "level": 5,
+      "location": "The Shell Dungeon",
+      "current_action": "Implementing features",
+      "base_success_rate": "95%",
+      "loadout": {
+        "primary_weapon": "Refactor Blade",
+        "secondary_item": "Debugger Lantern",
+        "armor": "Terminal Plate",
+        "hit_points": 100,
+        "mana": 80
+      }
+    },
+    {
+      "id": "char-reviewer",
+      "agent_id": "agent-reviewer",
+      "display_name": "Reviewer",
+      "class_name": "Cleric",
+      "level": 5,
+      "location": "The Gate of Judgment",
+      "current_action": "Reviewing pull requests",
+      "base_success_rate": "95%",
+      "loadout": {
+        "primary_weapon": "Lint Hammer",
+        "secondary_item": "Quality Seal",
+        "armor": "Policy Vestments",
+        "hit_points": 100,
+        "mana": 80
+      }
+    },
+    {
+      "id": "char-deployer",
+      "agent_id": "agent-deployer",
+      "display_name": "Deployer",
+      "class_name": "Rogue",
+      "level": 5,
+      "location": "The Cloud Kingdom",
+      "current_action": "Monitoring rollout",
+      "base_success_rate": "95%",
+      "loadout": {
+        "primary_weapon": "Pipeline Daggers",
+        "secondary_item": "Canary Banner",
+        "armor": "Shadow Ops Cloak",
+        "hit_points": 100,
+        "mana": 80
+      }
+    }
+  ]
+}
