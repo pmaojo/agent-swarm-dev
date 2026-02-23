@@ -6,13 +6,20 @@ from typing import List, Optional, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from lib.contracts import CharacterProfile, PartyMember, PartyStats
+
+from lib.contracts import (
+    CharacterLoadoutSelection,
+    CharacterProfile,
+    PartyMember,
+    PartyStats,
+)
 
 
 class CharacterProfileDocument(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     selected_character_id: Optional[str] = None
+    selected_character_loadout: CharacterLoadoutSelection = Field(default_factory=CharacterLoadoutSelection)
     profiles: List[CharacterProfile] = Field(default_factory=list)
 
 
@@ -52,6 +59,8 @@ class CharacterRegistry:
         else:
             self._selected_character_id = first_profile_id
 
+        self._selected_character_loadout: CharacterLoadoutSelection = document.selected_character_loadout
+
     def list_profiles(self) -> List[CharacterProfile]:
         return list(self._profiles)
 
@@ -88,3 +97,12 @@ class CharacterRegistry:
             )
             for profile in self._profiles
         ]
+
+
+    def selected_character_loadout(self) -> CharacterLoadoutSelection:
+        return self._selected_character_loadout.model_copy(deep=True)
+
+    def configure_selected_loadout(self, character_id: str, loadout: CharacterLoadoutSelection) -> CharacterProfile:
+        profile = self.select_character(character_id)
+        self._selected_character_loadout = loadout
+        return profile

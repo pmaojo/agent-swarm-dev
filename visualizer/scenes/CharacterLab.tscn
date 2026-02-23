@@ -1,0 +1,83 @@
+[gd_scene format=3]
+
+[node name="CharacterLab" type="PanelContainer"]
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -420.0
+offset_top = 480.0
+offset_right = -16.0
+offset_bottom = 980.0
+
+[node name="Margin" type="MarginContainer" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 12.0
+offset_top = 12.0
+offset_right = -12.0
+offset_bottom = -12.0
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 8
+
+[node name="VBox" type="VBoxContainer" parent="Margin"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="Title" type="Label" parent="Margin/VBox"]
+text = "🧪 Character Lab"
+
+[node name="SelectedCharacter" type="Label" parent="Margin/VBox"]
+text = "Selected character: -"
+
+[node name="PromptProfileLabel" type="Label" parent="Margin/VBox"]
+text = "Prompt profile"
+
+[node name="PromptProfileId" type="LineEdit" parent="Margin/VBox"]
+placeholder_text = "prompt.default"
+
+[node name="PromptProfileVersion" type="LineEdit" parent="Margin/VBox"]
+placeholder_text = "version"
+
+[node name="ToolLoadoutLabel" type="Label" parent="Margin/VBox"]
+text = "Tool loadout"
+
+[node name="ToolLoadoutId" type="LineEdit" parent="Margin/VBox"]
+placeholder_text = "tools.core"
+
+[node name="ToolIds" type="LineEdit" parent="Margin/VBox"]
+placeholder_text = "search,build,test"
+
+[node name="SkillsLabel" type="Label" parent="Margin/VBox"]
+text = "Available skills"
+
+[node name="Skills" type="TextEdit" parent="Margin/VBox"]
+custom_minimum_size = Vector2(0, 80)
+size_flags_vertical = 3
+placeholder_text = "skill-creator:on\nskill-installer:off"
+
+[node name="DocsLabel" type="Label" parent="Margin/VBox"]
+text = "Documentation"
+
+[node name="Docs" type="RichTextLabel" parent="Margin/VBox"]
+custom_minimum_size = Vector2(0, 130)
+size_flags_vertical = 3
+text = "Select a knowledge node to view docs."
+
+[node name="Actions" type="HBoxContainer" parent="Margin/VBox"]
+
+[node name="ApplyButton" type="Button" parent="Margin/VBox/Actions"]
+size_flags_horizontal = 3
+text = "Apply"
+
+[node name="ConfirmButton" type="Button" parent="Margin/VBox/Actions"]
+size_flags_horizontal = 3
+text = "Confirm"
+
+[node name="Status" type="Label" parent="Margin/VBox"]
+text = "Status: idle"

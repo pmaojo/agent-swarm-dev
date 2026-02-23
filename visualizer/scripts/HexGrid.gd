@@ -2,6 +2,8 @@ extends Node3D
 
 class_name HexGrid
 
+signal knowledge_node_selected(node_id: String, metadata: Dictionary)
+
 var _hex_grass_scene: PackedScene = preload("res://addons/kaykit_medieval_hexagon_pack/Assets/gltf/tiles/base/hex_grass.gltf")
 
 const BUILDING_ASSET_TEMPLATES: Dictionary = {
@@ -46,6 +48,7 @@ var _service_nodes: Dictionary = {}
 var _country_positions: Dictionary = {}
 var _knowledge_nodes: Dictionary = {}
 var _bug_nodes: Dictionary = {}
+var _selected_knowledge_node_id: String = ""
 
 func _ready() -> void:
 	if not _base_grid_ready:
@@ -238,7 +241,6 @@ func _build_label(text_value: String, color: Color, size: int) -> Label3D:
 	label.font_size = size
 	return label
 
-
 func _sync_knowledge_tree(knowledge_tree: Array) -> void:
 	var active_ids: Dictionary = {}
 	for i in range(knowledge_tree.size()):
@@ -253,7 +255,7 @@ func _sync_knowledge_tree(knowledge_tree: Array) -> void:
 		var unlocked: bool = bool(node_data.get("unlocked", false))
 		var status_color: Color = Color(0.35, 0.95, 0.45) if unlocked else Color(0.95, 0.55, 0.25)
 		var name: String = str(node_data.get("name", node_id))
-		var prereqs: Array = node_data.get("prerequisites", [])
+		var prereqs: PackedStringArray = PackedStringArray(node_data.get("prerequisites", []))
 		var cost: Dictionary = node_data.get("cost", {})
 		var budget: String = str(cost.get("budget", "0"))
 		var time_cost: String = str(cost.get("time_hours", "0"))
@@ -262,16 +264,48 @@ func _sync_knowledge_tree(knowledge_tree: Array) -> void:
 		var bucket: Dictionary = _knowledge_nodes.get(node_id, {})
 		var pos: Vector3 = axial_to_world(q, r) + Vector3(0.0, 1.8, 0.0)
 		if bucket.is_empty():
+			var root := Node3D.new()
+			root.position = pos
+			add_child(root)
+			var marker := MeshInstance3D.new()
+			marker.mesh = SphereMesh.new()
+			marker.scale = Vector3(0.2, 0.2, 0.2)
+			marker.modulate = status_color
+			root.add_child(marker)
+			var area := Area3D.new()
+			var shape := CollisionShape3D.new()
+			var sphere := SphereShape3D.new()
+			sphere.radius = 0.4
+			shape.shape = sphere
+			area.add_child(shape)
+			area.input_ray_pickable = true
+			area.input_event.connect(_on_knowledge_area_input.bind(node_id))
+			root.add_child(area)
 			var label: Label3D = _build_label(label_text, status_color, 18)
-			label.position = pos
-			add_child(label)
-			_knowledge_nodes[node_id] = {"label": label}
+			label.position = Vector3(0.0, 0.7, 0.0)
+			root.add_child(label)
+			_knowledge_nodes[node_id] = {
+				"root": root,
+				"marker": marker,
+				"label": label,
+				"metadata": node_data.duplicate(true)
+			}
 		else:
+			var root_node: Node3D = bucket.get("root")
+			if is_instance_valid(root_node):
+				root_node.position = pos
 			var existing_label: Label3D = bucket.get("label")
 			if is_instance_valid(existing_label):
-				existing_label.position = pos
 				existing_label.text = label_text
 				existing_label.modulate = status_color
+			var existing_marker: MeshInstance3D = bucket.get("marker")
+			if is_instance_valid(existing_marker):
+				existing_marker.modulate = status_color
+			bucket["metadata"] = node_data.duplicate(true)
+			_knowledge_nodes[node_id] = bucket
+
+		if node_id == _selected_knowledge_node_id:
+			_apply_knowledge_selection_style(node_id, true)
 
 	var stale_ids: Array[String] = []
 	for tracked_id in _knowledge_nodes.keys():
@@ -280,10 +314,42 @@ func _sync_knowledge_tree(knowledge_tree: Array) -> void:
 	for stale_id in stale_ids:
 		var bucket: Dictionary = _knowledge_nodes.get(stale_id, {})
 		if not bucket.is_empty():
-			var label: Node = bucket.get("label")
-			if is_instance_valid(label):
-				label.queue_free()
+			var root_node: Node = bucket.get("root")
+			if is_instance_valid(root_node):
+				root_node.queue_free()
 		_knowledge_nodes.erase(stale_id)
+		if stale_id == _selected_knowledge_node_id:
+			_selected_knowledge_node_id = ""
+
+func _on_knowledge_area_input(_camera: Node, event: InputEvent, _event_position: Vector3, _event_normal: Vector3, _shape_idx: int, node_id: String) -> void:
+	if event is InputEventMouseButton:
+		var mouse_event: InputEventMouseButton = event
+		if mouse_event.button_index == MOUSE_BUTTON_LEFT and mouse_event.pressed:
+			_select_knowledge_node(node_id)
+
+func _select_knowledge_node(node_id: String) -> void:
+	if _selected_knowledge_node_id == node_id:
+		return
+	if not _selected_knowledge_node_id.is_empty():
+		_apply_knowledge_selection_style(_selected_knowledge_node_id, false)
+	_selected_knowledge_node_id = node_id
+	_apply_knowledge_selection_style(node_id, true)
+	var bucket: Dictionary = _knowledge_nodes.get(node_id, {})
+	if bucket.is_empty():
+		return
+	var metadata: Dictionary = bucket.get("metadata", {}).duplicate(true)
+	knowledge_node_selected.emit(node_id, metadata)
+
+func _apply_knowledge_selection_style(node_id: String, selected: bool) -> void:
+	var bucket: Dictionary = _knowledge_nodes.get(node_id, {})
+	if bucket.is_empty():
+		return
+	var label: Label3D = bucket.get("label")
+	if is_instance_valid(label):
+		label.outline_render_priority = 20 if selected else 10
+	var marker: MeshInstance3D = bucket.get("marker")
+	if is_instance_valid(marker):
+		marker.scale = Vector3(0.3, 0.3, 0.3) if selected else Vector3(0.2, 0.2, 0.2)
 
 
 func apply_combat_event(event_data: Dictionary) -> void:

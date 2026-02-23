@@ -81,6 +81,31 @@ class CombatStreamTests(unittest.TestCase):
         payload = response.json()
         self.assertIn("Invalid loadout payload", payload["detail"])
 
+    def test_loadout_endpoint_persists_selection_in_game_state(self) -> None:
+        characters = self.client.get('/api/v1/characters').json()["characters"]
+        character_id = characters[0]["id"]
+
+        save_response = self.client.post('/api/v1/characters/loadout', json={
+            "character_id": character_id,
+            "loadout": {
+                "prompt_profile": {"profile_id": "prompt.reviewer", "version": "2026-01"},
+                "tool_loadout": {"loadout_id": "tools.review", "tool_ids": ["search", "test", "lint"]},
+                "doc_packs": [{"pack_id": "docs.security", "version": "2"}],
+                "skills": [{"skill_id": "skill-creator", "enabled": True}],
+            },
+        })
+
+        self.assertEqual(save_response.status_code, 200)
+        game_state = self.client.get('/api/v1/game-state').json()
+        self.assertEqual(game_state["selected_character_id"], character_id)
+        self.assertEqual(game_state["selected_character_loadout"]["prompt_profile"]["profile_id"], "prompt.reviewer")
+
+    def test_knowledge_node_documentation_endpoint_returns_not_found_for_unknown_node(self) -> None:
+        docs_response = self.client.get('/api/v1/knowledge-tree/nodes/missing-node/documentation')
+        self.assertEqual(docs_response.status_code, 404)
+        payload = docs_response.json()
+        self.assertIn("Unknown knowledge node id", payload["detail"])
+
     def test_game_state_party_uses_character_registry(self) -> None:
         state = fetch_game_state()
         party = state.get("party", [])

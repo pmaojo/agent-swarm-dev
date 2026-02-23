@@ -8,6 +8,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from lib.character_profiles import CharacterRegistry, JsonCharacterProfileSource
+from lib.contracts import CharacterLoadoutSelection, PromptProfileRef, ToolLoadout
 
 
 class CharacterProfileRegistryTests(unittest.TestCase):
@@ -68,6 +69,23 @@ class CharacterProfileRegistryTests(unittest.TestCase):
 
         with self.assertRaises(KeyError):
             registry.select_character("char-missing")
+
+
+    def test_registry_tracks_selected_loadout(self) -> None:
+        source = JsonCharacterProfileSource(self._build_temp_profile_file())
+        registry = CharacterRegistry(source)
+
+        loadout = registry.selected_character_loadout()
+        self.assertEqual(loadout.doc_packs, [])
+
+        updated = CharacterLoadoutSelection(
+            prompt_profile=PromptProfileRef(profile_id="prompt.alpha", version="v1"),
+            tool_loadout=ToolLoadout(loadout_id="tools.alpha", tool_ids=["search"]),
+        )
+        registry.configure_selected_loadout("char-a", updated)
+
+        self.assertEqual(registry.selected_character_id(), "char-a")
+        self.assertEqual(registry.selected_character_loadout().prompt_profile.profile_id, "prompt.alpha")
 
 
 if __name__ == "__main__":
