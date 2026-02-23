@@ -69,3 +69,16 @@ export function useSendSovereignCommand() {
     },
   });
 }
+
+export function useAssignMission() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: { agent_id: string; repo_id: string; task: string }) => {
+      // Mock assignment
+      return new Promise((resolve) => setTimeout(resolve, 500));
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["game-state"] });
+    },
+  });
+}
