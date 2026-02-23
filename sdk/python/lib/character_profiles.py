@@ -30,6 +30,13 @@ class CharacterProfileSource(Protocol):
         ...
 
 
+class CharacterProfileSink(Protocol):
+    """Hexagonal output port for character profile persistence."""
+
+    def save_document(self, document: CharacterProfileDocument) -> None:
+        ...
+
+
 class JsonCharacterProfileSource:
     """JSON-backed adapter for character profiles."""
 
@@ -45,11 +52,25 @@ class JsonCharacterProfileSource:
         return CharacterProfileDocument.model_validate(payload)
 
 
+class JsonCharacterProfileSink:
+    """JSON-backed adapter for writing profile document mutations."""
+
+    def __init__(self, sink_path: Path):
+        self._sink_path = sink_path
+
+    def save_document(self, document: CharacterProfileDocument) -> None:
+        self._sink_path.write_text(
+            document.model_dump_json(indent=2),
+            encoding="utf-8",
+        )
+
+
 class CharacterRegistry:
     """Application service for profile lifecycle and active selection."""
 
-    def __init__(self, source: CharacterProfileSource):
+    def __init__(self, source: CharacterProfileSource, sink: Optional[CharacterProfileSink] = None):
         self._source = source
+        self._sink = sink
         document = source.load_document()
         self._profiles: List[CharacterProfile] = document.profiles
 
@@ -72,6 +93,7 @@ class CharacterRegistry:
         if profile is None:
             raise KeyError(character_id)
         self._selected_character_id = profile.id
+        self._persist_selection()
         return profile
 
     def get_profile(self, character_id: str) -> Optional[CharacterProfile]:
@@ -103,6 +125,21 @@ class CharacterRegistry:
         return self._selected_character_loadout.model_copy(deep=True)
 
     def configure_selected_loadout(self, character_id: str, loadout: CharacterLoadoutSelection) -> CharacterProfile:
-        profile = self.select_character(character_id)
+        profile = self.get_profile(character_id)
+        if profile is None:
+            raise KeyError(character_id)
+        self._selected_character_id = profile.id
         self._selected_character_loadout = loadout
+        self._persist_selection()
         return profile
+
+    def _persist_selection(self) -> None:
+        if self._sink is None:
+            return
+        self._sink.save_document(
+            CharacterProfileDocument(
+                selected_character_id=self._selected_character_id,
+                selected_character_loadout=self._selected_character_loadout,
+                profiles=self._profiles,
+            )
+        )

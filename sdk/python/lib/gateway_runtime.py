@@ -23,7 +23,7 @@ from agents.orchestrator import OrchestratorAgent
 
 # Godot Integration
 from lib.godot_bridge.fog import FogService
-from lib.character_profiles import CharacterRegistry, JsonCharacterProfileSource
+from lib.character_profiles import CharacterRegistry, JsonCharacterProfileSink, JsonCharacterProfileSource
 from lib.contracts import (
     ActiveQuest,
     CharacterLoadoutSelection,
@@ -85,7 +85,10 @@ orch = OrchestratorAgent()
 fog_service = FogService(orch)
 
 PROFILE_SOURCE_PATH = Path(__file__).resolve().parents[1] / "data" / "character_profiles.json"
-character_registry = CharacterRegistry(JsonCharacterProfileSource(PROFILE_SOURCE_PATH))
+character_registry = CharacterRegistry(
+    JsonCharacterProfileSource(PROFILE_SOURCE_PATH),
+    sink=JsonCharacterProfileSink(PROFILE_SOURCE_PATH),
+)
 
 def fetch_stats() -> Dict[str, Any]:
     """Fetch real-time stats from Synapse."""
