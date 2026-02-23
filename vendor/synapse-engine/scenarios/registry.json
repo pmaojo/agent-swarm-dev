@@ -1,0 +1,20 @@
+[
+  {
+    "name": "core",
+    "description": "Essential ontologies for Synapse.",
+    "version": "1.0.0",
+    "location": "https://raw.githubusercontent.com/pmaojo/synapse-engine/main/scenarios/core"
+  },
+  {
+    "name": "research-assistant",
+    "description": "Academic research assistant scenario.",
+    "version": "1.0.0",
+    "location": "https://raw.githubusercontent.com/pmaojo/synapse-engine/main/scenarios/research-assistant"
+  },
+  {
+    "name": "kthulu-go",
+    "description": "Kthulu Go AI-Native Software Foundry mastering.",
+    "version": "1.0.0",
+    "location": "/home/robin/workspace/projects/synapse-engine/scenarios/kthulu-go"
+  }
+]

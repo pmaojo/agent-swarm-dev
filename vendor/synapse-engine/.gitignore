@@ -1,0 +1,36 @@
+# Rust
+target/
+**/*.rs.bk
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+venv-embeddings/
+test_venv/
+ENV/
+env/
+.env
+
+# Storage
+**/data/*.bin
+**/data/*.db
+**/data/graphs/**/*
+!**/data/graphs/.gitkeep
+**/data/sessions/
+**/data/*.jsonl
+.fastembed_cache/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# Logs
+logs/
+*.log
+*.txt
