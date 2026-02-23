@@ -192,6 +192,11 @@ class CharacterLoadoutSelection(BaseModel):
     skills: List[SkillSelection] = Field(default_factory=list)
 
 
+class LoadoutAction(str, Enum):
+    APPLY = "apply"
+    CONFIRM = "confirm"
+
+
 class ControlCommand(BaseModel):
     command: ControlCommandType
     payload_version: Optional[str] = None

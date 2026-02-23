@@ -87,6 +87,7 @@ class CombatStreamTests(unittest.TestCase):
 
         save_response = self.client.post('/api/v1/characters/loadout', json={
             "character_id": character_id,
+            "action": "apply",
             "loadout": {
                 "prompt_profile": {"profile_id": "prompt.reviewer", "version": "2026-01"},
                 "tool_loadout": {"loadout_id": "tools.review", "tool_ids": ["search", "test", "lint"]},
@@ -99,6 +100,43 @@ class CombatStreamTests(unittest.TestCase):
         game_state = self.client.get('/api/v1/game-state').json()
         self.assertEqual(game_state["selected_character_id"], character_id)
         self.assertEqual(game_state["selected_character_loadout"]["prompt_profile"]["profile_id"], "prompt.reviewer")
+        self.assertEqual(save_response.json()["action"], "apply")
+
+
+    def test_loadout_endpoint_rejects_unknown_action(self) -> None:
+        characters = self.client.get('/api/v1/characters').json()["characters"]
+        character_id = characters[0]["id"]
+
+        save_response = self.client.post('/api/v1/characters/loadout', json={
+            "character_id": character_id,
+            "action": "ship-it",
+            "loadout": {
+                "prompt_profile": {"profile_id": "prompt.reviewer", "version": "2026-01"},
+                "tool_loadout": {"loadout_id": "tools.review", "tool_ids": ["search"]},
+                "doc_packs": [],
+                "skills": [],
+            },
+        })
+
+        self.assertEqual(save_response.status_code, 422)
+
+    def test_loadout_endpoint_confirm_returns_confirm_action(self) -> None:
+        characters = self.client.get('/api/v1/characters').json()["characters"]
+        character_id = characters[0]["id"]
+
+        save_response = self.client.post('/api/v1/characters/loadout', json={
+            "character_id": character_id,
+            "action": "confirm",
+            "loadout": {
+                "prompt_profile": {"profile_id": "prompt.reviewer", "version": "2026-01"},
+                "tool_loadout": {"loadout_id": "tools.review", "tool_ids": ["search"]},
+                "doc_packs": [],
+                "skills": [],
+            },
+        })
+
+        self.assertEqual(save_response.status_code, 200)
+        self.assertEqual(save_response.json()["action"], "confirm")
 
     def test_knowledge_node_documentation_endpoint_returns_not_found_for_unknown_node(self) -> None:
         docs_response = self.client.get('/api/v1/knowledge-tree/nodes/missing-node/documentation')
