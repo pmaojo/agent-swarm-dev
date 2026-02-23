@@ -12,7 +12,7 @@ from fastapi import FastAPI, WebSocket, Request, HTTPException, WebSocketDisconn
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 # Add path to root
 SDK_PYTHON_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 import sys
@@ -554,8 +554,20 @@ async def select_character(payload: CharacterSelectionRequest) -> Dict[str, Any]
     return CharacterSelectionResponse(selected_character_id=selected_profile.id).model_dump()
 
 
+def _validate_control_command(payload: Dict[str, Any]) -> ControlCommand:
+    try:
+        return ControlCommand.model_validate(payload)
+    except ValidationError as exc:
+        errors = exc.errors()
+        loadout_errors = [err for err in errors if str(err.get("loc", "")).startswith("('loadout'")]
+        if loadout_errors:
+            raise HTTPException(status_code=422, detail=f"Invalid loadout payload: {loadout_errors}") from exc
+        raise HTTPException(status_code=422, detail=f"Invalid control command payload: {errors}") from exc
+
+
 @app.post("/api/v1/control/commands")
-async def post_control_command(command: ControlCommand):
+async def post_control_command(command_payload: Dict[str, Any]):
+    command = _validate_control_command(command_payload)
     await manager.broadcast({"type": "CONTROL_COMMAND", "payload": command.model_dump()})
     return ControlCommandAck(command=command).model_dump()
 
