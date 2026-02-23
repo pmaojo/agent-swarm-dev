@@ -22,6 +22,11 @@ var _selected_character_id: String = ""
 var _selected_agent_id: String = "agent-coder"
 var _selected_knowledge_node_id: String = ""
 var _selected_knowledge_metadata: Dictionary = {}
+var _is_user_editing_loadout: bool = false
+var _is_programmatic_loadout_update: bool = false
+var _character_lab_initialized: bool = false
+var _character_lab_last_rendered_character_id: String = ""
+var _character_lab_should_rehydrate_after_save: bool = false
 
 func _ready() -> void:
 	print("Godot Visualizer Started")
@@ -146,6 +151,33 @@ func _bind_controls() -> void:
 		$CanvasLayer/CharacterLab/Margin/VBox/Actions/ConfirmButton.pressed.connect(func() -> void:
 			_submit_character_loadout(true)
 		)
+	_bind_loadout_dirty_tracking()
+
+func _bind_loadout_dirty_tracking() -> void:
+	_connect_loadout_text_changed("CanvasLayer/CharacterLab/Margin/VBox/PromptProfileId")
+	_connect_loadout_text_changed("CanvasLayer/CharacterLab/Margin/VBox/PromptProfileVersion")
+	_connect_loadout_text_changed("CanvasLayer/CharacterLab/Margin/VBox/ToolLoadoutId")
+	_connect_loadout_text_changed("CanvasLayer/CharacterLab/Margin/VBox/ToolIds")
+	_connect_loadout_text_changed("CanvasLayer/CharacterLab/Margin/VBox/Skills")
+
+func _connect_loadout_text_changed(node_path: String) -> void:
+	if not has_node(node_path):
+		return
+	var editable_field: Node = get_node(node_path)
+	if editable_field is LineEdit:
+		var line_edit: LineEdit = editable_field
+		if not line_edit.text_changed.is_connected(_on_loadout_field_text_changed):
+			line_edit.text_changed.connect(_on_loadout_field_text_changed)
+		return
+	if editable_field is TextEdit:
+		var text_edit: TextEdit = editable_field
+		if not text_edit.text_changed.is_connected(_on_loadout_field_text_changed):
+			text_edit.text_changed.connect(_on_loadout_field_text_changed)
+
+func _on_loadout_field_text_changed() -> void:
+	if _is_programmatic_loadout_update:
+		return
+	_is_user_editing_loadout = true
 
 func _fetch_game_state(http: HTTPRequest) -> void:
 	var endpoint: String = url_base + "/api/v1/game-state"
@@ -226,7 +258,23 @@ func _render_character_lab(data: Dictionary) -> void:
 	var tool_loadout: Dictionary = loadout.get("tool_loadout", {})
 	var doc_packs: Array = loadout.get("doc_packs", [])
 	var skills: Array = loadout.get("skills", [])
+	var selected_character_changed: bool = _selected_character_id != _character_lab_last_rendered_character_id
+	var should_populate_editable_fields: bool = ((not _character_lab_initialized) or selected_character_changed or _character_lab_should_rehydrate_after_save) and (not _is_user_editing_loadout)
 
+	if should_populate_editable_fields:
+		_apply_character_lab_editable_fields(prompt_profile, tool_loadout, skills)
+		_character_lab_initialized = true
+		_character_lab_last_rendered_character_id = _selected_character_id
+		_character_lab_should_rehydrate_after_save = false
+		_is_user_editing_loadout = false
+	if has_node("CanvasLayer/CharacterLab/Margin/VBox/Docs"):
+		var docs_text: String = str(_selected_knowledge_metadata.get("documentation", ""))
+		if docs_text.is_empty() and doc_packs.size() > 0:
+			docs_text = "Selected doc packs: " + JSON.stringify(doc_packs)
+		$CanvasLayer/CharacterLab/Margin/VBox/Docs.text = docs_text if not docs_text.is_empty() else "Select a knowledge node to view docs."
+
+func _apply_character_lab_editable_fields(prompt_profile: Dictionary, tool_loadout: Dictionary, skills: Array) -> void:
+	_is_programmatic_loadout_update = true
 	if has_node("CanvasLayer/CharacterLab/Margin/VBox/PromptProfileId"):
 		$CanvasLayer/CharacterLab/Margin/VBox/PromptProfileId.text = str(prompt_profile.get("profile_id", ""))
 	if has_node("CanvasLayer/CharacterLab/Margin/VBox/PromptProfileVersion"):
@@ -237,11 +285,7 @@ func _render_character_lab(data: Dictionary) -> void:
 		$CanvasLayer/CharacterLab/Margin/VBox/ToolIds.text = ",".join(tool_loadout.get("tool_ids", []))
 	if has_node("CanvasLayer/CharacterLab/Margin/VBox/Skills"):
 		$CanvasLayer/CharacterLab/Margin/VBox/Skills.text = _serialize_skill_entries(skills)
-	if has_node("CanvasLayer/CharacterLab/Margin/VBox/Docs"):
-		var docs_text: String = str(_selected_knowledge_metadata.get("documentation", ""))
-		if docs_text.is_empty() and doc_packs.size() > 0:
-			docs_text = "Selected doc packs: " + JSON.stringify(doc_packs)
-		$CanvasLayer/CharacterLab/Margin/VBox/Docs.text = docs_text if not docs_text.is_empty() else "Select a knowledge node to view docs."
+	_is_programmatic_loadout_update = false
 
 func _turn_number() -> int:
 	if _last_game_state.is_empty():
@@ -464,6 +508,8 @@ func _on_character_loadout_request_completed(result: int, response_code: int, _h
 	if has_node("CanvasLayer/CharacterLab/Margin/VBox/Status"):
 		if result == HTTPRequest.RESULT_SUCCESS and response_code >= 200 and response_code < 300:
 			$CanvasLayer/CharacterLab/Margin/VBox/Status.text = "Status: loadout saved"
+			_character_lab_should_rehydrate_after_save = true
+			_is_user_editing_loadout = false
 			if has_node("GameStateRequest"):
 				_fetch_game_state($GameStateRequest)
 		else:
