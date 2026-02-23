@@ -105,6 +105,8 @@ class CountryState(BaseModel):
 
 class GameState(BaseModel):
     system_status: SystemStatus
+    selected_character_id: Optional[str] = None
+    selected_character_loadout: "CharacterLoadoutSelection" = Field(default_factory=lambda: CharacterLoadoutSelection())
     daily_budget: DailyBudget
     party: List[PartyMember] = Field(default_factory=list)
     active_quests: List[ActiveQuest] = Field(default_factory=list)

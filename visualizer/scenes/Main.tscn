@@ -2,6 +2,7 @@
 
 [ext_resource type="Script" uid="uid://dbqgy8w4ppxja" path="res://scripts/Main.gd" id="1"]
 [ext_resource type="Script" uid="uid://c8puhl83whasr" path="res://scripts/HexGrid.gd" id="2"]
+[ext_resource type="PackedScene" path="res://scenes/CharacterLab.tscn" id="3"]
 
 [node name="Main" type="Node" unique_id=583080806]
 script = ExtResource("1")
@@ -108,5 +109,8 @@ anchor_bottom = 1.0
 size_flags_horizontal = 3
 size_flags_vertical = 3
 text = "Waiting for game state..."
+
+
+[node name="CharacterLab" parent="CanvasLayer" instance=ExtResource("3")]
 
 [node name="HTTPRequest" type="HTTPRequest" parent="." unique_id=1583219651]

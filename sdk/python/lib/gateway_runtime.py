@@ -26,6 +26,7 @@ from lib.godot_bridge.fog import FogService
 from lib.character_profiles import CharacterRegistry, JsonCharacterProfileSource
 from lib.contracts import (
     ActiveQuest,
+    CharacterLoadoutSelection,
     ControlCommand,
     ControlCommandAck,
     EventAck,
@@ -388,6 +389,8 @@ def fetch_game_state() -> Dict[str, Any]:
 
         game_state = GameState(
             system_status=normalized_status,
+            selected_character_id=character_registry.selected_character_id(),
+            selected_character_loadout=character_registry.selected_character_loadout(),
             daily_budget=daily_budget,
             party=party,
             active_quests=active_quests,
@@ -535,6 +538,21 @@ class CharacterSelectionResponse(BaseModel):
     selected_character_id: str
 
 
+class CharacterLoadoutSaveRequest(BaseModel):
+    character_id: str
+    loadout: CharacterLoadoutSelection
+
+
+class CharacterLoadoutSaveResponse(BaseModel):
+    selected_character_id: str
+    selected_character_loadout: CharacterLoadoutSelection
+
+
+class KnowledgeNodeDocumentationResponse(BaseModel):
+    node_id: str
+    documentation: str
+
+
 @app.get("/api/v1/characters")
 async def get_characters() -> Dict[str, Any]:
     selected_character_id = character_registry.selected_character_id()
@@ -552,6 +570,35 @@ async def select_character(payload: CharacterSelectionRequest) -> Dict[str, Any]
         raise HTTPException(status_code=404, detail=f"Unknown character_id: {payload.character_id}") from exc
 
     return CharacterSelectionResponse(selected_character_id=selected_profile.id).model_dump()
+
+
+@app.post("/api/v1/characters/loadout")
+async def save_character_loadout(payload: CharacterLoadoutSaveRequest) -> Dict[str, Any]:
+    try:
+        selected_profile = character_registry.configure_selected_loadout(payload.character_id, payload.loadout)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Unknown character_id: {payload.character_id}") from exc
+
+    return CharacterLoadoutSaveResponse(
+        selected_character_id=selected_profile.id,
+        selected_character_loadout=payload.loadout,
+    ).model_dump()
+
+
+@app.get("/api/v1/knowledge-tree/nodes/{node_id}/documentation")
+async def get_knowledge_node_documentation(node_id: str) -> Dict[str, Any]:
+    knowledge_tree = fetch_knowledge_tree(
+        query_graph=lambda query: orch.query_graph(query, namespace="default"),
+        ingest_triples=lambda triples: orch.ingest_triples(triples, namespace="default"),
+        catalog_assets=discover_catalog_assets(Path(__file__).resolve().parents[3]),
+    )
+    for node in knowledge_tree:
+        if node.id == node_id:
+            return KnowledgeNodeDocumentationResponse(
+                node_id=node.id,
+                documentation=node.documentation,
+            ).model_dump()
+    raise HTTPException(status_code=404, detail=f"Unknown knowledge node id: {node_id}")
 
 
 def _validate_control_command(payload: Dict[str, Any]) -> ControlCommand:
