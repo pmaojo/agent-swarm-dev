@@ -7,11 +7,16 @@ extends Node
 const COMMAND_ASSIGN_MISSION: String = "ASSIGN_MISSION"
 const COMMAND_PAUSE_AGENT: String = "PAUSE_AGENT"
 const COMMAND_RESUME_AGENT: String = "RESUME_AGENT"
+const COMMAND_PATCH_SERVICE: String = "PATCH_SERVICE"
+const COMMAND_ROLLBACK_SERVICE: String = "ROLLBACK_SERVICE"
+const COMMAND_RESTART_SERVICE: String = "RESTART_SERVICE"
+const COMMAND_ISOLATE_SERVICE: String = "ISOLATE_SERVICE"
 
 var url_base: String = "http://localhost:18789"
 var poll_timer: Timer
 var _last_game_state_snapshot: String = ""
 var _last_game_state: Dictionary = {}
+var _combat_socket: WebSocketPeer = WebSocketPeer.new()
 
 func _ready() -> void:
 	print("Godot Visualizer Started")
@@ -39,7 +44,37 @@ func _ready() -> void:
 	add_child(poll_timer)
 
 	_bind_controls()
+	_connect_combat_stream()
+	set_process(true)
 	_fetch_game_state(state_http)
+
+
+func _process(delta: float) -> void:
+	_poll_combat_stream()
+
+func _connect_combat_stream() -> void:
+	var ws_url: String = "ws://localhost:18789/api/v1/events/combat/stream"
+	if OS.has_feature("web"):
+		ws_url = "ws://" + JavaScriptBridge.eval("window.location.host") + "/api/v1/events/combat/stream"
+	var err: int = _combat_socket.connect_to_url(ws_url)
+	if err != OK:
+		print("Unable to connect combat stream: ", err)
+
+func _poll_combat_stream() -> void:
+	if _combat_socket.get_ready_state() == WebSocketPeer.STATE_CONNECTING:
+		_combat_socket.poll()
+		return
+	if _combat_socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
+		return
+	_combat_socket.poll()
+	while _combat_socket.get_available_packet_count() > 0:
+		var packet: PackedByteArray = _combat_socket.get_packet()
+		var text: String = packet.get_string_from_utf8()
+		var parser := JSON.new()
+		if parser.parse(text) == OK:
+			var event_data: Dictionary = parser.get_data()
+			if get_node_or_null("HexGridManager"):
+				$HexGridManager.apply_combat_event(event_data)
 
 func _bind_controls() -> void:
 	if has_node("CanvasLayer/HUD/Margin/VBox/Actions/DispatchQuestButton"):
@@ -53,6 +88,22 @@ func _bind_controls() -> void:
 	if has_node("CanvasLayer/HUD/Margin/VBox/Actions/ResumeButton"):
 		$CanvasLayer/HUD/Margin/VBox/Actions/ResumeButton.pressed.connect(func() -> void:
 			_send_control_command(COMMAND_RESUME_AGENT, "agent-coder", "repo-root", "Rejoin formation")
+		)
+	if has_node("CanvasLayer/HUD/Margin/VBox/Actions/PatchButton"):
+		$CanvasLayer/HUD/Margin/VBox/Actions/PatchButton.pressed.connect(func() -> void:
+			_send_control_command(COMMAND_PATCH_SERVICE, "agent-coder", "service-gateway", "Apply hot patch")
+		)
+	if has_node("CanvasLayer/HUD/Margin/VBox/Actions/RollbackButton"):
+		$CanvasLayer/HUD/Margin/VBox/Actions/RollbackButton.pressed.connect(func() -> void:
+			_send_control_command(COMMAND_ROLLBACK_SERVICE, "agent-reviewer", "service-web", "Rollback unstable release")
+		)
+	if has_node("CanvasLayer/HUD/Margin/VBox/Actions/RestartButton"):
+		$CanvasLayer/HUD/Margin/VBox/Actions/RestartButton.pressed.connect(func() -> void:
+			_send_control_command(COMMAND_RESTART_SERVICE, "agent-deployer", "service-orchestrator", "Controlled restart")
+		)
+	if has_node("CanvasLayer/HUD/Margin/VBox/Actions/IsolateButton"):
+		$CanvasLayer/HUD/Margin/VBox/Actions/IsolateButton.pressed.connect(func() -> void:
+			_send_control_command(COMMAND_ISOLATE_SERVICE, "agent-architect", "service-guardian", "Isolate compromised node")
 		)
 
 func _fetch_game_state(http: HTTPRequest) -> void:

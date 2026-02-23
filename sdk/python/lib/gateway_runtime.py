@@ -4,7 +4,7 @@ import uuid
 import time
 import os
 from pathlib import Path
-from typing import Dict, Any, List, Literal
+from typing import Dict, Any, List, Literal, Tuple
 from contextlib import asynccontextmanager
 from datetime import datetime
 
@@ -44,6 +44,7 @@ from lib.contracts import (
     SystemStatus,
 )
 from lib.knowledge_tree import discover_catalog_assets, fetch_knowledge_tree, ingest_custom_knowledge_node
+from lib.combat_events import CombatEventFactory, ServiceMetrics, evaluate_service_health
 from lib.godot_bridge.templates import (
     AGENT_UNIT_GD,
     FOG_MANAGER_GD,
@@ -73,6 +74,8 @@ class ConnectionManager:
                 pass
 
 manager = ConnectionManager()
+combat_event_queue: asyncio.Queue[Dict[str, Any]] = asyncio.Queue(maxsize=256)
+_service_metric_history: Dict[str, ServiceMetrics] = {}
 
 # --- Stats Helper ---
 # Global Orchestrator instance
@@ -145,6 +148,101 @@ def fetch_stats() -> Dict[str, Any]:
     except Exception as e:
         print(f"Error fetching stats: {e}")
         return {"error": str(e)}
+
+def _emit_combat_event(event: GatewayEvent) -> None:
+    payload = {"type": event.type.value, "payload": event.model_dump()}
+    if combat_event_queue.full():
+        try:
+            combat_event_queue.get_nowait()
+        except asyncio.QueueEmpty:
+            pass
+    try:
+        combat_event_queue.put_nowait(payload)
+    except asyncio.QueueFull:
+        pass
+
+
+def _service_metrics_from_health(health: ServiceHealth) -> Tuple[float, float]:
+    mapping: Dict[ServiceHealth, Tuple[float, float]] = {
+        ServiceHealth.HEALTHY: (60.0, 0.01),
+        ServiceHealth.DEGRADED: (320.0, 0.10),
+        ServiceHealth.UNDER_ATTACK: (930.0, 0.25),
+        ServiceHealth.HALTED: (1500.0, 1.0),
+    }
+    return mapping.get(health, (80.0, 0.02))
+
+
+def _build_service_state(country_id: str, service_id: str, service_name: str, system_status_raw: str, budget_ratio: float) -> ServiceState:
+    system_status = SystemStatus(system_status_raw) if system_status_raw in {s.value for s in SystemStatus} else SystemStatus.UNKNOWN
+    baseline_latency, baseline_error = _service_metrics_from_health(ServiceHealth.HEALTHY)
+
+    test_failures = 0
+    worker_errors = 0
+    try:
+        fail_res = orch.query_graph(
+            f'PREFIX nist: <http://nist.gov/caisi/> SELECT (COUNT(?s) as ?count) WHERE {{ ?s nist:resultState "on_failure" }}',
+            namespace="default",
+        )
+        if fail_res:
+            val = fail_res[0].get('?count') or fail_res[0].get('count')
+            test_failures = int(val or 0)
+    except Exception:
+        test_failures = 0
+
+    try:
+        worker_res = orch.query_graph(
+            'PREFIX swarm: <http://swarm.os/ontology/> SELECT (COUNT(?event) as ?count) WHERE { ?event a swarm:WorkerErrorEvent . }',
+            namespace="default",
+        )
+        if worker_res:
+            val = worker_res[0].get('?count') or worker_res[0].get('count')
+            worker_errors = int(val or 0)
+    except Exception:
+        worker_errors = 0
+
+    latency_ms = baseline_latency + (test_failures * 22.0) + (worker_errors * 40.0)
+    error_rate = min(1.0, baseline_error + (test_failures * 0.012) + (worker_errors * 0.02) + max(0.0, budget_ratio - 0.8) * 0.5)
+
+    metrics = evaluate_service_health(latency_ms=latency_ms, error_rate=error_rate, system_status=system_status)
+    service_key = f"{country_id}:{service_id}"
+    previous = _service_metric_history.get(service_key)
+
+    spawned = CombatEventFactory.from_test_failures(service_id=service_id, service_name=service_name, failures=test_failures)
+    if spawned is not None and test_failures > 0:
+        _emit_combat_event(spawned)
+
+    damaged = CombatEventFactory.from_worker_errors(service_id=service_id, service_name=service_name, errors=worker_errors)
+    if damaged is not None:
+        _emit_combat_event(damaged)
+
+    for budget_event in CombatEventFactory.from_budget_utilization(
+        service_id=service_id,
+        service_name=service_name,
+        budget_utilization_percent=budget_ratio * 100.0,
+    ):
+        _emit_combat_event(budget_event)
+
+    if previous is not None:
+        for recovered_event in CombatEventFactory.from_service_transition(
+            service_id=service_id,
+            service_name=service_name,
+            previous=previous,
+            current=metrics,
+            system_status=system_status,
+        ):
+            _emit_combat_event(recovered_event)
+
+    _service_metric_history[service_key] = metrics
+
+    return ServiceState(
+        id=service_id,
+        name=service_name,
+        health=metrics.health,
+        hp=metrics.hp,
+        latency_ms=round(metrics.latency_ms, 2),
+        error_rate=round(metrics.error_rate, 4),
+    )
+
 
 def fetch_game_state() -> Dict[str, Any]:
     """Fetch RPG Game State."""
@@ -257,33 +355,35 @@ def fetch_game_state() -> Dict[str, Any]:
             repositories.append(RepositoryState(id="repo-root", name="Main Citadel", swarm=[]))
         except Exception: pass
 
+        normalized_status = status if status in {s.value for s in SystemStatus} else SystemStatus.UNKNOWN.value
+        budget_ratio = (spend / max_budget) if max_budget > 0 else 0.0
+
         countries = [
             CountryState(
                 id="country-core",
                 name="The Core Empire",
                 services=[
-                    ServiceState(id="service-orchestrator", name="orchestrator", health=ServiceHealth.HEALTHY),
-                    ServiceState(id="service-gateway", name="gateway", health=ServiceHealth.DEGRADED),
+                    _build_service_state("country-core", "service-orchestrator", "orchestrator", normalized_status, budget_ratio),
+                    _build_service_state("country-core", "service-gateway", "gateway", normalized_status, budget_ratio),
                 ],
             ),
             CountryState(
                 id="country-frontend",
                 name="The Front-End Republic",
                 services=[
-                    ServiceState(id="service-visualizer", name="visualizer", health=ServiceHealth.HEALTHY),
-                    ServiceState(id="service-web", name="web", health=ServiceHealth.UNDER_ATTACK),
+                    _build_service_state("country-frontend", "service-visualizer", "visualizer", normalized_status, budget_ratio),
+                    _build_service_state("country-frontend", "service-web", "web", normalized_status, budget_ratio),
                 ],
             ),
             CountryState(
                 id="country-security",
                 name="The Security Kingdom",
                 services=[
-                    ServiceState(id="service-guardian", name="guardian", health=ServiceHealth.HALTED),
+                    _build_service_state("country-security", "service-guardian", "guardian", normalized_status, budget_ratio),
                 ],
             ),
         ]
 
-        normalized_status = status if status in {s.value for s in SystemStatus} else SystemStatus.UNKNOWN.value
         catalog_assets = discover_catalog_assets(Path(__file__).resolve().parents[3])
         knowledge_tree = fetch_knowledge_tree(
             query_graph=lambda query: orch.query_graph(query, namespace="default"),
@@ -453,6 +553,21 @@ async def post_control_command(command: ControlCommand):
 async def post_event(event: GatewayEvent):
     await manager.broadcast({"type": event.type, "payload": event.model_dump()})
     return EventAck(event=event).model_dump()
+
+
+@app.websocket("/api/v1/events/combat/stream")
+async def combat_event_stream(websocket: WebSocket):
+    await websocket.accept()
+    try:
+        while True:
+            try:
+                event_payload = await asyncio.wait_for(combat_event_queue.get(), timeout=10.0)
+            except asyncio.TimeoutError:
+                await websocket.send_json({"type": "keepalive"})
+                continue
+            await websocket.send_json(event_payload)
+    except WebSocketDisconnect:
+        return
 
 # --- Godot Script Endpoints ---
 @app.get("/api/v1/godot/scripts/agent")
