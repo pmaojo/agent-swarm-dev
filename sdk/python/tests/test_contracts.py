@@ -89,6 +89,13 @@ class ContractSerializationTests(unittest.TestCase):
         self.assertEqual(graph.nodes[0].node_type, "subject")
         self.assertEqual(graph.model_dump(by_alias=True)["nodes"][0]["type"], "subject")
 
+
+    def test_command_and_status_enums_cover_rust_control_plane(self):
+        self.assertEqual(SystemStatus.HALTED.value, "HALTED")
+        self.assertEqual(ControlCommandType.DEPLOY.value, "DEPLOY")
+        self.assertEqual(ControlCommandType.ROLLBACK.value, "ROLLBACK")
+        self.assertEqual(ControlCommandType.HALT.value, "HALT")
+        self.assertEqual(ControlCommandType.RESUME.value, "RESUME")
     def test_character_profile_contract(self):
         profile = CharacterProfile(
             id="char-coder",

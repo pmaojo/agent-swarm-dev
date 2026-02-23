@@ -230,6 +230,9 @@ fn build_countries() -> Vec<CountryState> {
             id: "service-orchestrator".to_string(),
             name: "orchestrator".to_string(),
             health: ServiceHealth::Healthy,
+            hp: 100,
+            latency_ms: 60.0,
+            error_rate: 0.01,
         }],
     }]
 }
@@ -247,6 +250,9 @@ fn build_knowledge_tree() -> Vec<KnowledgeNode> {
             time_hours: 3,
         },
         unlocked: true,
+        source_type: "seed".to_string(),
+        source_ref: "seed://default".to_string(),
+        documentation: String::new(),
     }]
 }
 
@@ -301,6 +307,76 @@ mod tests {
         let command = sample_command(ControlCommandType::AssignMission);
         let result = evaluate_guardrails(&command);
         assert_eq!(result, None);
+    }
+
+
+    #[test]
+    fn service_state_defaults_are_applied_when_fields_absent() {
+        let parsed: ServiceState = serde_json::from_value(serde_json::json!({
+            "id": "svc",
+            "name": "gateway",
+            "health": "healthy"
+        }))
+        .expect("service state should deserialize");
+
+        assert_eq!(parsed.hp, 100);
+        assert_eq!(parsed.latency_ms, 0.0);
+        assert_eq!(parsed.error_rate, 0.0);
+    }
+
+    #[test]
+    fn knowledge_node_defaults_are_applied_when_fields_absent() {
+        let parsed: KnowledgeNode = serde_json::from_value(serde_json::json!({
+            "id": "n1",
+            "domain": "DX",
+            "name": "Node",
+            "capability": "Cap",
+            "level": 1,
+            "prerequisites": [],
+            "cost": {"budget": 1.0, "time_hours": 1},
+            "unlocked": true
+        }))
+        .expect("knowledge node should deserialize");
+
+        assert_eq!(parsed.source_type, "seed");
+        assert_eq!(parsed.source_ref, "seed://default");
+        assert_eq!(parsed.documentation, "");
+    }
+
+    #[test]
+    fn control_command_aliases_match_python_command_names() {
+        let patched: ControlCommand = serde_json::from_value(serde_json::json!({
+            "command": "PATCH_SERVICE",
+            "actor": "sovereign-operator",
+            "nist_policy_id": "NIST-800-53-REV5",
+            "approved_by": "chief-security"
+        }))
+        .expect("alias should deserialize");
+        assert!(matches!(patched.command, ControlCommandType::Deploy));
+
+        let rollback: ControlCommand = serde_json::from_value(serde_json::json!({
+            "command": "ROLLBACK_SERVICE",
+            "actor": "sovereign-operator",
+            "nist_policy_id": "NIST-800-53-REV5",
+            "approved_by": "chief-security"
+        }))
+        .expect("alias should deserialize");
+        assert!(matches!(rollback.command, ControlCommandType::Rollback));
+    }
+
+    #[test]
+    fn rust_event_types_cover_python_combat_stream_events() {
+        let bug: EventType = serde_json::from_value(serde_json::json!("BUG_SPAWNED"))
+            .expect("BUG_SPAWNED should deserialize");
+        assert!(matches!(bug, EventType::BugSpawned));
+
+        let damaged: EventType = serde_json::from_value(serde_json::json!("SERVICE_DAMAGED"))
+            .expect("SERVICE_DAMAGED should deserialize");
+        assert!(matches!(damaged, EventType::ServiceDamaged));
+
+        let recovered: EventType = serde_json::from_value(serde_json::json!("SERVICE_RECOVERED"))
+            .expect("SERVICE_RECOVERED should deserialize");
+        assert!(matches!(recovered, EventType::ServiceRecovered));
     }
 
     #[test]
