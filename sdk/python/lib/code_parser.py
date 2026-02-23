@@ -28,6 +28,32 @@ class CodeParser:
         for ext, lang in self.languages.items():
             self.parsers[ext] = Parser(lang)
 
+        # Cache for compiled queries: (ext, query_type) -> Query
+        self.query_cache: Dict[Tuple[str, str], Optional[Query]] = {}
+
+    def _get_compiled_query(self, lang: Language, lang_ext: str, query_type: str) -> Optional[Query]:
+        """
+        Returns a compiled Query object, using cache if available.
+        @synapse:rule Cache compiled Tree-sitter queries to avoid redundant compilation overhead (performance optimization).
+        """
+        cache_key = (lang_ext, query_type)
+        if cache_key in self.query_cache:
+            return self.query_cache[cache_key]
+
+        query_str = self._get_query(lang_ext, query_type)
+        if not query_str:
+            self.query_cache[cache_key] = None
+            return None
+
+        try:
+            query = Query(lang, query_str)
+            self.query_cache[cache_key] = query
+            return query
+        except Exception as e:
+            print(f"Error compiling query for {lang_ext} {query_type}: {e}")
+            self.query_cache[cache_key] = None
+            return None
+
     def _get_query(self, lang_ext: str, query_type: str) -> Optional[str]:
         # Define queries for each language
         # Python
@@ -146,10 +172,9 @@ class CodeParser:
         symbols = []
 
         # 1. Extract Definitions (Classes, Functions)
-        def_query_str = self._get_query(ext, "definitions")
-        if def_query_str:
+        query = self._get_compiled_query(lang, ext, "definitions")
+        if query:
             try:
-                query = Query(lang, def_query_str)
                 cursor = QueryCursor(query)
                 matches = cursor.matches(root)
 
@@ -224,12 +249,11 @@ class CodeParser:
 
     def _extract_calls(self, node, lang, ext, content) -> Set[str]:
         calls = set()
-        call_query_str = self._get_query(ext, "calls")
-        if not call_query_str:
+        query = self._get_compiled_query(lang, ext, "calls")
+        if not query:
             return calls
 
         try:
-            query = Query(lang, call_query_str)
             cursor = QueryCursor(query)
             matches = cursor.matches(node)
             for match in matches:
@@ -246,12 +270,11 @@ class CodeParser:
     def _extract_inheritance(self, node, lang, ext, content) -> Dict[str, List[str]]:
         # Map class_name -> list of superclasses
         inheritance = {}
-        query_str = self._get_query(ext, "inheritance")
-        if not query_str:
+        query = self._get_compiled_query(lang, ext, "inheritance")
+        if not query:
             return inheritance
 
         try:
-            query = Query(lang, query_str)
             cursor = QueryCursor(query)
             matches = cursor.matches(node)
 
