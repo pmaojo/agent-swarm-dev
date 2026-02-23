@@ -24,10 +24,11 @@ export interface Quest {
 export interface Repository {
   id: string;
   name: string;
-  path: string;
-  tasks_pending: number;
-  status: "ok" | "error";
-  size: number;
+  path?: string;
+  tasks_pending?: number;
+  status?: "ok" | "error";
+  size?: number;
+  swarm?: string[];
 }
 
 export interface DailyBudget {
@@ -36,22 +37,29 @@ export interface DailyBudget {
   unit: string;
 }
 
-export interface GameState {
-  system_status: "OPERATIONAL" | "HALTED" | "DEGRADED";
-  daily_budget: DailyBudget;
-  party: Agent[];
-  active_quests: Quest[];
-  repositories: Repository[];
-  guardrail_log: GuardrailEntry[];
-  knowledge_tree: KnowledgeNode[];
-}
-
 export interface GuardrailEntry {
   id: string;
   timestamp: string;
   blocked_command: string;
   reason: string;
   severity: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+}
+
+export interface SovereignControlStatus {
+  approved: boolean;
+  approved_by?: string;
+  policy_id: string;
+}
+
+export interface GameState {
+  system_status: "OPERATIONAL" | "HALTED" | "DEGRADED" | "OUTAGE";
+  daily_budget: DailyBudget;
+  party: Agent[];
+  active_quests: Quest[];
+  repositories: Repository[];
+  guardrail_log?: GuardrailEntry[];
+  knowledge_tree: KnowledgeNode[];
+  sovereign_controls?: SovereignControlStatus;
 }
 
 export interface GraphNode {
@@ -94,4 +102,54 @@ export interface KnowledgeNode {
   prerequisites: string[];
   cost: KnowledgeNodeCost;
   unlocked: boolean;
+}
+
+export type ControlCommandType =
+  | "ASSIGN_MISSION"
+  | "HALT"
+  | "RESUME"
+  | "SET_AGENT_PRIORITY"
+  | "DEPLOY"
+  | "ROLLBACK"
+  | "CONFIGURE_AGENT_MODEL";
+
+export interface LlmProfile {
+  provider: string;
+  model: string;
+  hierarchy: "champion" | "captain" | "specialist" | "minion";
+}
+
+export interface SovereignCommand {
+  command: ControlCommandType;
+  actor: string;
+  agent_id?: string;
+  repo_id?: string;
+  task?: string;
+  mission_id?: string;
+  priority?: number;
+  deployment_target?: string;
+  rollback_to?: string;
+  llm_profile?: LlmProfile;
+  nist_policy_id: string;
+  approved_by?: string;
+  metadata?: Record<string, string>;
+}
+
+export interface CommandAck {
+  tracking_id: string;
+  status: "SENT" | "ACCEPTED" | "REJECTED" | "COMPLETED";
+  reason?: string;
+  final_state?: string;
+  command: SovereignCommand;
+}
+
+export interface AuditRecord {
+  tracking_id: string;
+  actor: string;
+  command: string;
+  phase: "SENT" | "ACCEPTED" | "REJECTED" | "COMPLETED";
+  timestamp: string;
+  policy_id: string;
+  approved_by?: string;
+  details: string;
 }
