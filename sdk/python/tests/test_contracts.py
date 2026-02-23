@@ -81,6 +81,14 @@ class ContractSerializationTests(unittest.TestCase):
         self.assertEqual(graph.nodes[0].node_type, "subject")
         self.assertEqual(graph.model_dump(by_alias=True)["nodes"][0]["type"], "subject")
 
+
+    def test_command_and_status_enums_cover_rust_control_plane(self):
+        self.assertEqual(SystemStatus.HALTED.value, "HALTED")
+        self.assertEqual(ControlCommandType.DEPLOY.value, "DEPLOY")
+        self.assertEqual(ControlCommandType.ROLLBACK.value, "ROLLBACK")
+        self.assertEqual(ControlCommandType.HALT.value, "HALT")
+        self.assertEqual(ControlCommandType.RESUME.value, "RESUME")
+
     def test_control_command_and_event_serialization(self):
         command = ControlCommand(command=ControlCommandType.ASSIGN_MISSION, agent_id="agent-1", repo_id="repo-1", task="Fix")
         self.assertEqual(command.command, ControlCommandType.ASSIGN_MISSION)

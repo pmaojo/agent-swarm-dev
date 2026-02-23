@@ -75,6 +75,16 @@ pub struct ServiceState {
     pub id: String,
     pub name: String,
     pub health: ServiceHealth,
+    #[serde(default = "default_service_hp")]
+    pub hp: i32,
+    #[serde(default)]
+    pub latency_ms: f64,
+    #[serde(default)]
+    pub error_rate: f64,
+}
+
+const fn default_service_hp() -> i32 {
+    100
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -100,6 +110,20 @@ pub struct KnowledgeNode {
     pub prerequisites: Vec<String>,
     pub cost: KnowledgeNodeCost,
     pub unlocked: bool,
+    #[serde(default = "default_knowledge_source_type")]
+    pub source_type: String,
+    #[serde(default = "default_knowledge_source_ref")]
+    pub source_ref: String,
+    #[serde(default)]
+    pub documentation: String,
+}
+
+fn default_knowledge_source_type() -> String {
+    "seed".to_string()
+}
+
+fn default_knowledge_source_ref() -> String {
+    "seed://default".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -150,10 +174,14 @@ pub enum ControlCommandType {
     PauseAgent,
     ResumeAgent,
     RefreshGraph,
+    #[serde(alias = "ISOLATE_SERVICE")]
     Halt,
+    #[serde(alias = "RESTART_SERVICE")]
     Resume,
     SetAgentPriority,
+    #[serde(alias = "PATCH_SERVICE")]
     Deploy,
+    #[serde(alias = "ROLLBACK_SERVICE")]
     Rollback,
     ConfigureAgentModel,
 }
@@ -218,6 +246,9 @@ pub struct AuditRecord {
 pub enum EventType {
     MissionAssigned,
     HardeningEvent,
+    BugSpawned,
+    ServiceDamaged,
+    ServiceRecovered,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
