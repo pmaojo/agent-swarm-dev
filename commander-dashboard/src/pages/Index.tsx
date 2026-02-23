@@ -1,4 +1,4 @@
-import { useGameState, useGraphData, useHaltSystem } from "@/lib/api";
+import { useAuditLog, useGameState, useGraphData, useSendSovereignCommand } from "@/lib/api";
 import { Header } from "@/components/Header";
 import { PartySidebar } from "@/components/PartySidebar";
 import { KnowledgeGraph } from "@/components/KnowledgeGraph";
@@ -13,7 +13,8 @@ import { Network, ScrollText, Rocket, Spline } from "lucide-react";
 const Index = () => {
   const { data: gameState, isError: gsError } = useGameState();
   const { data: graphData, isError: gdError } = useGraphData();
-  const haltMutation = useHaltSystem();
+  const { data: auditLog } = useAuditLog();
+  const commandMutation = useSendSovereignCommand();
 
   const isConnected = !gsError && !gdError;
   const isHalted = gameState?.system_status === "HALTED";
@@ -68,9 +69,12 @@ const Index = () => {
       </div>
 
       <SovereignControls
-        onHalt={() => haltMutation.mutate()}
-        isHalting={haltMutation.isPending}
+        onSendCommand={(command) => commandMutation.mutate(command)}
+        isSubmitting={commandMutation.isPending}
         guardrailLog={gameState?.guardrail_log ?? []}
+        sovereignStatus={gameState?.sovereign_controls}
+        latestAck={commandMutation.data}
+        auditLog={auditLog ?? []}
       />
     </div>
   );

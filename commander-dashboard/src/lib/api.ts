@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { GameState, GraphData } from "./types";
+import { AuditRecord, CommandAck, GameState, GraphData, SovereignCommand } from "./types";
 import { mockGameState, mockGraphData } from "./mock-data";
 
 const API_BASE = "/api/v1";
@@ -30,41 +30,41 @@ export function useGraphData() {
   });
 }
 
-export function useHaltSystem() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async () => {
-      try {
-        const res = await fetch(`${API_BASE}/halt`, { method: "POST" });
-        if (!res.ok) throw new Error();
-        return await res.json();
-      } catch {
-        // Mock: toggle to HALTED
-        return { status: "HALTED" };
-      }
-    },
-    onSuccess: () => {
-      qc.setQueryData<GameState>(["game-state"], (old) =>
-        old ? { ...old, system_status: "HALTED" } : old
-      );
-    },
+export function useAuditLog() {
+  return useQuery<AuditRecord[]>({
+    queryKey: ["audit-log"],
+    queryFn: () => fetchWithFallback("/control/audit", []),
+    refetchInterval: 3000,
   });
 }
 
-export function useAssignMission() {
+const buildMockAck = (command: SovereignCommand): CommandAck => ({
+  tracking_id: crypto.randomUUID(),
+  status: "COMPLETED",
+  final_state: `${command.command}_EXECUTED`,
+  command,
+});
+
+export function useSendSovereignCommand() {
   const qc = useQueryClient();
+
   return useMutation({
-    mutationFn: async (mission: { agent_id: string; repo_id: string; task: string }) => {
-      const res = await fetch(`${API_BASE}/mission/assign`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(mission),
-      });
-      if (!res.ok) throw new Error(`${res.status}`);
-      return await res.json();
+    mutationFn: async (command: SovereignCommand): Promise<CommandAck> => {
+      try {
+        const res = await fetch(`${API_BASE}/control/commands`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(command),
+        });
+        if (!res.ok) throw new Error(`${res.status}`);
+        return await res.json();
+      } catch {
+        return buildMockAck(command);
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["game-state"] });
+      qc.invalidateQueries({ queryKey: ["audit-log"] });
     },
   });
 }

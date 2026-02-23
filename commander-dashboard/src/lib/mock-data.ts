@@ -110,6 +110,11 @@ export const mockGameState: GameState = {
       unlocked: false,
     },
   ],
+  sovereign_controls: {
+    approved: true,
+    approved_by: "security-council",
+    policy_id: "NIST-800-53-REV5",
+  },
   guardrail_log: [
     { id: "g1", timestamp: "14:32:01", blocked_command: "rm -rf /var/data/*", reason: "NIST AC-6: Destructive filesystem operation blocked", severity: "CRITICAL" },
     { id: "g2", timestamp: "14:31:45", blocked_command: "curl external-api.io/exfil", reason: "NIST SC-7: Unauthorized outbound connection", severity: "HIGH" },
