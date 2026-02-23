@@ -651,11 +651,25 @@ async def save_character_loadout(payload: CharacterLoadoutSaveRequest) -> Dict[s
 
 @app.get("/api/v1/knowledge-tree/nodes/{node_id}/documentation")
 async def get_knowledge_node_documentation(node_id: str) -> Dict[str, Any]:
-    return await asyncio.to_thread(
-        _forward_json_request,
-        "GET",
-        f"/api/v1/knowledge-tree/nodes/{node_id}/documentation",
+    if _rust_gateway_enabled():
+        return await asyncio.to_thread(
+            _forward_json_request,
+            "GET",
+            f"/api/v1/knowledge-tree/nodes/{node_id}/documentation",
+        )
+
+    knowledge_tree = fetch_knowledge_tree(
+        query_graph=lambda query: orch.query_graph(query, namespace="default"),
+        ingest_triples=lambda triples: orch.ingest_triples(triples, namespace="default"),
+        catalog_assets=discover_catalog_assets(Path(__file__).resolve().parents[3]),
     )
+    for node in knowledge_tree:
+        if node.id == node_id:
+            return KnowledgeNodeDocumentationResponse(
+                node_id=node.id,
+                documentation=node.documentation,
+            ).model_dump()
+    raise HTTPException(status_code=404, detail=f"Unknown knowledge node id: {node_id}")
 
 
 def _validate_control_command(payload: Dict[str, Any]) -> ControlCommand:
@@ -734,12 +748,29 @@ class KnowledgeNodeIngestRequest(BaseModel):
 
 @app.post("/api/v1/knowledge-tree/nodes")
 async def ingest_knowledge_tree_node(payload: KnowledgeNodeIngestRequest):
-    return await asyncio.to_thread(
-        _forward_json_request,
-        "POST",
-        "/api/v1/knowledge-tree/nodes",
-        payload.model_dump(),
+    if _rust_gateway_enabled():
+        return await asyncio.to_thread(
+            _forward_json_request,
+            "POST",
+            "/api/v1/knowledge-tree/nodes",
+            payload.model_dump(),
+        )
+
+    node = ingest_custom_knowledge_node(
+        ingest_triples=lambda triples: orch.ingest_triples(triples, namespace="default"),
+        node_id=payload.node_id,
+        domain=payload.domain,
+        name=payload.name,
+        capability=payload.capability,
+        level=payload.level,
+        budget_cost=payload.budget_cost,
+        time_cost_hours=payload.time_cost_hours,
+        prerequisites=payload.prerequisites,
+        docs_text=payload.docs_text,
+        source_type=payload.source_type,
+        source_ref=payload.source_ref,
     )
+    return {"status": "ingested", "node": node.model_dump()}
 
 class MissionAssignment(BaseModel):
     agent_id: str
@@ -748,12 +779,18 @@ class MissionAssignment(BaseModel):
 
 @app.post("/api/v1/mission/assign")
 async def assign_mission(mission: MissionAssignment):
-    return await asyncio.to_thread(
-        _forward_json_request,
-        "POST",
-        "/api/v1/mission/assign",
-        mission.model_dump(),
-    )
+    if _rust_gateway_enabled():
+        return await asyncio.to_thread(
+            _forward_json_request,
+            "POST",
+            "/api/v1/mission/assign",
+            mission.model_dump(),
+        )
+
+    command = ControlCommand(command="ASSIGN_MISSION", agent_id=mission.agent_id, repo_id=mission.repo_id, task=mission.task)
+    payload = {"type": EventType.MISSION_ASSIGNED, "payload": command.model_dump()}
+    await manager.broadcast(payload)
+    return ControlCommandAck(command=command).model_dump()
 
 @app.websocket("/api/v1/codegraph/stream")
 async def codegraph_stream(websocket: WebSocket):

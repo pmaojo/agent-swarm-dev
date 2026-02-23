@@ -112,5 +112,48 @@ class RustGatewayDelegationTests(unittest.TestCase):
         )
 
 
+    @patch('lib.gateway_runtime.requests.request')
+    def test_mission_assignment_uses_python_fallback_without_rust_gateway(self, request_mock: MagicMock) -> None:
+        os.environ.pop("RUST_GATEWAY_URL", None)
+
+        client = TestClient(gateway_runtime.app)
+        result = client.post("/api/v1/mission/assign", json={"agent_id": "a1", "repo_id": "r1", "task": "ship"})
+
+        self.assertEqual(result.status_code, 200)
+        request_mock.assert_not_called()
+
+    @patch('lib.gateway_runtime.requests.request')
+    def test_knowledge_ingest_uses_python_fallback_without_rust_gateway(self, request_mock: MagicMock) -> None:
+        os.environ.pop("RUST_GATEWAY_URL", None)
+
+        client = TestClient(gateway_runtime.app)
+        result = client.post("/api/v1/knowledge-tree/nodes", json={
+            "node_id": "node-x",
+            "domain": "quality",
+            "name": "Node X",
+            "capability": "cap",
+            "level": 1,
+            "budget_cost": 1.0,
+            "time_cost_hours": 1,
+            "prerequisites": [],
+            "docs_text": "docs",
+            "source_type": "custom",
+            "source_ref": "game://manual"
+        })
+
+        self.assertEqual(result.status_code, 200)
+        request_mock.assert_not_called()
+
+    @patch('lib.gateway_runtime.requests.request')
+    def test_knowledge_docs_uses_python_fallback_without_rust_gateway(self, request_mock: MagicMock) -> None:
+        os.environ.pop("RUST_GATEWAY_URL", None)
+
+        client = TestClient(gateway_runtime.app)
+        result = client.get("/api/v1/knowledge-tree/nodes/missing-node/documentation")
+
+        self.assertEqual(result.status_code, 404)
+        request_mock.assert_not_called()
+
+
 if __name__ == '__main__':
     unittest.main()
