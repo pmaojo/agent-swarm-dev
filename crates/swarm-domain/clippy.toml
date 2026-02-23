@@ -1,0 +1,6 @@
+disallowed-types = [
+  "std::fs::File",
+  "std::net::TcpStream",
+  "std::net::UdpSocket",
+  "std::process::Command"
+]

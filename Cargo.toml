@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "swarmd",
+    "crates/swarm-domain",
     "synapse-engine/crates/*"
 ]
 resolver = "2"
