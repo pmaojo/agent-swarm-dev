@@ -57,7 +57,7 @@ const Index = () => {
               <QuestLog quests={gameState?.active_quests ?? []} />
             </TabsContent>
 
-            <TabsContent value="citadel" className="flex-1 min-h-0 overflow-auto">
+            <TabsContent value="citadel" className="flex-1 min-h-0 relative p-0 overflow-hidden">
               <CitadelControls agents={gameState?.party ?? []} repositories={gameState?.repositories ?? []} />
             </TabsContent>
 

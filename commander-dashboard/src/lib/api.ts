@@ -1,24 +1,19 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { AuditRecord, CommandAck, GameState, GraphData, SovereignCommand } from "./types";
-import { mockGameState, mockGraphData } from "./mock-data";
+import { AuditRecord, GameState, GraphData, SovereignCommand } from "./types";
 
 const RUST_GATEWAY_BASE = import.meta.env.VITE_RUST_GATEWAY_URL ?? "http://localhost:18789";
 const API_BASE = `${RUST_GATEWAY_BASE}/api/v1`;
 
-async function fetchWithFallback<T>(url: string, fallback: T): Promise<T> {
-  try {
-    const res = await fetch(`${API_BASE}${url}`);
-    if (!res.ok) throw new Error(`${res.status}`);
-    return await res.json();
-  } catch {
-    return fallback;
-  }
+async function fetchFromApi<T>(url: string): Promise<T> {
+  const res = await fetch(`${API_BASE}${url}`);
+  if (!res.ok) throw new Error(`API Error: ${res.status}`);
+  return await res.json();
 }
 
 export function useGameState() {
   return useQuery<GameState>({
     queryKey: ["game-state"],
-    queryFn: () => fetchWithFallback("/game-state", mockGameState),
+    queryFn: () => fetchFromApi("/game-state"),
     refetchInterval: 5000,
   });
 }
@@ -26,7 +21,7 @@ export function useGameState() {
 export function useGraphData() {
   return useQuery<GraphData>({
     queryKey: ["graph-data"],
-    queryFn: () => fetchWithFallback("/graph-nodes", mockGraphData),
+    queryFn: () => fetchFromApi("/graph-nodes"),
     refetchInterval: 5000,
   });
 }
@@ -34,34 +29,23 @@ export function useGraphData() {
 export function useAuditLog() {
   return useQuery<AuditRecord[]>({
     queryKey: ["audit-log"],
-    queryFn: () => fetchWithFallback("/control/audit", []),
+    queryFn: () => fetchFromApi("/control/audit"),
     refetchInterval: 3000,
   });
 }
-
-const buildMockAck = (command: SovereignCommand): CommandAck => ({
-  tracking_id: crypto.randomUUID(),
-  status: "COMPLETED",
-  final_state: `${command.command}_EXECUTED`,
-  command,
-});
 
 export function useSendSovereignCommand() {
   const qc = useQueryClient();
 
   return useMutation({
-    mutationFn: async (command: SovereignCommand): Promise<CommandAck> => {
-      try {
-        const res = await fetch(`${API_BASE}/control/commands`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(command),
-        });
-        if (!res.ok) throw new Error(`${res.status}`);
-        return await res.json();
-      } catch {
-        return buildMockAck(command);
-      }
+    mutationFn: async (command: SovereignCommand) => {
+      const res = await fetch(`${API_BASE}/control/commands`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(command),
+      });
+      if (!res.ok) throw new Error(`${res.status}`);
+      return await res.json();
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["game-state"] });

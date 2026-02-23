@@ -52,86 +52,85 @@ export function CitadelControls({ agents, repositories }: CitadelControlsProps) 
   };
 
   return (
-    <div className="p-4 h-full flex flex-col gap-4 overflow-y-auto">
-      <Card className="bg-black/40 border-neon-cyan/20">
-        <CardHeader>
-          <CardTitle className="text-neon-cyan flex items-center gap-2">
-            <Rocket className="h-5 w-5" />
-            Citadel Command
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label className="text-neon-cyan/80">Select Agent</Label>
-            <Select onValueChange={setSelectedAgent} value={selectedAgent}>
-              <SelectTrigger className="bg-black/20 border-white/10">
-                <SelectValue placeholder="Choose an agent..." />
-              </SelectTrigger>
-              <SelectContent>
-                {agents.map((agent) => (
-                  <SelectItem key={agent.id} value={agent.id}>
-                    <div className="flex items-center gap-2">
-                      <User className="h-4 w-4" />
-                      {agent.name} ({agent.class})
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+    <div className="flex h-full w-full relative">
+      {/* Absolute Godot iframe to fill the entire TabsContent space */}
+      <div className="absolute inset-0 z-0 bg-black">
+        <iframe
+          src="/godot/index.html"
+          className="w-full h-full border-0"
+          title="Citadel Godot Visualization"
+          allow="cross-origin-isolated"
+        />
+      </div>
 
-          <div className="space-y-2">
-            <Label className="text-neon-cyan/80">Target Repository</Label>
-            <Select onValueChange={setSelectedRepo} value={selectedRepo}>
-              <SelectTrigger className="bg-black/20 border-white/10">
-                <SelectValue placeholder="Select target building..." />
-              </SelectTrigger>
-              <SelectContent>
-                {repositories.map((repo) => (
-                  <SelectItem key={repo.id} value={repo.id}>
-                    <div className="flex items-center gap-2">
-                      <Building className="h-4 w-4" />
-                      {repo.name} ({repo.tasks_pending} tasks)
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+      {/* Floating Citadel Controls on the bottom right side */}
+      <div className="z-10 absolute right-4 bottom-4 w-80 max-h-[calc(100%-2rem)] overflow-y-auto">
+        <Card className="bg-black/70 backdrop-blur-md border-neon-cyan/40 shadow-xl shadow-cyan-900/20">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-neon-cyan flex items-center gap-2 text-lg">
+              <Rocket className="h-5 w-5" />
+              Citadel Command
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-1.5">
+              <Label className="text-neon-cyan/80 text-xs uppercase tracking-wider">Deploy Agent</Label>
+              <Select onValueChange={setSelectedAgent} value={selectedAgent}>
+                <SelectTrigger className="bg-black/40 border-white/20 h-9">
+                  <SelectValue placeholder="Choose unit..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {agents.map((agent) => (
+                    <SelectItem key={agent.id} value={agent.id}>
+                      <div className="flex items-center gap-2 text-sm">
+                        <User className="h-3.5 w-3.5" />
+                        {agent.name}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-          <div className="space-y-2">
-            <Label className="text-neon-cyan/80">Mission Directive</Label>
-            <Textarea
-              placeholder="Enter mission details..."
-              className="bg-black/20 border-white/10 min-h-[100px]"
-              value={missionTask}
-              onChange={(e) => setMissionTask(e.target.value)}
-            />
-          </div>
+            <div className="space-y-1.5">
+              <Label className="text-neon-cyan/80 text-xs uppercase tracking-wider">Target</Label>
+              <Select onValueChange={setSelectedRepo} value={selectedRepo}>
+                <SelectTrigger className="bg-black/40 border-white/20 h-9">
+                  <SelectValue placeholder="Choose structure..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {repositories.map((repo) => (
+                    <SelectItem key={repo.id} value={repo.id}>
+                      <div className="flex items-center gap-2 text-sm">
+                        <Building className="h-3.5 w-3.5" />
+                        {repo.name}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-          <Button
-            className="w-full bg-neon-cyan/20 text-neon-cyan hover:bg-neon-cyan/30 border border-neon-cyan/50"
-            onClick={handleAssign}
-            disabled={assignMutation.isPending}
-          >
-            {assignMutation.isPending ? "Transmitting..." : "Deploy Agent"}
-          </Button>
-        </CardContent>
-      </Card>
+            <div className="space-y-1.5">
+              <Label className="text-neon-cyan/80 text-xs uppercase tracking-wider">Mission Data</Label>
+              <Textarea
+                placeholder="Enter directives..."
+                className="bg-black/40 border-white/20 min-h-[80px] text-sm resize-none"
+                value={missionTask}
+                onChange={(e) => setMissionTask(e.target.value)}
+              />
+            </div>
 
-      <Card className="bg-black/40 border-white/10 flex-1 overflow-hidden">
-        <CardHeader className="pb-2">
-            <CardTitle className="text-white/60 text-sm">Citadel Visualization (Godot)</CardTitle>
-        </CardHeader>
-        <CardContent className="h-full p-0 relative min-h-[400px]">
-             <iframe
-                src="/godot/index.html"
-                className="w-full h-full absolute inset-0 border-0 rounded-b-md"
-                title="Citadel Godot Visualization"
-                allow="cross-origin-isolated"
-             />
-        </CardContent>
-      </Card>
+            <Button
+              className="w-full bg-neon-cyan/20 text-neon-cyan hover:bg-neon-cyan/30 border border-neon-cyan/50 mt-2"
+              onClick={handleAssign}
+              disabled={assignMutation.isPending}
+            >
+              {assignMutation.isPending ? "Transmitting..." : "Execute Deploy"}
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
