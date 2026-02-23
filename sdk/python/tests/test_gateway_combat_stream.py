@@ -47,6 +47,40 @@ class CombatStreamTests(unittest.TestCase):
         self.assertEqual(select_response.status_code, 200)
         self.assertEqual(select_response.json()["selected_character_id"], first_character_id)
 
+
+    def test_control_command_accepts_typed_loadout_payload(self) -> None:
+        response = self.client.post('/api/v1/control/commands', json={
+            "command": "CONFIGURE_CHARACTER_LOADOUT",
+            "agent_id": "agent-coder",
+            "payload_version": "v2",
+            "loadout": {
+                "prompt_profile": {"profile_id": "prompt.default", "version": "2025-01"},
+                "tool_loadout": {"loadout_id": "tools.core", "tool_ids": ["search", "build"]},
+                "doc_packs": [{"pack_id": "docs.arch", "version": "1"}],
+                "skills": [{"skill_id": "skill-creator", "enabled": True}]
+            },
+            "metadata": {"source": "godot-war-room"}
+        })
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()["command"]
+        self.assertEqual(payload["command"], "CONFIGURE_CHARACTER_LOADOUT")
+        self.assertEqual(payload["loadout"]["prompt_profile"]["profile_id"], "prompt.default")
+
+    def test_control_command_rejects_invalid_loadout_shape(self) -> None:
+        response = self.client.post('/api/v1/control/commands', json={
+            "command": "CONFIGURE_CHARACTER_LOADOUT",
+            "agent_id": "agent-coder",
+            "payload_version": "v2",
+            "loadout": {
+                "prompt_profile": {"id": "missing-profile-id-field"}
+            }
+        })
+
+        self.assertEqual(response.status_code, 422)
+        payload = response.json()
+        self.assertIn("Invalid loadout payload", payload["detail"])
+
     def test_game_state_party_uses_character_registry(self) -> None:
         state = fetch_game_state()
         party = state.get("party", [])

@@ -214,12 +214,13 @@ func _send_control_command(command_name: String, agent_id: String, repo_id: Stri
 	var endpoint: String = url_base + "/api/v1/control/commands"
 	var payload: Dictionary = {
 		"command": command_name,
+		"payload_version": "v1",
 		"agent_id": agent_id,
 		"repo_id": repo_id,
 		"task": task,
 		"metadata": {
-			"source": "godot-war-room",
-			"turn": str(_turn_number())
+			"client_source": "godot-war-room",
+			"client_turn": _turn_number()
 		}
 	}
 	var headers: PackedStringArray = PackedStringArray(["Content-Type: application/json"])

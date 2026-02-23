@@ -160,13 +160,43 @@ class ControlCommandType(str, Enum):
     ROLLBACK_SERVICE = "ROLLBACK_SERVICE"
     RESTART_SERVICE = "RESTART_SERVICE"
     ISOLATE_SERVICE = "ISOLATE_SERVICE"
+    CONFIGURE_CHARACTER_LOADOUT = "CONFIGURE_CHARACTER_LOADOUT"
+
+
+class PromptProfileRef(BaseModel):
+    profile_id: str
+    version: Optional[str] = None
+
+
+class ToolLoadout(BaseModel):
+    loadout_id: Optional[str] = None
+    tool_ids: List[str] = Field(default_factory=list)
+
+
+class DocPackRef(BaseModel):
+    pack_id: str
+    version: Optional[str] = None
+
+
+class SkillSelection(BaseModel):
+    skill_id: str
+    enabled: bool = True
+
+
+class CharacterLoadoutSelection(BaseModel):
+    prompt_profile: Optional[PromptProfileRef] = None
+    tool_loadout: Optional[ToolLoadout] = None
+    doc_packs: List[DocPackRef] = Field(default_factory=list)
+    skills: List[SkillSelection] = Field(default_factory=list)
 
 
 class ControlCommand(BaseModel):
     command: ControlCommandType
+    payload_version: Optional[str] = None
     agent_id: Optional[str] = None
     repo_id: Optional[str] = None
     task: Optional[str] = None
+    loadout: Optional[CharacterLoadoutSelection] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 

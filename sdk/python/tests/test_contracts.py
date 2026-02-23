@@ -7,8 +7,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from lib.contracts import (
     CharacterLoadout,
     CharacterProfile,
+    CharacterLoadoutSelection,
     ControlCommand,
     ControlCommandType,
+    DocPackRef,
+    PromptProfileRef,
+    SkillSelection,
+    ToolLoadout,
     EventType,
     GameState,
     GatewayEvent,
@@ -102,6 +107,24 @@ class ContractSerializationTests(unittest.TestCase):
 
         self.assertEqual(profile.loadout.primary_weapon, "Refactor Blade")
         self.assertEqual(profile.level, 5)
+
+
+    def test_control_command_supports_typed_loadout(self):
+        command = ControlCommand(
+            command=ControlCommandType.CONFIGURE_CHARACTER_LOADOUT,
+            agent_id="agent-1",
+            payload_version="v2",
+            loadout=CharacterLoadoutSelection(
+                prompt_profile=PromptProfileRef(profile_id="prompt.default", version="2025-01"),
+                tool_loadout=ToolLoadout(loadout_id="tools.core", tool_ids=["search", "build"]),
+                doc_packs=[DocPackRef(pack_id="docs.arch", version="1")],
+                skills=[SkillSelection(skill_id="skill-creator", enabled=True)],
+            ),
+        )
+
+        self.assertEqual(command.command, ControlCommandType.CONFIGURE_CHARACTER_LOADOUT)
+        self.assertEqual(command.loadout.prompt_profile.profile_id, "prompt.default")
+        self.assertEqual(command.model_dump()["payload_version"], "v2")
 
     def test_control_command_and_event_serialization(self):
         command = ControlCommand(command=ControlCommandType.ASSIGN_MISSION, agent_id="agent-1", repo_id="repo-1", task="Fix")
