@@ -35,6 +35,15 @@ class ContractSerializationTests(unittest.TestCase):
             "active_quests": [{"id": "q-1", "title": "Implement API", "status": "IN_PROGRESS"}],
             "fog_map": {},
             "repositories": [{"id": "repo-main", "name": "Main", "swarm": ["agent-coder"]}],
+            "countries": [
+                {
+                    "id": "country-core",
+                    "name": "The Core Empire",
+                    "services": [
+                        {"id": "service-gateway", "name": "gateway", "health": "degraded"}
+                    ],
+                }
+            ],
         }
 
         model = GameState.model_validate(payload)
@@ -44,6 +53,21 @@ class ContractSerializationTests(unittest.TestCase):
 
         serialized = model.model_dump(by_alias=True)
         self.assertEqual(serialized["party"][0]["class"], "Warrior")
+
+
+    def test_game_state_requires_country_service_minimum_fields(self):
+        payload = {
+            "system_status": "OPERATIONAL",
+            "daily_budget": {"max": 10.0, "spent": 2.5, "unit": "USD"},
+            "party": [],
+            "active_quests": [],
+            "fog_map": {},
+            "repositories": [],
+            "countries": [{"id": "country-core", "name": "The Core Empire", "services": [{}]}],
+        }
+
+        with self.assertRaises(Exception):
+            GameState.model_validate(payload)
 
     def test_graph_data_round_trip(self):
         graph = GraphData.model_validate(

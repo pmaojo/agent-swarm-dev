@@ -61,6 +61,25 @@ class RepositoryState(BaseModel):
     swarm: List[str] = Field(default_factory=list)
 
 
+class ServiceHealth(str, Enum):
+    HEALTHY = "healthy"
+    DEGRADED = "degraded"
+    HALTED = "halted"
+    UNDER_ATTACK = "under_attack"
+
+
+class ServiceState(BaseModel):
+    id: str
+    name: str
+    health: ServiceHealth
+
+
+class CountryState(BaseModel):
+    id: str
+    name: str
+    services: List[ServiceState] = Field(default_factory=list)
+
+
 class GameState(BaseModel):
     system_status: SystemStatus
     daily_budget: DailyBudget
@@ -68,6 +87,7 @@ class GameState(BaseModel):
     active_quests: List[ActiveQuest] = Field(default_factory=list)
     fog_map: Dict[str, Any] = Field(default_factory=dict)
     repositories: List[RepositoryState] = Field(default_factory=list)
+    countries: List[CountryState] = Field(default_factory=list)
 
 
 class GraphNode(BaseModel):
