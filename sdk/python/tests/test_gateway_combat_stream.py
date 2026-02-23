@@ -1,4 +1,6 @@
+import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -18,6 +20,8 @@ with patch('agents.orchestrator.OrchestratorAgent') as MockOrch:
     instance.bridge.get_cards_in_list.return_value = []
     instance.ingest_triples.return_value = None
 
+    import lib.gateway_runtime as gateway_runtime
+    from lib.character_profiles import CharacterRegistry, JsonCharacterProfileSink, JsonCharacterProfileSource
     from lib.gateway_runtime import app, combat_event_queue, character_registry, fetch_game_state
 
 
@@ -99,6 +103,65 @@ class CombatStreamTests(unittest.TestCase):
         game_state = self.client.get('/api/v1/game-state').json()
         self.assertEqual(game_state["selected_character_id"], character_id)
         self.assertEqual(game_state["selected_character_loadout"]["prompt_profile"]["profile_id"], "prompt.reviewer")
+
+
+    def test_loadout_persists_across_registry_reinstantiation(self) -> None:
+        payload = {
+            "selected_character_id": "char-a",
+            "profiles": [
+                {
+                    "id": "char-a",
+                    "agent_id": "agent-a",
+                    "display_name": "Alpha",
+                    "class_name": "Wizard",
+                    "level": 3,
+                    "location": "Tower",
+                    "current_action": "Idle",
+                    "base_success_rate": "90%",
+                    "loadout": {
+                        "primary_weapon": "Staff",
+                        "secondary_item": "Potion",
+                        "armor": "Robe",
+                        "hit_points": 92,
+                        "mana": 70,
+                    },
+                }
+            ],
+        }
+        handle = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
+        profile_path = Path(handle.name)
+        profile_path.write_text(json.dumps(payload), encoding="utf-8")
+
+        test_registry = CharacterRegistry(
+            JsonCharacterProfileSource(profile_path),
+            sink=JsonCharacterProfileSink(profile_path),
+        )
+        original_registry = gateway_runtime.character_registry
+        gateway_runtime.character_registry = test_registry
+
+        try:
+            response = self.client.post('/api/v1/characters/loadout', json={
+                "character_id": "char-a",
+                "loadout": {
+                    "prompt_profile": {"profile_id": "prompt.survivor", "version": "v9"},
+                    "tool_loadout": {"loadout_id": "tools.persist", "tool_ids": ["search"]},
+                    "doc_packs": [{"pack_id": "docs.core", "version": "1"}],
+                    "skills": [{"skill_id": "skill-creator", "enabled": True}],
+                },
+            })
+            self.assertEqual(response.status_code, 200)
+
+            restarted_registry = CharacterRegistry(
+                JsonCharacterProfileSource(profile_path),
+                sink=JsonCharacterProfileSink(profile_path),
+            )
+            self.assertEqual(restarted_registry.selected_character_id(), "char-a")
+            self.assertEqual(
+                restarted_registry.selected_character_loadout().prompt_profile.profile_id,
+                "prompt.survivor",
+            )
+        finally:
+            gateway_runtime.character_registry = original_registry
 
     def test_knowledge_node_documentation_endpoint_returns_not_found_for_unknown_node(self) -> None:
         docs_response = self.client.get('/api/v1/knowledge-tree/nodes/missing-node/documentation')

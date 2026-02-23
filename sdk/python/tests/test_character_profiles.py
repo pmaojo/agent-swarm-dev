@@ -7,7 +7,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from lib.character_profiles import CharacterRegistry, JsonCharacterProfileSource
+from lib.character_profiles import CharacterRegistry, JsonCharacterProfileSink, JsonCharacterProfileSource
 from lib.contracts import CharacterLoadoutSelection, PromptProfileRef, ToolLoadout
 
 
@@ -73,7 +73,8 @@ class CharacterProfileRegistryTests(unittest.TestCase):
 
     def test_registry_tracks_selected_loadout(self) -> None:
         source = JsonCharacterProfileSource(self._build_temp_profile_file())
-        registry = CharacterRegistry(source)
+        sink = JsonCharacterProfileSink(source.source_path)
+        registry = CharacterRegistry(source, sink=sink)
 
         loadout = registry.selected_character_loadout()
         self.assertEqual(loadout.doc_packs, [])
@@ -86,6 +87,10 @@ class CharacterProfileRegistryTests(unittest.TestCase):
 
         self.assertEqual(registry.selected_character_id(), "char-a")
         self.assertEqual(registry.selected_character_loadout().prompt_profile.profile_id, "prompt.alpha")
+
+        persisted = source.load_document()
+        self.assertEqual(persisted.selected_character_id, "char-a")
+        self.assertEqual(persisted.selected_character_loadout.prompt_profile.profile_id, "prompt.alpha")
 
 
 if __name__ == "__main__":
