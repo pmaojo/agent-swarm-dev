@@ -88,6 +88,26 @@ class GameState(BaseModel):
     fog_map: Dict[str, Any] = Field(default_factory=dict)
     repositories: List[RepositoryState] = Field(default_factory=list)
     countries: List[CountryState] = Field(default_factory=list)
+    knowledge_tree: List["KnowledgeNode"] = Field(default_factory=list)
+
+
+class KnowledgeNodeCost(BaseModel):
+    budget: float
+    time_hours: int
+
+
+class KnowledgeNode(BaseModel):
+    id: str
+    domain: str
+    name: str
+    capability: str
+    level: int
+    prerequisites: List[str] = Field(default_factory=list)
+    cost: KnowledgeNodeCost
+    unlocked: bool = False
+    source_type: str = "seed"
+    source_ref: str = "seed://default"
+    documentation: str = ""
 
 
 class GraphNode(BaseModel):

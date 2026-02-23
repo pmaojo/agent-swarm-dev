@@ -4,10 +4,11 @@ import { PartySidebar } from "@/components/PartySidebar";
 import { KnowledgeGraph } from "@/components/KnowledgeGraph";
 import { QuestLog } from "@/components/QuestLog";
 import { CitadelControls } from "@/components/CitadelControls";
+import { KnowledgeTree } from "@/components/KnowledgeTree";
 import { SovereignControls } from "@/components/SovereignControls";
 import { SystemInterdicted } from "@/components/SystemInterdicted";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Network, ScrollText, Rocket } from "lucide-react";
+import { Network, ScrollText, Rocket, Spline } from "lucide-react";
 
 const Index = () => {
   const { data: gameState, isError: gsError } = useGameState();
@@ -41,6 +42,10 @@ const Index = () => {
                 <Rocket className="h-3.5 w-3.5" />
                 Citadel Ops
               </TabsTrigger>
+              <TabsTrigger value="knowledge" className="font-mono text-xs data-[state=active]:text-neon-cyan gap-1.5">
+                <Spline className="h-3.5 w-3.5" />
+                Knowledge Tree
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="graph" className="flex-1 min-h-0 px-3 pb-1">
@@ -53,6 +58,10 @@ const Index = () => {
 
             <TabsContent value="citadel" className="flex-1 min-h-0 overflow-auto">
               <CitadelControls agents={gameState?.party ?? []} repositories={gameState?.repositories ?? []} />
+            </TabsContent>
+
+            <TabsContent value="knowledge" className="flex-1 min-h-0 px-3 pb-1">
+              <KnowledgeTree nodes={gameState?.knowledge_tree ?? []} />
             </TabsContent>
           </Tabs>
         </main>

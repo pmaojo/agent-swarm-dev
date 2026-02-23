@@ -4,9 +4,9 @@ use serde_json::Value;
 use tracing::info;
 
 use crate::server::contracts::{
-    ActiveQuest, ControlCommand, ControlCommandAck, CountryState, DailyBudget, EventAck, GatewayEvent,
-    GameState, GraphData, PartyMember, PartyStats, QuestStatus, RepositoryState, ServiceHealth,
-    ServiceState, SystemStatus,
+    ActiveQuest, ControlCommand, ControlCommandAck, CountryState, DailyBudget, EventAck, GameState,
+    GatewayEvent, GraphData, KnowledgeNode, KnowledgeNodeCost, PartyMember, PartyStats,
+    QuestStatus, RepositoryState, ServiceHealth, ServiceState, SystemStatus,
 };
 use crate::server::AppState;
 
@@ -76,11 +76,7 @@ pub async fn get_game_state(State(state): State<AppState>) -> Json<GameState> {
                         .or_else(|| item.get("?title"))
                         .map(clean_val)
                         .unwrap_or_else(|| {
-                            id_str
-                                .split('/')
-                                .last()
-                                .unwrap_or("Task")
-                                .replace('-', " ")
+                            id_str.split('/').last().unwrap_or("Task").replace('-', " ")
                         });
                     active_quests.push(ActiveQuest {
                         id: id_str,
@@ -116,8 +112,16 @@ pub async fn get_game_state(State(state): State<AppState>) -> Json<GameState> {
             let mut agents: HashMap<String, PartyMember> = HashMap::new();
 
             for item in parsed {
-                let repo_id = clean_val(item.get("repo").or_else(|| item.get("?repo")).unwrap_or(&serde_json::json!("")));
-                let repo_name = clean_val(item.get("repoName").or_else(|| item.get("?repoName")).unwrap_or(&serde_json::json!("Unknown")));
+                let repo_id = clean_val(
+                    item.get("repo")
+                        .or_else(|| item.get("?repo"))
+                        .unwrap_or(&serde_json::json!("")),
+                );
+                let repo_name = clean_val(
+                    item.get("repoName")
+                        .or_else(|| item.get("?repoName"))
+                        .unwrap_or(&serde_json::json!("Unknown")),
+                );
                 let agent_id_raw = item.get("agent").or_else(|| item.get("?agent"));
 
                 let (_, agent_ids) = repos
@@ -132,11 +136,27 @@ pub async fn get_game_state(State(state): State<AppState>) -> Json<GameState> {
 
                     agents.entry(aid.clone()).or_insert_with(|| PartyMember {
                         id: aid.split('/').last().unwrap_or(&aid).to_string(),
-                        name: clean_val(item.get("agentName").or_else(|| item.get("?agentName")).unwrap_or(&serde_json::json!("Agent"))),
-                        class_name: clean_val(item.get("agentClass").or_else(|| item.get("?agentClass")).unwrap_or(&serde_json::json!("Commoner"))),
+                        name: clean_val(
+                            item.get("agentName")
+                                .or_else(|| item.get("?agentName"))
+                                .unwrap_or(&serde_json::json!("Agent")),
+                        ),
+                        class_name: clean_val(
+                            item.get("agentClass")
+                                .or_else(|| item.get("?agentClass"))
+                                .unwrap_or(&serde_json::json!("Commoner")),
+                        ),
                         level: 5,
-                        stats: PartyStats { hp: 100, mana: 80, success_rate: "95%".to_string() },
-                        current_action: clean_val(item.get("agentStatus").or_else(|| item.get("?agentStatus")).unwrap_or(&serde_json::json!("Standby"))),
+                        stats: PartyStats {
+                            hp: 100,
+                            mana: 80,
+                            success_rate: "95%".to_string(),
+                        },
+                        current_action: clean_val(
+                            item.get("agentStatus")
+                                .or_else(|| item.get("?agentStatus"))
+                                .unwrap_or(&serde_json::json!("Standby")),
+                        ),
                         location: repo_name.clone(),
                     });
                 }
@@ -169,6 +189,7 @@ pub async fn get_game_state(State(state): State<AppState>) -> Json<GameState> {
         fog_map: serde_json::json!({}),
         repositories: repositories_out,
         countries: build_countries(),
+        knowledge_tree: build_knowledge_tree(),
     })
 }
 
@@ -195,7 +216,8 @@ fn clean_val(val: &serde_json::Value) -> String {
         serde_json::Value::String(s) => s.as_str(),
         _ => "",
     };
-    s.trim_matches(|c| c == '"' || c == '<' || c == '>').to_string()
+    s.trim_matches(|c| c == '"' || c == '<' || c == '>')
+        .to_string()
 }
 
 fn parse_system_status(raw: &str) -> SystemStatus {
@@ -206,7 +228,6 @@ fn parse_system_status(raw: &str) -> SystemStatus {
         _ => SystemStatus::Unknown,
     }
 }
-
 
 fn build_countries() -> Vec<CountryState> {
     vec![
@@ -245,13 +266,94 @@ fn build_countries() -> Vec<CountryState> {
         CountryState {
             id: "country-security".to_string(),
             name: "The Security Kingdom".to_string(),
-            services: vec![
-                ServiceState {
-                    id: "service-guardian".to_string(),
-                    name: "guardian".to_string(),
-                    health: ServiceHealth::Halted,
-                },
-            ],
+            services: vec![ServiceState {
+                id: "service-guardian".to_string(),
+                name: "guardian".to_string(),
+                health: ServiceHealth::Halted,
+            }],
+        },
+    ]
+}
+
+fn build_knowledge_tree() -> Vec<KnowledgeNode> {
+    vec![
+        KnowledgeNode {
+            id: "tdd-level-1".to_string(),
+            domain: "Calidad".to_string(),
+            name: "TDD Nivel 1".to_string(),
+            capability: "Pruebas por feature branch".to_string(),
+            level: 1,
+            prerequisites: vec![],
+            cost: KnowledgeNodeCost {
+                budget: 2.0,
+                time_hours: 3,
+            },
+            unlocked: true,
+        },
+        KnowledgeNode {
+            id: "tdd-level-2".to_string(),
+            domain: "Calidad".to_string(),
+            name: "TDD Nivel 2".to_string(),
+            capability: "Ejecución automática de suites por módulo".to_string(),
+            level: 2,
+            prerequisites: vec!["tdd-level-1".to_string()],
+            cost: KnowledgeNodeCost {
+                budget: 3.5,
+                time_hours: 5,
+            },
+            unlocked: false,
+        },
+        KnowledgeNode {
+            id: "threat-modeling".to_string(),
+            domain: "Seguridad".to_string(),
+            name: "Threat Modeling".to_string(),
+            capability: "Checklist STRIDE pre-merge".to_string(),
+            level: 1,
+            prerequisites: vec![],
+            cost: KnowledgeNodeCost {
+                budget: 2.5,
+                time_hours: 4,
+            },
+            unlocked: true,
+        },
+        KnowledgeNode {
+            id: "profiling-base".to_string(),
+            domain: "Performance".to_string(),
+            name: "Profiling Base".to_string(),
+            capability: "Baseline de latencia por módulo".to_string(),
+            level: 1,
+            prerequisites: vec![],
+            cost: KnowledgeNodeCost {
+                budget: 2.0,
+                time_hours: 3,
+            },
+            unlocked: true,
+        },
+        KnowledgeNode {
+            id: "devx-templates".to_string(),
+            domain: "DX".to_string(),
+            name: "DX Templates".to_string(),
+            capability: "Plantillas listas para historias y PRs".to_string(),
+            level: 1,
+            prerequisites: vec![],
+            cost: KnowledgeNodeCost {
+                budget: 1.5,
+                time_hours: 2,
+            },
+            unlocked: false,
+        },
+        KnowledgeNode {
+            id: "workflow-mapping".to_string(),
+            domain: "Orquestación".to_string(),
+            name: "Workflow Mapping".to_string(),
+            capability: "Mapa agente->dominio->objetivo".to_string(),
+            level: 1,
+            prerequisites: vec![],
+            cost: KnowledgeNodeCost {
+                budget: 2.0,
+                time_hours: 3,
+            },
+            unlocked: false,
         },
     ]
 }
@@ -276,20 +378,37 @@ mod tests {
     fn serializes_game_state_contract_shape() {
         let state = GameState {
             system_status: SystemStatus::Operational,
-            daily_budget: DailyBudget { max: 10.0, spent: 3.0, unit: "USD".into() },
+            daily_budget: DailyBudget {
+                max: 10.0,
+                spent: 3.0,
+                unit: "USD".into(),
+            },
             party: vec![PartyMember {
                 id: "agent-1".into(),
                 name: "Coder".into(),
                 class_name: "Warrior".into(),
                 level: 5,
-                stats: PartyStats { hp: 100, mana: 80, success_rate: "95%".into() },
+                stats: PartyStats {
+                    hp: 100,
+                    mana: 80,
+                    success_rate: "95%".into(),
+                },
                 current_action: "Idle".into(),
                 location: "Main".into(),
             }],
-            active_quests: vec![ActiveQuest { id: "q1".into(), title: "Quest".into(), status: QuestStatus::InProgress }],
+            active_quests: vec![ActiveQuest {
+                id: "q1".into(),
+                title: "Quest".into(),
+                status: QuestStatus::InProgress,
+            }],
             fog_map: serde_json::json!({}),
-            repositories: vec![RepositoryState { id: "repo".into(), name: "main".into(), swarm: vec!["agent-1".into()] }],
+            repositories: vec![RepositoryState {
+                id: "repo".into(),
+                name: "main".into(),
+                swarm: vec!["agent-1".into()],
+            }],
             countries: build_countries(),
+            knowledge_tree: build_knowledge_tree(),
         };
 
         let value = serde_json::to_value(state).expect("state should serialize");
@@ -297,7 +416,26 @@ mod tests {
         assert!(value.get("active_quests").is_some());
         assert!(value.get("repositories").is_some());
         assert!(value.get("countries").is_some());
+        assert!(value.get("knowledge_tree").is_some());
         assert_eq!(value["countries"][0]["services"][0]["health"], "healthy");
+        assert_eq!(
+            value["knowledge_tree"][1]["prerequisites"][0],
+            "tdd-level-1"
+        );
+    }
+
+    #[test]
+    fn knowledge_tree_covers_required_domains() {
+        let nodes = build_knowledge_tree();
+        let mut domains: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for node in nodes {
+            domains.insert(node.domain);
+        }
+        assert!(domains.contains("Calidad"));
+        assert!(domains.contains("Seguridad"));
+        assert!(domains.contains("Performance"));
+        assert!(domains.contains("DX"));
+        assert!(domains.contains("Orquestación"));
     }
 
     #[tokio::test]

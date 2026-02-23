@@ -44,6 +44,7 @@ var _base_grid_ready: bool = false
 var _country_nodes: Dictionary = {}
 var _service_nodes: Dictionary = {}
 var _country_positions: Dictionary = {}
+var _knowledge_nodes: Dictionary = {}
 
 func _ready() -> void:
 	if not _base_grid_ready:
@@ -59,6 +60,8 @@ func update_grid(state_data: Dictionary) -> void:
 	var countries: Array = state_data.get("countries", [])
 	_update_country_positions(countries)
 	_sync_countries(countries)
+	var knowledge_tree: Array = state_data.get("knowledge_tree", [])
+	_sync_knowledge_tree(knowledge_tree)
 
 func _update_country_positions(countries: Array) -> void:
 	for i in range(countries.size()):
@@ -224,3 +227,50 @@ func _build_label(text_value: String, color: Color, size: int) -> Label3D:
 	label.modulate = color
 	label.font_size = size
 	return label
+
+
+func _sync_knowledge_tree(knowledge_tree: Array) -> void:
+	var active_ids: Dictionary = {}
+	for i in range(knowledge_tree.size()):
+		var node_data: Dictionary = knowledge_tree[i]
+		var node_id: String = str(node_data.get("id", ""))
+		if node_id.is_empty():
+			continue
+		active_ids[node_id] = true
+
+		var q: int = -4 + int(i % 4)
+		var r: int = 4 + int(i / 4)
+		var unlocked: bool = bool(node_data.get("unlocked", false))
+		var status_color: Color = Color(0.35, 0.95, 0.45) if unlocked else Color(0.95, 0.55, 0.25)
+		var name: String = str(node_data.get("name", node_id))
+		var prereqs: Array = node_data.get("prerequisites", [])
+		var cost: Dictionary = node_data.get("cost", {})
+		var budget: String = str(cost.get("budget", "0"))
+		var time_cost: String = str(cost.get("time_hours", "0"))
+		var label_text: String = "%s\nprereq:%s\n$%s / %sh" % [name, ",".join(prereqs), budget, time_cost]
+
+		var bucket: Dictionary = _knowledge_nodes.get(node_id, {})
+		var pos: Vector3 = axial_to_world(q, r) + Vector3(0.0, 1.8, 0.0)
+		if bucket.is_empty():
+			var label: Label3D = _build_label(label_text, status_color, 18)
+			label.position = pos
+			add_child(label)
+			_knowledge_nodes[node_id] = {"label": label}
+		else:
+			var existing_label: Label3D = bucket.get("label")
+			if is_instance_valid(existing_label):
+				existing_label.position = pos
+				existing_label.text = label_text
+				existing_label.modulate = status_color
+
+	var stale_ids: Array[String] = []
+	for tracked_id in _knowledge_nodes.keys():
+		if not active_ids.has(tracked_id):
+			stale_ids.append(tracked_id)
+	for stale_id in stale_ids:
+		var bucket: Dictionary = _knowledge_nodes.get(stale_id, {})
+		if not bucket.is_empty():
+			var label: Node = bucket.get("label")
+			if is_instance_valid(label):
+				label.queue_free()
+		_knowledge_nodes.erase(stale_id)

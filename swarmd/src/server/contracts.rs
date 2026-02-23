@@ -84,6 +84,24 @@ pub struct CountryState {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct KnowledgeNodeCost {
+    pub budget: f64,
+    pub time_hours: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct KnowledgeNode {
+    pub id: String,
+    pub domain: String,
+    pub name: String,
+    pub capability: String,
+    pub level: i32,
+    pub prerequisites: Vec<String>,
+    pub cost: KnowledgeNodeCost,
+    pub unlocked: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct GameState {
     pub system_status: SystemStatus,
     pub daily_budget: DailyBudget,
@@ -92,6 +110,7 @@ pub struct GameState {
     pub fog_map: serde_json::Value,
     pub repositories: Vec<RepositoryState>,
     pub countries: Vec<CountryState>,
+    pub knowledge_tree: Vec<KnowledgeNode>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
