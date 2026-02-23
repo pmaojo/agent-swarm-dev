@@ -5,6 +5,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from lib.contracts import (
+    CharacterLoadout,
+    CharacterProfile,
     ControlCommand,
     ControlCommandType,
     EventType,
@@ -80,6 +82,26 @@ class ContractSerializationTests(unittest.TestCase):
 
         self.assertEqual(graph.nodes[0].node_type, "subject")
         self.assertEqual(graph.model_dump(by_alias=True)["nodes"][0]["type"], "subject")
+
+    def test_character_profile_contract(self):
+        profile = CharacterProfile(
+            id="char-coder",
+            agent_id="agent-coder",
+            display_name="Coder",
+            class_name="Warrior",
+            level=5,
+            location="The Shell Dungeon",
+            loadout=CharacterLoadout(
+                primary_weapon="Refactor Blade",
+                secondary_item="Debugger Lantern",
+                armor="Terminal Plate",
+                hit_points=100,
+                mana=80,
+            ),
+        )
+
+        self.assertEqual(profile.loadout.primary_weapon, "Refactor Blade")
+        self.assertEqual(profile.level, 5)
 
     def test_control_command_and_event_serialization(self):
         command = ControlCommand(command=ControlCommandType.ASSIGN_MISSION, agent_id="agent-1", repo_id="repo-1", task="Fix")

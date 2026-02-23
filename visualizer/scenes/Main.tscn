@@ -52,6 +52,11 @@ text = "Degradados: 0 · Detenidos: 0"
 
 [node name="Actions" type="VBoxContainer" parent="CanvasLayer/HUD/Margin/VBox"]
 
+[node name="CharacterSelectorLabel" type="Label" parent="CanvasLayer/HUD/Margin/VBox/Actions"]
+text = "Personaje activo"
+
+[node name="CharacterSelector" type="OptionButton" parent="CanvasLayer/HUD/Margin/VBox/Actions"]
+
 [node name="DispatchQuestButton" type="Button" parent="CanvasLayer/HUD/Margin/VBox/Actions"]
 text = "📯 Forjar Misión Épica"
 

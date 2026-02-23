@@ -17,6 +17,9 @@ var poll_timer: Timer
 var _last_game_state_snapshot: String = ""
 var _last_game_state: Dictionary = {}
 var _combat_socket: WebSocketPeer = WebSocketPeer.new()
+var _characters: Array = []
+var _selected_character_id: String = ""
+var _selected_agent_id: String = "agent-coder"
 
 func _ready() -> void:
 	print("Godot Visualizer Started")
@@ -37,6 +40,16 @@ func _ready() -> void:
 	add_child(command_http)
 	command_http.request_completed.connect(_on_command_request_completed)
 
+	var characters_http := HTTPRequest.new()
+	characters_http.name = "CharactersRequest"
+	add_child(characters_http)
+	characters_http.request_completed.connect(_on_characters_request_completed)
+
+	var character_select_http := HTTPRequest.new()
+	character_select_http.name = "CharacterSelectRequest"
+	add_child(character_select_http)
+	character_select_http.request_completed.connect(_on_character_select_request_completed)
+
 	poll_timer = Timer.new()
 	poll_timer.wait_time = 5.0
 	poll_timer.autostart = true
@@ -44,6 +57,7 @@ func _ready() -> void:
 	add_child(poll_timer)
 
 	_bind_controls()
+	_fetch_characters()
 	_connect_combat_stream()
 	set_process(true)
 	_fetch_game_state(state_http)
@@ -77,33 +91,35 @@ func _poll_combat_stream() -> void:
 				$HexGridManager.apply_combat_event(event_data)
 
 func _bind_controls() -> void:
+	if has_node("CanvasLayer/HUD/Margin/VBox/Actions/CharacterSelector"):
+		$CanvasLayer/HUD/Margin/VBox/Actions/CharacterSelector.item_selected.connect(_on_character_selected)
 	if has_node("CanvasLayer/HUD/Margin/VBox/Actions/DispatchQuestButton"):
 		$CanvasLayer/HUD/Margin/VBox/Actions/DispatchQuestButton.pressed.connect(func() -> void:
-			_send_control_command(COMMAND_ASSIGN_MISSION, "agent-coder", "repo-root", "Stabilize service mesh")
+			_send_control_command(COMMAND_ASSIGN_MISSION, _selected_agent_id, "repo-root", "Stabilize service mesh")
 		)
 	if has_node("CanvasLayer/HUD/Margin/VBox/Actions/PauseButton"):
 		$CanvasLayer/HUD/Margin/VBox/Actions/PauseButton.pressed.connect(func() -> void:
-			_send_control_command(COMMAND_PAUSE_AGENT, "agent-coder", "repo-root", "Hold position")
+			_send_control_command(COMMAND_PAUSE_AGENT, _selected_agent_id, "repo-root", "Hold position")
 		)
 	if has_node("CanvasLayer/HUD/Margin/VBox/Actions/ResumeButton"):
 		$CanvasLayer/HUD/Margin/VBox/Actions/ResumeButton.pressed.connect(func() -> void:
-			_send_control_command(COMMAND_RESUME_AGENT, "agent-coder", "repo-root", "Rejoin formation")
+			_send_control_command(COMMAND_RESUME_AGENT, _selected_agent_id, "repo-root", "Rejoin formation")
 		)
 	if has_node("CanvasLayer/HUD/Margin/VBox/Actions/PatchButton"):
 		$CanvasLayer/HUD/Margin/VBox/Actions/PatchButton.pressed.connect(func() -> void:
-			_send_control_command(COMMAND_PATCH_SERVICE, "agent-coder", "service-gateway", "Apply hot patch")
+			_send_control_command(COMMAND_PATCH_SERVICE, _selected_agent_id, "service-gateway", "Apply hot patch")
 		)
 	if has_node("CanvasLayer/HUD/Margin/VBox/Actions/RollbackButton"):
 		$CanvasLayer/HUD/Margin/VBox/Actions/RollbackButton.pressed.connect(func() -> void:
-			_send_control_command(COMMAND_ROLLBACK_SERVICE, "agent-reviewer", "service-web", "Rollback unstable release")
+			_send_control_command(COMMAND_ROLLBACK_SERVICE, _selected_agent_id, "service-web", "Rollback unstable release")
 		)
 	if has_node("CanvasLayer/HUD/Margin/VBox/Actions/RestartButton"):
 		$CanvasLayer/HUD/Margin/VBox/Actions/RestartButton.pressed.connect(func() -> void:
-			_send_control_command(COMMAND_RESTART_SERVICE, "agent-deployer", "service-orchestrator", "Controlled restart")
+			_send_control_command(COMMAND_RESTART_SERVICE, _selected_agent_id, "service-orchestrator", "Controlled restart")
 		)
 	if has_node("CanvasLayer/HUD/Margin/VBox/Actions/IsolateButton"):
 		$CanvasLayer/HUD/Margin/VBox/Actions/IsolateButton.pressed.connect(func() -> void:
-			_send_control_command(COMMAND_ISOLATE_SERVICE, "agent-architect", "service-guardian", "Isolate compromised node")
+			_send_control_command(COMMAND_ISOLATE_SERVICE, _selected_agent_id, "service-guardian", "Isolate compromised node")
 		)
 
 func _fetch_game_state(http: HTTPRequest) -> void:
@@ -218,3 +234,61 @@ func _on_command_request_completed(result: int, response_code: int, headers: Pac
 		status_message = "Orden despachada al Alto Mando"
 	if has_node("CanvasLayer/HUD/Margin/VBox/Actions/CommandStatus"):
 		$CanvasLayer/HUD/Margin/VBox/Actions/CommandStatus.text = status_message
+
+func _fetch_characters() -> void:
+	if not has_node("CharactersRequest"):
+		return
+	var endpoint: String = url_base + "/api/v1/characters"
+	var err: int = $CharactersRequest.request(endpoint)
+	if err != OK:
+		print("Error sending characters request: ", err)
+
+func _on_characters_request_completed(result: int, response_code: int, headers: PackedStringArray, body: PackedByteArray) -> void:
+	if result != HTTPRequest.RESULT_SUCCESS or response_code < 200 or response_code >= 300:
+		return
+	var json := JSON.new()
+	if json.parse(body.get_string_from_utf8()) != OK:
+		return
+	var data: Dictionary = json.get_data()
+	_characters = data.get("characters", [])
+	_selected_character_id = str(data.get("selected_character_id", ""))
+	_apply_character_options()
+
+func _apply_character_options() -> void:
+	if not has_node("CanvasLayer/HUD/Margin/VBox/Actions/CharacterSelector"):
+		return
+	var selector: OptionButton = $CanvasLayer/HUD/Margin/VBox/Actions/CharacterSelector
+	selector.clear()
+	var selected_index: int = 0
+	for idx in range(_characters.size()):
+		var character: Dictionary = _characters[idx]
+		selector.add_item(str(character.get("display_name", "Unknown")))
+		selector.set_item_metadata(idx, character)
+		if str(character.get("id", "")) == _selected_character_id:
+			selected_index = idx
+	if _characters.size() > 0:
+		selector.select(selected_index)
+		_sync_selected_character(_characters[selected_index])
+
+func _on_character_selected(index: int) -> void:
+	if not has_node("CanvasLayer/HUD/Margin/VBox/Actions/CharacterSelector"):
+		return
+	var selector: OptionButton = $CanvasLayer/HUD/Margin/VBox/Actions/CharacterSelector
+	var metadata: Variant = selector.get_item_metadata(index)
+	if typeof(metadata) != TYPE_DICTIONARY:
+		return
+	var character: Dictionary = metadata
+	_sync_selected_character(character)
+	if has_node("CharacterSelectRequest"):
+		var endpoint: String = url_base + "/api/v1/characters/select"
+		var payload := {"character_id": _selected_character_id}
+		var headers_json: PackedStringArray = PackedStringArray(["Content-Type: application/json"])
+		$CharacterSelectRequest.request(endpoint, headers_json, HTTPClient.METHOD_POST, JSON.stringify(payload))
+
+func _sync_selected_character(character: Dictionary) -> void:
+	_selected_character_id = str(character.get("id", ""))
+	_selected_agent_id = str(character.get("agent_id", _selected_agent_id))
+
+func _on_character_select_request_completed(result: int, response_code: int, headers: PackedStringArray, body: PackedByteArray) -> void:
+	if result != HTTPRequest.RESULT_SUCCESS or response_code < 200 or response_code >= 300:
+		print("Character selection request failed: ", result, " Code: ", response_code)

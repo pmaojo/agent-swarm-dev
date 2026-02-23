@@ -23,6 +23,7 @@ from agents.orchestrator import OrchestratorAgent
 
 # Godot Integration
 from lib.godot_bridge.fog import FogService
+from lib.character_profiles import CharacterRegistry, JsonCharacterProfileSource
 from lib.contracts import (
     ActiveQuest,
     ControlCommand,
@@ -36,7 +37,6 @@ from lib.contracts import (
     GraphEdge,
     GraphNode,
     PartyMember,
-    PartyStats,
     QuestStatus,
     RepositoryState,
     ServiceHealth,
@@ -81,6 +81,9 @@ _service_metric_history: Dict[str, ServiceMetrics] = {}
 # Global Orchestrator instance
 orch = OrchestratorAgent()
 fog_service = FogService(orch)
+
+PROFILE_SOURCE_PATH = Path(__file__).resolve().parents[1] / "data" / "character_profiles.json"
+character_registry = CharacterRegistry(JsonCharacterProfileSource(PROFILE_SOURCE_PATH))
 
 def fetch_stats() -> Dict[str, Any]:
     """Fetch real-time stats from Synapse."""
@@ -282,48 +285,40 @@ def fetch_game_state() -> Dict[str, Any]:
             "unit": "USD"
         }
 
-        # 3. Party (Agents)
+        # 3. Party (Character Profiles)
         party = []
-        known_agents = ["ProductManager", "Architect", "Coder", "Reviewer", "Deployer"]
-
-        rpg_classes = {
-            "ProductManager": "Bard",
-            "Architect": "Wizard",
-            "Coder": "Warrior",
-            "Reviewer": "Cleric",
-            "Deployer": "Rogue"
-        }
-
-        locations = {
-             "ProductManager": "The Requirements Hall",
-             "Architect": "The Tower of Design",
-             "Coder": "The Shell Dungeon",
-             "Reviewer": "The Gate of Judgment",
-             "Deployer": "The Cloud Kingdom"
-        }
-
-        for name in known_agents:
-            stats = { "hp": 100, "mana": 80, "success_rate": "95%" }
+        for profile in character_registry.list_profiles():
+            hp = profile.loadout.hit_points
             try:
-                fail_q = f'PREFIX nist: <http://nist.gov/caisi/> PREFIX prov: <http://www.w3.org/ns/prov#> SELECT (COUNT(?exec) as ?count) WHERE {{ ?exec prov:wasAssociatedWith <http://swarm.os/agent/{name}> ; nist:resultState "on_failure" }}'
+                fail_q = (
+                    'PREFIX nist: <http://nist.gov/caisi/> '
+                    'PREFIX prov: <http://www.w3.org/ns/prov#> '
+                    f'SELECT (COUNT(?exec) as ?count) WHERE {{ ?exec prov:wasAssociatedWith <http://swarm.os/agent/{profile.display_name}> ; nist:resultState "on_failure" }}'
+                )
                 fail_res = orch.query_graph(fail_q)
                 if fail_res:
                     val = fail_res[0].get('?count') or fail_res[0].get('count')
                     if val:
                         fails = int(val)
-                        stats["hp"] = max(0, 100 - (fails * 5))
-            except: pass
+                        hp = max(0, profile.loadout.hit_points - (fails * 5))
+            except Exception:
+                pass
 
-            agent_data = {
-                "id": f"agent-{name.lower()}",
-                "name": name,
-                "class": rpg_classes.get(name, "Villager"),
-                "level": 5,
-                "stats": stats,
-                "current_action": "Idle",
-                "location": locations.get(name, "Unknown")
-            }
-            party.append(agent_data)
+            party.append(
+                PartyMember(
+                    id=profile.agent_id,
+                    name=profile.display_name,
+                    **{"class": profile.class_name},
+                    level=profile.level,
+                    stats={
+                        "hp": hp,
+                        "mana": profile.loadout.mana,
+                        "success_rate": profile.base_success_rate,
+                    },
+                    current_action=profile.current_action,
+                    location=profile.location,
+                )
+            )
 
         # 4. Active Quests (Trello)
         active_quests = []
@@ -394,18 +389,7 @@ def fetch_game_state() -> Dict[str, Any]:
         game_state = GameState(
             system_status=normalized_status,
             daily_budget=daily_budget,
-            party=[
-                PartyMember(
-                    id=item["id"],
-                    name=item["name"],
-                    **{"class": item["class"]},
-                    level=item["level"],
-                    stats=PartyStats(**item["stats"]),
-                    current_action=item["current_action"],
-                    location=item["location"],
-                )
-                for item in party
-            ],
+            party=party,
             active_quests=active_quests,
             fog_map=fog_map,
             repositories=repositories,
@@ -541,6 +525,33 @@ async def get_game_state(): return await asyncio.to_thread(fetch_game_state)
 
 @app.get("/api/v1/graph-nodes")
 async def get_graph_nodes(): return await asyncio.to_thread(fetch_graph_nodes)
+
+
+class CharacterSelectionRequest(BaseModel):
+    character_id: str
+
+
+class CharacterSelectionResponse(BaseModel):
+    selected_character_id: str
+
+
+@app.get("/api/v1/characters")
+async def get_characters() -> Dict[str, Any]:
+    selected_character_id = character_registry.selected_character_id()
+    return {
+        "selected_character_id": selected_character_id,
+        "characters": [profile.model_dump() for profile in character_registry.list_profiles()],
+    }
+
+
+@app.post("/api/v1/characters/select")
+async def select_character(payload: CharacterSelectionRequest) -> Dict[str, Any]:
+    try:
+        selected_profile = character_registry.select_character(payload.character_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Unknown character_id: {payload.character_id}") from exc
+
+    return CharacterSelectionResponse(selected_character_id=selected_profile.id).model_dump()
 
 
 @app.post("/api/v1/control/commands")

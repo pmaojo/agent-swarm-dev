@@ -15,8 +15,10 @@ with patch('agents.orchestrator.OrchestratorAgent') as MockOrch:
     instance.agents = {"Coder": {}, "Reviewer": {}}
     instance.check_operational_status.return_value = "OPERATIONAL"
     instance.query_graph.return_value = [{"count": "0"}]
+    instance.bridge.get_cards_in_list.return_value = []
+    instance.ingest_triples.return_value = None
 
-    from lib.gateway_runtime import app, combat_event_queue
+    from lib.gateway_runtime import app, combat_event_queue, character_registry, fetch_game_state
 
 
 class CombatStreamTests(unittest.TestCase):
@@ -33,6 +35,24 @@ class CombatStreamTests(unittest.TestCase):
             message = websocket.receive_json()
 
         self.assertEqual(message["type"], "BUG_SPAWNED")
+
+    def test_character_endpoints_support_listing_and_selecting(self) -> None:
+        list_response = self.client.get('/api/v1/characters')
+        self.assertEqual(list_response.status_code, 200)
+        payload = list_response.json()
+        self.assertTrue(len(payload["characters"]) > 0)
+
+        first_character_id = payload["characters"][0]["id"]
+        select_response = self.client.post('/api/v1/characters/select', json={"character_id": first_character_id})
+        self.assertEqual(select_response.status_code, 200)
+        self.assertEqual(select_response.json()["selected_character_id"], first_character_id)
+
+    def test_game_state_party_uses_character_registry(self) -> None:
+        state = fetch_game_state()
+        party = state.get("party", [])
+        profile_ids = {profile.agent_id for profile in character_registry.list_profiles()}
+        party_ids = {member["id"] for member in party}
+        self.assertEqual(profile_ids, party_ids)
 
 
 if __name__ == '__main__':
