@@ -1,0 +1,15 @@
+[package]
+name = "swarm-domain"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Pure domain model for Agent Swarm"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "deny"
+unwrap_used = "deny"
+expect_used = "deny"
+
