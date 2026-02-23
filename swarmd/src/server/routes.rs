@@ -1,12 +1,13 @@
-use axum::{extract::State, Json};
+use axum::{extract::{Path, State}, Json};
 use chrono::Utc;
 use tracing::info;
 
 use crate::server::contracts::{
     ActiveQuest, AuditRecord, CommandPhase, ControlCommand, ControlCommandAck, CountryState,
-    DailyBudget, EventAck, GameState, GatewayEvent, GraphData, KnowledgeNode, KnowledgeNodeCost,
-    PartyMember, PartyStats, PolicyApprovalStatus, QuestStatus, RepositoryState, ServiceHealth,
-    ServiceState, SystemStatus,
+    DailyBudget, EventAck, GatewayEvent, GameState, GraphData, IngestKnowledgeNodeResponse,
+    KnowledgeNode, KnowledgeNodeCost, KnowledgeNodeDocumentationResponse, KnowledgeNodeIngestRequest,
+    MissionAssignment, PartyMember, PartyStats, PolicyApprovalStatus, QuestStatus, RepositoryState,
+    ServiceHealth, ServiceState, SystemStatus,
 };
 use crate::server::AppState;
 
@@ -180,6 +181,96 @@ pub async fn post_event(Json(event): Json<GatewayEvent>) -> Json<EventAck> {
     })
 }
 
+pub async fn post_mission_assign(
+    State(state): State<AppState>,
+    Json(mission): Json<MissionAssignment>,
+) -> Json<ControlCommandAck> {
+    let command = ControlCommand {
+        command: crate::server::contracts::ControlCommandType::AssignMission,
+        actor: "swarmd".to_string(),
+        agent_id: Some(mission.agent_id),
+        repo_id: Some(mission.repo_id),
+        task: Some(mission.task),
+        mission_id: None,
+        priority: None,
+        deployment_target: None,
+        rollback_to: None,
+        llm_profile: None,
+        nist_policy_id: "NIST-800-53-REV5".to_string(),
+        approved_by: Some("swarmd".to_string()),
+        metadata: std::collections::HashMap::new(),
+    };
+
+    let tracking_id = uuid::Uuid::new_v4().to_string();
+    let final_state = execute_command(&command);
+    append_audit(
+        &state,
+        AuditRecord {
+            tracking_id: tracking_id.clone(),
+            actor: command.actor.clone(),
+            command: command.command.clone(),
+            phase: CommandPhase::Completed,
+            timestamp: Utc::now().to_rfc3339(),
+            policy_id: command.nist_policy_id.clone(),
+            approved_by: command.approved_by.clone(),
+            details: "Mission assigned through sovereign gateway".to_string(),
+        },
+    )
+    .await;
+
+    Json(ControlCommandAck {
+        tracking_id,
+        status: CommandPhase::Completed,
+        reason: None,
+        final_state: Some(final_state),
+        command,
+    })
+}
+
+pub async fn post_knowledge_tree_node(
+    State(state): State<AppState>,
+    Json(payload): Json<KnowledgeNodeIngestRequest>,
+) -> Json<IngestKnowledgeNodeResponse> {
+    let node = map_ingest_request_to_node(&payload);
+    let triples = knowledge_node_to_triples(&node, &payload);
+    let _ = state.synapse.ingest(triples).await;
+
+    Json(IngestKnowledgeNodeResponse {
+        status: "ingested".to_string(),
+        node,
+    })
+}
+
+pub async fn get_knowledge_node_documentation(
+    State(state): State<AppState>,
+    Path(node_id): Path<String>,
+) -> Json<KnowledgeNodeDocumentationResponse> {
+    let query = format!(
+        r#"
+        PREFIX swarm: <http://swarm.os/ontology/>
+        SELECT ?docs WHERE {{
+            <http://swarm.os/ontology/knowledge/{node_id}> swarm:documentation ?docs .
+        }} LIMIT 1
+        "#
+    );
+
+    let documentation = state
+        .synapse
+        .query(&query)
+        .await
+        .ok()
+        .and_then(|json| serde_json::from_str::<Vec<serde_json::Value>>(&json).ok())
+        .and_then(|rows| rows.first().cloned())
+        .and_then(|row| row.get("docs").or_else(|| row.get("?docs")).cloned())
+        .and_then(|value| value.as_str().map(ToString::to_string))
+        .unwrap_or_default();
+
+    Json(KnowledgeNodeDocumentationResponse {
+        node_id,
+        documentation,
+    })
+}
+
 fn execute_command(command: &ControlCommand) -> String {
     format!("{:?}_EXECUTED", command.command)
 }
@@ -250,6 +341,68 @@ fn build_knowledge_tree() -> Vec<KnowledgeNode> {
     }]
 }
 
+fn map_ingest_request_to_node(payload: &KnowledgeNodeIngestRequest) -> KnowledgeNode {
+    KnowledgeNode {
+        id: payload.node_id.clone(),
+        domain: payload.domain.clone(),
+        name: payload.name.clone(),
+        capability: payload.capability.clone(),
+        level: payload.level,
+        prerequisites: payload.prerequisites.clone(),
+        cost: KnowledgeNodeCost {
+            budget: payload.budget_cost,
+            time_hours: payload.time_cost_hours,
+        },
+        unlocked: true,
+    }
+}
+
+fn knowledge_node_to_triples(
+    node: &KnowledgeNode,
+    payload: &KnowledgeNodeIngestRequest,
+) -> Vec<(String, String, String)> {
+    let node_uri = format!("http://swarm.os/ontology/knowledge/{}", node.id);
+    let mut triples = vec![
+        (
+            node_uri.clone(),
+            "http://www.w3.org/1999/02/22-rdf-syntax-ns#type".to_string(),
+            "http://swarm.os/ontology/KnowledgeNode".to_string(),
+        ),
+        (node_uri.clone(), "http://swarm.os/ontology/domain".to_string(), node.domain.clone()),
+        (node_uri.clone(), "http://swarm.os/ontology/name".to_string(), node.name.clone()),
+        (
+            node_uri.clone(),
+            "http://swarm.os/ontology/capability".to_string(),
+            node.capability.clone(),
+        ),
+        (
+            node_uri.clone(),
+            "http://swarm.os/ontology/documentation".to_string(),
+            payload.docs_text.clone(),
+        ),
+        (
+            node_uri.clone(),
+            "http://swarm.os/ontology/sourceType".to_string(),
+            payload.source_type.clone(),
+        ),
+        (
+            node_uri.clone(),
+            "http://swarm.os/ontology/sourceRef".to_string(),
+            payload.source_ref.clone(),
+        ),
+    ];
+
+    for prerequisite in &node.prerequisites {
+        triples.push((
+            node_uri.clone(),
+            "http://swarm.os/ontology/prerequisite".to_string(),
+            format!("http://swarm.os/ontology/knowledge/{prerequisite}"),
+        ));
+    }
+
+    triples
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -306,5 +459,47 @@ mod tests {
     #[test]
     fn parse_halted_status() {
         assert_eq!(parse_system_status("HALTED"), SystemStatus::Halted);
+    }
+
+    #[test]
+    fn map_ingest_node_preserves_typed_fields() {
+        let payload = KnowledgeNodeIngestRequest {
+            node_id: "n1".into(),
+            domain: "quality".into(),
+            name: "TDD".into(),
+            capability: "tests".into(),
+            level: 2,
+            budget_cost: 3.5,
+            time_cost_hours: 4,
+            prerequisites: vec!["n0".into()],
+            docs_text: "docs".into(),
+            source_type: "custom".into(),
+            source_ref: "game://manual".into(),
+        };
+        let node = map_ingest_request_to_node(&payload);
+        assert_eq!(node.id, "n1");
+        assert_eq!(node.cost.budget, 3.5);
+        assert_eq!(node.prerequisites, vec!["n0"]);
+    }
+
+    #[test]
+    fn knowledge_triples_include_documentation_and_prerequisites() {
+        let payload = KnowledgeNodeIngestRequest {
+            node_id: "n1".into(),
+            domain: "quality".into(),
+            name: "TDD".into(),
+            capability: "tests".into(),
+            level: 2,
+            budget_cost: 3.5,
+            time_cost_hours: 4,
+            prerequisites: vec!["n0".into()],
+            docs_text: "docs".into(),
+            source_type: "custom".into(),
+            source_ref: "game://manual".into(),
+        };
+        let node = map_ingest_request_to_node(&payload);
+        let triples = knowledge_node_to_triples(&node, &payload);
+        assert!(triples.iter().any(|(_, p, o)| p.ends_with("documentation") && o == "docs"));
+        assert!(triples.iter().any(|(_, p, o)| p.ends_with("prerequisite") && o.ends_with("/n0")));
     }
 }

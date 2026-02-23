@@ -8,6 +8,8 @@ from typing import Dict, Any, List, Literal, Tuple
 from contextlib import asynccontextmanager
 from datetime import datetime
 
+import requests
+
 from fastapi import FastAPI, WebSocket, Request, HTTPException, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -89,6 +91,40 @@ character_registry = CharacterRegistry(
     JsonCharacterProfileSource(PROFILE_SOURCE_PATH),
     sink=JsonCharacterProfileSink(PROFILE_SOURCE_PATH),
 )
+
+
+
+def _rust_gateway_base_url() -> str:
+    return os.environ.get("RUST_GATEWAY_URL", "").rstrip("/")
+
+
+def _rust_gateway_enabled() -> bool:
+    return bool(_rust_gateway_base_url())
+
+
+def _forward_json_request(method: str, path: str, payload: Dict[str, Any] | None = None) -> Dict[str, Any]:
+    base_url = _rust_gateway_base_url()
+    if not base_url:
+        raise HTTPException(status_code=503, detail="Rust gateway forwarding is not configured")
+
+    url = f"{base_url}{path}"
+    try:
+        response = requests.request(method=method, url=url, json=payload, timeout=3.0)
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail=f"Rust gateway request failed: {exc}") from exc
+
+    if response.status_code >= 400:
+        raise HTTPException(status_code=response.status_code, detail=response.text or "Rust gateway error")
+
+    try:
+        data = response.json()
+    except ValueError as exc:
+        raise HTTPException(status_code=502, detail="Rust gateway returned invalid JSON") from exc
+
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=502, detail="Rust gateway returned unexpected payload")
+
+    return data
 
 def fetch_stats() -> Dict[str, Any]:
     """Fetch real-time stats from Synapse."""
@@ -528,10 +564,16 @@ app.add_middleware(
 async def get_status(): return await asyncio.to_thread(fetch_stats)
 
 @app.get("/api/v1/game-state")
-async def get_game_state(): return await asyncio.to_thread(fetch_game_state)
+async def get_game_state():
+    if _rust_gateway_enabled():
+        return await asyncio.to_thread(_forward_json_request, "GET", "/api/v1/game-state")
+    return await asyncio.to_thread(fetch_game_state)
 
 @app.get("/api/v1/graph-nodes")
-async def get_graph_nodes(): return await asyncio.to_thread(fetch_graph_nodes)
+async def get_graph_nodes():
+    if _rust_gateway_enabled():
+        return await asyncio.to_thread(_forward_json_request, "GET", "/api/v1/graph-nodes")
+    return await asyncio.to_thread(fetch_graph_nodes)
 
 
 class CharacterSelectionRequest(BaseModel):
@@ -609,18 +651,11 @@ async def save_character_loadout(payload: CharacterLoadoutSaveRequest) -> Dict[s
 
 @app.get("/api/v1/knowledge-tree/nodes/{node_id}/documentation")
 async def get_knowledge_node_documentation(node_id: str) -> Dict[str, Any]:
-    knowledge_tree = fetch_knowledge_tree(
-        query_graph=lambda query: orch.query_graph(query, namespace="default"),
-        ingest_triples=lambda triples: orch.ingest_triples(triples, namespace="default"),
-        catalog_assets=discover_catalog_assets(Path(__file__).resolve().parents[3]),
+    return await asyncio.to_thread(
+        _forward_json_request,
+        "GET",
+        f"/api/v1/knowledge-tree/nodes/{node_id}/documentation",
     )
-    for node in knowledge_tree:
-        if node.id == node_id:
-            return KnowledgeNodeDocumentationResponse(
-                node_id=node.id,
-                documentation=node.documentation,
-            ).model_dump()
-    raise HTTPException(status_code=404, detail=f"Unknown knowledge node id: {node_id}")
 
 
 def _validate_control_command(payload: Dict[str, Any]) -> ControlCommand:
@@ -637,12 +672,16 @@ def _validate_control_command(payload: Dict[str, Any]) -> ControlCommand:
 @app.post("/api/v1/control/commands")
 async def post_control_command(command_payload: Dict[str, Any]):
     command = _validate_control_command(command_payload)
+    if _rust_gateway_enabled():
+        return await asyncio.to_thread(_forward_json_request, "POST", "/api/v1/control/commands", command.model_dump())
     await manager.broadcast({"type": "CONTROL_COMMAND", "payload": command.model_dump()})
     return ControlCommandAck(command=command).model_dump()
 
 
 @app.post("/api/v1/events")
 async def post_event(event: GatewayEvent):
+    if _rust_gateway_enabled():
+        return await asyncio.to_thread(_forward_json_request, "POST", "/api/v1/events", event.model_dump())
     await manager.broadcast({"type": event.type, "payload": event.model_dump()})
     return EventAck(event=event).model_dump()
 
@@ -695,21 +734,12 @@ class KnowledgeNodeIngestRequest(BaseModel):
 
 @app.post("/api/v1/knowledge-tree/nodes")
 async def ingest_knowledge_tree_node(payload: KnowledgeNodeIngestRequest):
-    node = ingest_custom_knowledge_node(
-        ingest_triples=lambda triples: orch.ingest_triples(triples, namespace="default"),
-        node_id=payload.node_id,
-        domain=payload.domain,
-        name=payload.name,
-        capability=payload.capability,
-        level=payload.level,
-        budget_cost=payload.budget_cost,
-        time_cost_hours=payload.time_cost_hours,
-        prerequisites=payload.prerequisites,
-        docs_text=payload.docs_text,
-        source_type=payload.source_type,
-        source_ref=payload.source_ref,
+    return await asyncio.to_thread(
+        _forward_json_request,
+        "POST",
+        "/api/v1/knowledge-tree/nodes",
+        payload.model_dump(),
     )
-    return {"status": "ingested", "node": node.model_dump()}
 
 class MissionAssignment(BaseModel):
     agent_id: str
@@ -718,18 +748,12 @@ class MissionAssignment(BaseModel):
 
 @app.post("/api/v1/mission/assign")
 async def assign_mission(mission: MissionAssignment):
-    """
-    Assigns a mission to an agent for a specific repository.
-    Broadcasts the event to Godot.
-    """
-    try:
-        command = ControlCommand(command="ASSIGN_MISSION", agent_id=mission.agent_id, repo_id=mission.repo_id, task=mission.task)
-        payload = {"type": EventType.MISSION_ASSIGNED, "payload": command.model_dump()}
-        await manager.broadcast(payload)
-        return ControlCommandAck(command=command).model_dump()
-    except Exception as e:
-        print(f"Error assigning mission: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    return await asyncio.to_thread(
+        _forward_json_request,
+        "POST",
+        "/api/v1/mission/assign",
+        mission.model_dump(),
+    )
 
 @app.websocket("/api/v1/codegraph/stream")
 async def codegraph_stream(websocket: WebSocket):

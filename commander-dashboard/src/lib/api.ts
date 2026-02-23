@@ -2,7 +2,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AuditRecord, CommandAck, GameState, GraphData, SovereignCommand } from "./types";
 import { mockGameState, mockGraphData } from "./mock-data";
 
-const API_BASE = "/api/v1";
+const RUST_GATEWAY_BASE = import.meta.env.VITE_RUST_GATEWAY_URL ?? "http://localhost:18789";
+const API_BASE = `${RUST_GATEWAY_BASE}/api/v1`;
 
 async function fetchWithFallback<T>(url: string, fallback: T): Promise<T> {
   try {
