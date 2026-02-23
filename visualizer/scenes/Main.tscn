@@ -18,11 +18,78 @@ script = ExtResource("2")
 
 [node name="CanvasLayer" type="CanvasLayer" parent="." unique_id=1126013046]
 
-[node name="RichTextLabel" type="RichTextLabel" parent="CanvasLayer" unique_id=1437217254]
-anchors_preset = 9
+[node name="HUD" type="PanelContainer" parent="CanvasLayer"]
+anchors_preset = 0
+offset_left = 16.0
+offset_top = 16.0
+offset_right = 490.0
+offset_bottom = 310.0
+
+[node name="Margin" type="MarginContainer" parent="CanvasLayer/HUD"]
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 12
+
+[node name="VBox" type="VBoxContainer" parent="CanvasLayer/HUD/Margin"]
+
+[node name="Title" type="Label" parent="CanvasLayer/HUD/Margin/VBox"]
+text = "⚔️ Trono de la Sinapsis"
+
+[node name="TurnBanner" type="Label" parent="CanvasLayer/HUD/Margin/VBox"]
+text = "Turno 1 · Proyectos 0 · Reinos 0"
+
+[node name="Stats" type="VBoxContainer" parent="CanvasLayer/HUD/Margin/VBox"]
+
+[node name="ServicesLabel" type="Label" parent="CanvasLayer/HUD/Margin/VBox/Stats"]
+text = "Servicios vigilados: 0"
+
+[node name="ThreatLabel" type="Label" parent="CanvasLayer/HUD/Margin/VBox/Stats"]
+text = "Amenazas: 0 en asedio"
+
+[node name="DegradedLabel" type="Label" parent="CanvasLayer/HUD/Margin/VBox/Stats"]
+text = "Degradados: 0 · Detenidos: 0"
+
+[node name="Actions" type="VBoxContainer" parent="CanvasLayer/HUD/Margin/VBox"]
+
+[node name="DispatchQuestButton" type="Button" parent="CanvasLayer/HUD/Margin/VBox/Actions"]
+text = "📯 Forjar Misión Épica"
+
+[node name="PauseButton" type="Button" parent="CanvasLayer/HUD/Margin/VBox/Actions"]
+text = "⏸️ Sellar Nodo"
+
+[node name="ResumeButton" type="Button" parent="CanvasLayer/HUD/Margin/VBox/Actions"]
+text = "▶️ Reabrir Frente"
+
+[node name="CommandStatus" type="Label" parent="CanvasLayer/HUD/Margin/VBox/Actions"]
+text = "Estado de mando: aguardando órdenes"
+
+[node name="OrderLog" type="RichTextLabel" parent="CanvasLayer/HUD/Margin/VBox"]
+fit_content = true
+size_flags_vertical = 3
+text = "Consejo de Guerra: sin alertas."
+
+[node name="TelemetryPanel" type="PanelContainer" parent="CanvasLayer"]
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -420.0
+offset_top = 16.0
+offset_right = -16.0
+offset_bottom = 470.0
+
+[node name="TelemetryMargin" type="MarginContainer" parent="CanvasLayer/TelemetryPanel"]
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 12
+
+[node name="RichTextLabel" type="RichTextLabel" parent="CanvasLayer/TelemetryPanel/TelemetryMargin" unique_id=1437217254]
+anchors_preset = 15
+anchor_right = 1.0
 anchor_bottom = 1.0
-offset_right = 300.0
-grow_vertical = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
 text = "Waiting for game state..."
 
 [node name="HTTPRequest" type="HTTPRequest" parent="." unique_id=1583219651]
