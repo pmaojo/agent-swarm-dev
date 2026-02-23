@@ -61,6 +61,18 @@ text = "⏸️ Sellar Nodo"
 [node name="ResumeButton" type="Button" parent="CanvasLayer/HUD/Margin/VBox/Actions"]
 text = "▶️ Reabrir Frente"
 
+[node name="PatchButton" type="Button" parent="CanvasLayer/HUD/Margin/VBox/Actions"]
+text = "🩹 Patch"
+
+[node name="RollbackButton" type="Button" parent="CanvasLayer/HUD/Margin/VBox/Actions"]
+text = "⏪ Rollback"
+
+[node name="RestartButton" type="Button" parent="CanvasLayer/HUD/Margin/VBox/Actions"]
+text = "🔁 Reinicio"
+
+[node name="IsolateButton" type="Button" parent="CanvasLayer/HUD/Margin/VBox/Actions"]
+text = "🛡️ Aislamiento"
+
 [node name="CommandStatus" type="Label" parent="CanvasLayer/HUD/Margin/VBox/Actions"]
 text = "Estado de mando: aguardando órdenes"
 

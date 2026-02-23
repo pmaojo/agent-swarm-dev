@@ -40,7 +40,7 @@ class ContractSerializationTests(unittest.TestCase):
                     "id": "country-core",
                     "name": "The Core Empire",
                     "services": [
-                        {"id": "service-gateway", "name": "gateway", "health": "degraded"}
+                        {"id": "service-gateway", "name": "gateway", "health": "degraded", "hp": 77, "latency_ms": 321.0, "error_rate": 0.14}
                     ],
                 }
             ],
@@ -53,6 +53,7 @@ class ContractSerializationTests(unittest.TestCase):
 
         serialized = model.model_dump(by_alias=True)
         self.assertEqual(serialized["party"][0]["class"], "Warrior")
+        self.assertEqual(serialized["countries"][0]["services"][0]["hp"], 77)
 
 
     def test_game_state_requires_country_service_minimum_fields(self):
@@ -84,8 +85,8 @@ class ContractSerializationTests(unittest.TestCase):
         command = ControlCommand(command=ControlCommandType.ASSIGN_MISSION, agent_id="agent-1", repo_id="repo-1", task="Fix")
         self.assertEqual(command.command, ControlCommandType.ASSIGN_MISSION)
 
-        event = GatewayEvent(type=EventType.HARDENING_EVENT, message="Contract failure")
-        self.assertEqual(event.type, EventType.HARDENING_EVENT)
+        event = GatewayEvent(type=EventType.BUG_SPAWNED, message="Bug wave")
+        self.assertEqual(event.type, EventType.BUG_SPAWNED)
 
 
 if __name__ == "__main__":

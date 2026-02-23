@@ -45,11 +45,21 @@ var _country_nodes: Dictionary = {}
 var _service_nodes: Dictionary = {}
 var _country_positions: Dictionary = {}
 var _knowledge_nodes: Dictionary = {}
+var _bug_nodes: Dictionary = {}
 
 func _ready() -> void:
 	if not _base_grid_ready:
 		_generate_base_grid(3)
 		_base_grid_ready = true
+	set_process(true)
+
+func _process(delta: float) -> void:
+	for bug_id in _bug_nodes.keys():
+		var bug: Dictionary = _bug_nodes[bug_id]
+		var node: Node3D = bug.get("node")
+		var target: Vector3 = bug.get("target", node.position)
+		if is_instance_valid(node):
+			node.position = node.position.move_toward(target, delta * 1.75)
 
 func axial_to_world(q: int, r: int) -> Vector3:
 	var x: float = hex_size * sqrt(3.0) * (q + r / 2.0)
@@ -121,7 +131,7 @@ func _sync_services(country_id: String, country_name: String, center: Vector2i, 
 		var r: int = center.y + offset.y
 		var name: String = str(service.get("name", service_id))
 		var health: String = str(service.get("health", "healthy"))
-		_sync_service_node(country_id, country_name, service_id, name, health, q, r)
+		_sync_service_node(country_id, country_name, service_id, name, health, int(service.get("hp", 100)), q, r)
 
 	var stale_ids: Array[String] = []
 	for tracked_id in _service_nodes.keys():
@@ -133,7 +143,7 @@ func _sync_services(country_id: String, country_name: String, center: Vector2i, 
 	for stale_id in stale_ids:
 		_remove_service(stale_id)
 
-func _sync_service_node(country_id: String, country_name: String, service_id: String, service_name: String, health: String, q: int, r: int) -> void:
+func _sync_service_node(country_id: String, country_name: String, service_id: String, service_name: String, health: String, hp: int, q: int, r: int) -> void:
 	var key: String = _service_key(country_id, service_id)
 	var bucket: Dictionary = _service_nodes.get(key, {})
 	var color_key: String = str(COUNTRY_COLORS.get(country_name, "neutral"))
@@ -148,7 +158,7 @@ func _sync_service_node(country_id: String, country_name: String, service_id: St
 		_set_mesh_modulate(model, status_color)
 		add_child(model)
 
-		var label: Label3D = _build_label(_service_label(service_name, health), status_color, 28)
+		var label: Label3D = _build_label(_service_label(service_name, health, hp), status_color, 28)
 		label.position = pos + Vector3(0.0, 1.4, 0.0)
 		add_child(label)
 		_service_nodes[key] = {"model": model, "label": label}
@@ -161,7 +171,7 @@ func _sync_service_node(country_id: String, country_name: String, service_id: St
 	var existing_label: Label3D = bucket.get("label")
 	if is_instance_valid(existing_label):
 		existing_label.position = pos + Vector3(0.0, 1.4, 0.0)
-		existing_label.text = _service_label(service_name, health)
+		existing_label.text = _service_label(service_name, health, hp)
 		existing_label.modulate = status_color
 
 func _set_mesh_modulate(node: Node, color: Color) -> void:
@@ -173,8 +183,8 @@ func _set_mesh_modulate(node: Node, color: Color) -> void:
 func _service_key(country_id: String, service_id: String) -> String:
 	return country_id + "::" + service_id
 
-func _service_label(name: String, health: String) -> String:
-	return "%s\n[%s]" % [name, health]
+func _service_label(name: String, health: String, hp: int = 100) -> String:
+	return "%s\n[%s] HP:%d" % [name, health, hp]
 
 func _remove_country(country_id: String) -> void:
 	var bucket: Dictionary = _country_nodes.get(country_id, {})
@@ -274,3 +284,57 @@ func _sync_knowledge_tree(knowledge_tree: Array) -> void:
 			if is_instance_valid(label):
 				label.queue_free()
 		_knowledge_nodes.erase(stale_id)
+
+
+func apply_combat_event(event_data: Dictionary) -> void:
+	var event_type: String = str(event_data.get("type", ""))
+	if event_type == "keepalive":
+		return
+	var payload: Dictionary = event_data.get("payload", {})
+	if event_type == "BUG_SPAWNED":
+		_spawn_bug(payload)
+	elif event_type == "SERVICE_DAMAGED":
+		_spawn_bug(payload)
+	elif event_type == "SERVICE_RECOVERED":
+		_despawn_bug_for_service(str(payload.get("service_id", "")))
+
+func _spawn_bug(payload: Dictionary) -> void:
+	var service_id: String = str(payload.get("details", {}).get("service_id", payload.get("service_id", "")))
+	if service_id.is_empty():
+		service_id = "unknown"
+	var bug_id: String = "bug-" + service_id + "-" + str(Time.get_ticks_msec())
+	var marker := MeshInstance3D.new()
+	marker.mesh = SphereMesh.new()
+	marker.scale = Vector3(0.2, 0.2, 0.2)
+	marker.modulate = Color(0.9, 0.1, 0.1)
+	marker.position = axial_to_world(-5 + randi() % 3, 5 - randi() % 3) + Vector3(0, 0.8, 0)
+	add_child(marker)
+
+	var target: Vector3 = _find_service_target(service_id)
+	_bug_nodes[bug_id] = {"node": marker, "target": target, "service_id": service_id}
+
+func _find_service_target(service_id: String) -> Vector3:
+	for key in _service_nodes.keys():
+		if key.ends_with("::" + service_id):
+			var bucket: Dictionary = _service_nodes[key]
+			var model: Node3D = bucket.get("model")
+			if is_instance_valid(model):
+				return model.position + Vector3(0, 0.8, 0)
+	for key in _service_nodes.keys():
+		var bucket: Dictionary = _service_nodes[key]
+		var model: Node3D = bucket.get("model")
+		if is_instance_valid(model):
+			return model.position + Vector3(0, 0.8, 0)
+	return axial_to_world(0, 0) + Vector3(0, 0.8, 0)
+
+func _despawn_bug_for_service(service_id: String) -> void:
+	var stale: Array[String] = []
+	for bug_id in _bug_nodes.keys():
+		var bug: Dictionary = _bug_nodes[bug_id]
+		if str(bug.get("service_id", "")) == service_id:
+			var node: Node = bug.get("node")
+			if is_instance_valid(node):
+				node.queue_free()
+			stale.append(bug_id)
+	for bug_id in stale:
+		_bug_nodes.erase(bug_id)

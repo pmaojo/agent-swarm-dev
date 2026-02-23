@@ -72,6 +72,9 @@ class ServiceState(BaseModel):
     id: str
     name: str
     health: ServiceHealth
+    hp: int = 100
+    latency_ms: float = 0.0
+    error_rate: float = 0.0
 
 
 class CountryState(BaseModel):
@@ -133,6 +136,10 @@ class ControlCommandType(str, Enum):
     PAUSE_AGENT = "PAUSE_AGENT"
     RESUME_AGENT = "RESUME_AGENT"
     REFRESH_GRAPH = "REFRESH_GRAPH"
+    PATCH_SERVICE = "PATCH_SERVICE"
+    ROLLBACK_SERVICE = "ROLLBACK_SERVICE"
+    RESTART_SERVICE = "RESTART_SERVICE"
+    ISOLATE_SERVICE = "ISOLATE_SERVICE"
 
 
 class ControlCommand(BaseModel):
@@ -151,6 +158,9 @@ class ControlCommandAck(BaseModel):
 class EventType(str, Enum):
     MISSION_ASSIGNED = "MISSION_ASSIGNED"
     HARDENING_EVENT = "HARDENING_EVENT"
+    BUG_SPAWNED = "BUG_SPAWNED"
+    SERVICE_DAMAGED = "SERVICE_DAMAGED"
+    SERVICE_RECOVERED = "SERVICE_RECOVERED"
 
 
 class GatewayEvent(BaseModel):
