@@ -43,6 +43,7 @@ from lib.contracts import (
     ServiceState,
     SystemStatus,
 )
+from lib.knowledge_tree import discover_catalog_assets, fetch_knowledge_tree, ingest_custom_knowledge_node
 from lib.godot_bridge.templates import (
     AGENT_UNIT_GD,
     FOG_MANAGER_GD,
@@ -283,6 +284,13 @@ def fetch_game_state() -> Dict[str, Any]:
         ]
 
         normalized_status = status if status in {s.value for s in SystemStatus} else SystemStatus.UNKNOWN.value
+        catalog_assets = discover_catalog_assets(Path(__file__).resolve().parents[3])
+        knowledge_tree = fetch_knowledge_tree(
+            query_graph=lambda query: orch.query_graph(query, namespace="default"),
+            ingest_triples=lambda triples: orch.ingest_triples(triples, namespace="default"),
+            catalog_assets=catalog_assets,
+        )
+
         game_state = GameState(
             system_status=normalized_status,
             daily_budget=daily_budget,
@@ -302,6 +310,7 @@ def fetch_game_state() -> Dict[str, Any]:
             fog_map=fog_map,
             repositories=repositories,
             countries=countries,
+            knowledge_tree=knowledge_tree,
         )
 
         return game_state.model_dump(by_alias=True)
@@ -460,6 +469,40 @@ async def get_citadel_script(): return {"script": CITADEL_MANAGER_GD}
 
 @app.get("/api/v1/godot/scripts/building")
 async def get_building_script(): return {"script": BUILDING_GD}
+
+
+
+class KnowledgeNodeIngestRequest(BaseModel):
+    node_id: str
+    domain: str
+    name: str
+    capability: str
+    level: int = 1
+    budget_cost: float = 1.0
+    time_cost_hours: int = 1
+    prerequisites: List[str] = Field(default_factory=list)
+    docs_text: str = ""
+    source_type: str = "custom"
+    source_ref: str = "game://manual"
+
+
+@app.post("/api/v1/knowledge-tree/nodes")
+async def ingest_knowledge_tree_node(payload: KnowledgeNodeIngestRequest):
+    node = ingest_custom_knowledge_node(
+        ingest_triples=lambda triples: orch.ingest_triples(triples, namespace="default"),
+        node_id=payload.node_id,
+        domain=payload.domain,
+        name=payload.name,
+        capability=payload.capability,
+        level=payload.level,
+        budget_cost=payload.budget_cost,
+        time_cost_hours=payload.time_cost_hours,
+        prerequisites=payload.prerequisites,
+        docs_text=payload.docs_text,
+        source_type=payload.source_type,
+        source_ref=payload.source_ref,
+    )
+    return {"status": "ingested", "node": node.model_dump()}
 
 class MissionAssignment(BaseModel):
     agent_id: str

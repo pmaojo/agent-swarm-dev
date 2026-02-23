@@ -43,6 +43,7 @@ export interface GameState {
   active_quests: Quest[];
   repositories: Repository[];
   guardrail_log: GuardrailEntry[];
+  knowledge_tree: KnowledgeNode[];
 }
 
 export interface GuardrailEntry {
@@ -77,4 +78,20 @@ export interface GraphData {
     nodes: GraphNode[];
     edges: GraphEdge[];
   };
+}
+
+export interface KnowledgeNodeCost {
+  budget: number;
+  time_hours: number;
+}
+
+export interface KnowledgeNode {
+  id: string;
+  domain: string;
+  name: string;
+  capability: string;
+  level: number;
+  prerequisites: string[];
+  cost: KnowledgeNodeCost;
+  unlocked: boolean;
 }
