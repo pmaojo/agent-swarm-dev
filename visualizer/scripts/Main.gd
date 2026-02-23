@@ -259,7 +259,7 @@ func _render_character_lab(data: Dictionary) -> void:
 	var doc_packs: Array = loadout.get("doc_packs", [])
 	var skills: Array = loadout.get("skills", [])
 	var selected_character_changed: bool = _selected_character_id != _character_lab_last_rendered_character_id
-	var should_populate_editable_fields: bool = (not _character_lab_initialized) or selected_character_changed or _character_lab_should_rehydrate_after_save
+	var should_populate_editable_fields: bool = ((not _character_lab_initialized) or selected_character_changed or _character_lab_should_rehydrate_after_save) and (not _is_user_editing_loadout)
 
 	if should_populate_editable_fields:
 		_apply_character_lab_editable_fields(prompt_profile, tool_loadout, skills)
