@@ -49,6 +49,26 @@ class PartyMember(BaseModel):
     location: str
 
 
+class CharacterLoadout(BaseModel):
+    primary_weapon: str
+    secondary_item: str
+    armor: str
+    hit_points: int = Field(ge=0)
+    mana: int = Field(ge=0)
+
+
+class CharacterProfile(BaseModel):
+    id: str
+    agent_id: str
+    display_name: str
+    class_name: str
+    level: int = Field(ge=1)
+    location: str
+    current_action: str = "Idle"
+    base_success_rate: str = "95%"
+    loadout: CharacterLoadout
+
+
 class ActiveQuest(BaseModel):
     id: str
     title: str
