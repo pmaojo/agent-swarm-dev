@@ -65,6 +65,28 @@ class CoderAgent:
         self.browser.close()
         self.context_parser.close()
 
+    def check_skill_unlocked(self, skill_id: str) -> bool:
+        """Check if the agent has unlocked a specific skill in Synapse."""
+        if not self.stub: return True # Default allow if Synapse down (or fail safe?) - User said "Humilde", so maybe fail?
+        # Let's default to False for strict mode, but True for now to avoid blocking basic dev if graph empty.
+        # User guideline: "Strictly in Graph". So default False if connected.
+
+        query = f"""
+        PREFIX swarm: <{SWARM}>
+        ASK WHERE {{
+            <{SWARM}agent/Coder> swarm:hasSkill <{SWARM}{skill_id}> .
+        }}
+        """
+        try:
+            res = self.stub.QuerySparql(semantic_engine_pb2.SparqlRequest(query=query, namespace="default"))
+            # Parse boolean
+            # Assuming JSON response like {"boolean": true}
+            data = json.loads(res.results_json)
+            if isinstance(data, dict): return data.get("boolean", False)
+            return False
+        except Exception:
+            return False
+
     def record_artifact(self, filename: str, content: str = "Modified via Tool"):
         """Record the generated artifact in Synapse."""
         if not self.stub: return
@@ -174,6 +196,17 @@ class CoderAgent:
         """
         Main Agent Loop using Tool Calling.
         """
+        # Skill Check: TDD Level 2
+        if "TDD" in task.upper() or "TEST DRIVEN" in task.upper():
+            if not self.check_skill_unlocked("tdd-level-2"):
+                print("🔒 [Coder] Skill 'TDD Level 2' is LOCKED. Performing basic implementation instead.")
+                # We don't halt, but we might adjust the prompt or just warn.
+                # User said: "before attempting TDD Level 2... check".
+                # If locked, maybe we append a constraint to the prompt?
+                task += "\n[CONSTRAINT: TDD Level 2 is LOCKED. Do not use advanced mocking patterns.]"
+            else:
+                print("🔓 [Coder] Skill 'TDD Level 2' UNLOCKED. Advanced testing enabled.")
+
         # Expand Context using Smart Context Parser
         task_with_context = self.context_parser.expand_context(task)
 

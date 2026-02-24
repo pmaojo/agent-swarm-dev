@@ -223,8 +223,36 @@ class ReviewerAgent:
         cmd = "pytest tests/ --maxfail=5" # Fail fast
 
         try:
+            # Ensure receipt file is clean
+            receipt_path = os.path.join(os.getcwd(), "traffic_receipt.json")
+            if os.path.exists(receipt_path):
+                try: os.remove(receipt_path)
+                except: pass
+
             result = execute_command(cmd, reason="Contract Testing", env={"BASE_URL": mock_url})
+
+            # Verify Traffic Receipt (Zero Trust)
+            traffic_verified = False
+            if os.path.exists(receipt_path):
+                try:
+                    with open(receipt_path, "r") as f:
+                        receipts = json.load(f)
+                    # Check if any request hit the mock_url
+                    relevant_traffic = [r for r in receipts if mock_url in r.get("url", "")]
+                    if relevant_traffic:
+                        print(f"✅ Traffic Verified: {len(relevant_traffic)} calls to Sandbox.")
+                        traffic_verified = True
+                    else:
+                        print(f"⚠️  No traffic recorded to {mock_url}. Tests may be hallucinating.")
+                except Exception as e:
+                    print(f"⚠️  Failed to read traffic receipt: {e}")
+            else:
+                print("⚠️  No traffic receipt found. Network interactions unverified.")
+
             if result.get('status') == 'success':
+                if not traffic_verified:
+                     return {"status": "failure", "error": "Tests passed but NO TRAFFIC to sandbox detected (Hallucination Risk)."}
+
                 print("✅ Contract Tests Passed.")
                 return {"status": "success"}
             else:

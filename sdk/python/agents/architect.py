@@ -7,6 +7,7 @@ import os
 import json
 import sys
 import time
+import requests
 from typing import List, Dict, Any, Optional
 
 # Add path to lib and agents
@@ -148,6 +149,25 @@ class ArchitectAgent:
         print(f"💾 [Architect] Saved design to {path}")
         return path
 
+    def broadcast_building_update(self, service_name: str):
+        """Broadcasts a BUILDING_UPDATE event to the Godot Citadel via Gateway."""
+        try:
+            url = "http://localhost:18789/api/v1/events"
+            payload = {
+                "type": "BUILDING_UPDATE",
+                "message": f"Architect updated spec for {service_name}",
+                "severity": "INFO",
+                "details": {
+                    "service": service_name,
+                    "status": "updated",
+                    "visual_effect": "pulse"
+                }
+            }
+            requests.post(url, json=payload, timeout=2)
+            print(f"📡 [Architect] Broadcasted BUILDING_UPDATE for {service_name}")
+        except Exception as e:
+            print(f"⚠️ [Architect] Failed to broadcast event: {e}")
+
     def _deploy_design_to_sandbox(self, name: str, design_content: str) -> dict:
         """
         Parses OpenAPI spec from design, creates sandbox, saves spec file.
@@ -177,7 +197,10 @@ class ArchitectAgent:
                     print(f"💾 [Architect] Saved OpenAPI spec to {spec_path}")
                     result["openapi_path"] = spec_path
 
-                    # 2. Create Sandbox
+                    # 2. Broadcast Update to Godot
+                    self.broadcast_building_update(safe_name)
+
+                    # 3. Create Sandbox
                     tool = ApiSandboxTool()
                     sandbox_res = tool.create_sandbox(yaml_content, safe_name)
 

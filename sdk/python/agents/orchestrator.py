@@ -478,7 +478,74 @@ class OrchestratorAgent:
         ]
         self.ingest_triples(triples)
 
+    def check_circuit_breaker(self, task_type: str) -> Optional[str]:
+        """Check if critical infrastructure failures block this task."""
+        if task_type not in ["SystemDesignTask", "CodeReviewTask"]:
+            return None
+
+        # Check for 'missing_binary' failure
+        query = f"""
+        PREFIX swarm: <{SWARM}>
+        PREFIX nist: <{NIST}>
+        ASK WHERE {{
+            ?lesson a swarm:LessonLearned ;
+                    nist:resultState "on_failure" ;
+                    swarm:context "missing_binary" .
+        }}
+        """
+        try:
+            res = self.query_graph(query)
+            # Handle ASK response format (boolean in result)
+            is_blocked = False
+            if isinstance(res, dict): is_blocked = res.get("boolean", False)
+            elif isinstance(res, list) and res: is_blocked = res[0].get("boolean", False)
+
+            if is_blocked:
+                return "CIRCUIT_BREAKER_ACTIVE: Apicentric binary missing. Sandbox operations suspended."
+        except Exception: pass
+        return None
+
+    def check_budget_health(self):
+        """Check if budget is exhausted (Bankruptcy Protection)."""
+        if os.getenv("EMERGENCY_OVERRIDE"): return
+
+        try:
+            # 1. Get Max Budget
+            max_budget = 10.0 # Default
+            b_res = self.query_graph(f'PREFIX swarm: <{SWARM}> SELECT ?max WHERE {{ <{SWARM}Finance> swarm:maxBudget ?max }} LIMIT 1')
+            if b_res:
+                val = b_res[0].get('?max') or b_res[0].get('max')
+                if val: max_budget = float(val)
+
+            # 2. Get Total Spend
+            today = datetime.now().strftime("%Y-%m-%d")
+            s_res = self.query_graph(f"""
+                PREFIX swarm: <{SWARM}>
+                SELECT (SUM(?amount) as ?total) WHERE {{ ?event a swarm:SpendEvent ; swarm:date "{today}" ; swarm:amount ?amount }}
+            """)
+            spent = 0.0
+            if s_res:
+                val = s_res[0].get('?total') or s_res[0].get('total')
+                if val: spent = float(val)
+
+            utilization = (spent / max_budget) if max_budget > 0 else 0.0
+
+            if utilization > 0.95:
+                raise Exception(f"BANKRUPTCY PROTECTION: Budget utilization {utilization*100:.1f}% exceeds 95% limit.")
+            if utilization > 0.80:
+                print(f"⚠️  Budget Warning: Utilization at {utilization*100:.1f}%")
+
+        except Exception as e:
+            if "BANKRUPTCY" in str(e): raise e
+            print(f"⚠️ Failed to check budget: {e}")
+
     def run_agent(self, agent_name: str, task_desc: str, context: Dict = None, task_type: str = None, stack: str = "python", extra_rules: List[str] = None) -> Dict:
+        # 0. Circuit Breaker
+        blocker = self.check_circuit_breaker(task_type)
+        if blocker:
+            print(f"⛔ {blocker}")
+            return {"status": "failure", "error": blocker}
+
         # 1. Compliance
         if task_type and not self.check_compliance(agent_name, task_type):
              return {"status": "failure", "error": "Security Violation"}
@@ -576,6 +643,13 @@ class OrchestratorAgent:
         return "OPERATIONAL"
 
     def run(self, task: str, stack: str = "python", session_id: str = "default") -> Dict[str, Any]:
+        # Budget Check
+        try:
+            self.check_budget_health()
+        except Exception as e:
+            print(f"🛑 {e}")
+            return {"status": "failure", "error": str(e)}
+
         prev_ns = self.namespace
         self.namespace = session_id
         try:
