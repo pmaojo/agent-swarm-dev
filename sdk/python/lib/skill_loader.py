@@ -52,6 +52,15 @@ def ingest_skills():
                 p_uri = f"{SWARM}{pre}"
                 triples.append({"subject": s_uri, "predicate": f"{SWARM}requiresSkill", "object": p_uri})
 
+        # Assign default skills to Coder (Bootstrap)
+        # TODO: Move this to a proper onboarding flow
+        coder_uri = f"{SWARM}agent/Coder"
+        for skill in skills:
+             # Auto-unlock level 1 skills for now
+             if skill.get("level", 1) == 1:
+                 s_uri = f"{SWARM}{skill['id']}"
+                 triples.append({"subject": coder_uri, "predicate": f"{SWARM}hasSkill", "object": s_uri})
+
         # Ingest
         pb_triples = []
         for t in triples:
