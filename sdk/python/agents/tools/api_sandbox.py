@@ -5,7 +5,22 @@ import logging
 import time
 import requests
 import sys
+import uuid
+import grpc
 from typing import Optional
+
+# Synapse Imports
+SDK_PYTHON_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if SDK_PYTHON_PATH not in sys.path:
+    sys.path.insert(0, SDK_PYTHON_PATH)
+try:
+    from synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
+except ImportError:
+    try:
+        from agents.synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
+    except ImportError:
+        semantic_engine_pb2 = None
+        semantic_engine_pb2_grpc = None
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -19,12 +34,57 @@ APICENTRIC_BIN_LINK = os.path.join(ROOT_DIR, "lib", "bin", "apicentric")
 APICENTRIC_BIN_BUILD = os.path.join(ROOT_DIR, "apicentric_repo", "target", "release", "apicentric")
 
 SIMULATOR_PORT = 9002
+SWARM = "http://swarm.os/ontology/"
+NIST = "http://nist.gov/caisi/"
+RDF = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
 
 class ApiSandboxTool:
     def __init__(self):
         os.makedirs(SANDBOX_DIR, exist_ok=True)
         self.simulator_process = None
         self.binary_path = self._find_binary()
+
+        # Synapse Connection
+        self.grpc_host = os.getenv("SYNAPSE_GRPC_HOST", "localhost")
+        self.grpc_port = int(os.getenv("SYNAPSE_GRPC_PORT", "50051"))
+        self.channel = None
+        self.stub = None
+        self.connect()
+
+    def connect(self):
+        if not semantic_engine_pb2_grpc: return
+        try:
+            self.channel = grpc.insecure_channel(f"{self.grpc_host}:{self.grpc_port}")
+            self.stub = semantic_engine_pb2_grpc.SemanticEngineStub(self.channel)
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to connect to Synapse: {e}")
+
+    def ingest_lesson(self, failure_type: str, message: str):
+        """Ingest failure as a Lesson Learned to block future attempts."""
+        if not self.stub: return
+
+        lesson_id = f"{SWARM}lesson/{uuid.uuid4()}"
+        triples = [
+            {"subject": lesson_id, "predicate": f"{RDF}type", "object": f"{SWARM}LessonLearned"},
+            {"subject": lesson_id, "predicate": f"{SWARM}content", "object": f'"{message}"'},
+            {"subject": lesson_id, "predicate": f"{NIST}resultState", "object": '"on_failure"'},
+            {"subject": lesson_id, "predicate": f"{SWARM}context", "object": f'"{failure_type}"'}, # e.g. "missing_binary"
+            {"subject": lesson_id, "predicate": f"{SWARM}source", "object": f"{SWARM}agent/ApiSandboxTool"}
+        ]
+
+        pb_triples = []
+        for t in triples:
+            pb_triples.append(semantic_engine_pb2.Triple(
+                subject=t["subject"],
+                predicate=t["predicate"],
+                object=t["object"]
+            ))
+
+        try:
+            self.stub.IngestTriples(semantic_engine_pb2.IngestRequest(triples=pb_triples, namespace="default"))
+            logger.info(f"🧠 Ingested Lesson Learned: {message}")
+        except Exception as e:
+            logger.error(f"❌ Failed to ingest lesson: {e}")
 
     def _find_binary(self) -> str:
         if os.path.exists(APICENTRIC_BIN_LINK):
@@ -115,7 +175,9 @@ class ApiSandboxTool:
             logger.error(f"❌ Import failed: {e.stderr}")
             return f"Error importing spec: {e.stderr}"
         except FileNotFoundError:
-             logger.error(f"❌ Apicentric binary not found at {self.binary_path}")
+             msg = f"Apicentric binary missing at {self.binary_path}"
+             logger.error(f"❌ {msg}")
+             self.ingest_lesson("missing_binary", msg)
              return "Error: Apicentric binary missing."
 
         # 3. Get Base Path from generated YAML
