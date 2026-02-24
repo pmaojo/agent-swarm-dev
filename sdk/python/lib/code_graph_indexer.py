@@ -99,7 +99,7 @@ class CodeGraphIndexer:
         for filepath, rel_path in files_to_process:
             try:
                 file_uri = f"http://swarm.os/file/{rel_path}"
-                file_hashes = repo_hashes.get(file_uri, {})
+                file_hashes = repo_hashes.get(file_uri)
                 self._process_file(filepath, rel_path, existing_hashes=file_hashes)
             except Exception as e:
                 logger.error(f"Error processing {rel_path}: {e}")
