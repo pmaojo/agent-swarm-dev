@@ -179,9 +179,15 @@ class ArchitectAgent:
 
                     # 2. Create Sandbox
                     tool = ApiSandboxTool()
-                    sandbox_url = tool.create_sandbox(yaml_content, safe_name)
-                    print(f"✅ [Architect] Sandbox created at: {sandbox_url}")
-                    result["sandbox_url"] = sandbox_url
+                    sandbox_res = tool.create_sandbox(yaml_content, safe_name)
+
+                    # Check for error in response
+                    if sandbox_res and (sandbox_res.startswith("Error") or "failed" in sandbox_res.lower()):
+                         print(f"⚠️ [Architect] Sandbox creation failed: {sandbox_res}")
+                         result["sandbox_url"] = None
+                    else:
+                         print(f"✅ [Architect] Sandbox created at: {sandbox_res}")
+                         result["sandbox_url"] = sandbox_res
 
             except Exception as e:
                 print(f"⚠️ [Architect] Failed to create sandbox or save spec: {e}")
