@@ -1,0 +1,4 @@
+@prefix nist: <http://nist.gov/caisi/> .
+@prefix swarm: <http://swarm.os/ontology/> .
+
+<http://swarm.os/stack/python> nist:HardConstraint "Always follow python best practices." .

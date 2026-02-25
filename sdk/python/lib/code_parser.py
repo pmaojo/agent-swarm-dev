@@ -171,6 +171,17 @@ class CodeParser:
 
         symbols = []
 
+        # Prepare calls cursor once
+        # @synapse:rule Reuse QueryCursor for 'calls' query to avoid instantiation overhead in loops.
+        calls_query = self._get_compiled_query(lang, ext, "calls")
+        calls_cursor = None
+        if calls_query:
+            try:
+                calls_cursor = QueryCursor(calls_query)
+            except Exception as e:
+                # print(f"Error creating calls cursor: {e}")
+                pass
+
         # 1. Extract Definitions (Classes, Functions)
         query = self._get_compiled_query(lang, ext, "definitions")
         if query:
@@ -220,7 +231,8 @@ class CodeParser:
                         # Analyze body for calls
                         calls = set()
                         if body_node:
-                            calls = self._extract_calls(body_node, lang, ext, content)
+                            # Pass the pre-initialized calls_cursor
+                            calls = self._extract_calls(body_node, lang, ext, content, cursor=calls_cursor)
 
                         symbols.append({
                             "name": name,
@@ -247,8 +259,24 @@ class CodeParser:
             "symbols": symbols
         }
 
-    def _extract_calls(self, node, lang, ext, content) -> Set[str]:
+    def _extract_calls(self, node, lang, ext, content, cursor: Optional[QueryCursor] = None) -> Set[str]:
         calls = set()
+
+        # Use provided cursor if available (optimization)
+        if cursor:
+            try:
+                matches = cursor.matches(node)
+                for match in matches:
+                    captures = match[1]
+                    if 'func_name' in captures:
+                        for n in captures['func_name']:
+                            func_name = content[n.start_byte:n.end_byte].decode('utf-8')
+                            calls.add(func_name)
+            except Exception as e:
+                pass
+            return calls
+
+        # Fallback: create new cursor
         query = self._get_compiled_query(lang, ext, "calls")
         if not query:
             return calls
@@ -270,6 +298,7 @@ class CodeParser:
     def _extract_inheritance(self, node, lang, ext, content) -> Dict[str, List[str]]:
         # Map class_name -> list of superclasses
         inheritance = {}
+
         query = self._get_compiled_query(lang, ext, "inheritance")
         if not query:
             return inheritance
