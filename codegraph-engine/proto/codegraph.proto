@@ -1,0 +1,71 @@
+syntax = "proto3";
+
+package codegraph;
+
+option go_package = "github.com/swarm/codegraph/gen/go";
+option java_multiple_files = true;
+option java_package = "com.swarm.codegraph";
+option java_outer_classname = "CodeGraphProto";
+
+// The CodeGraph service definition.
+service CodeGraphService {
+  // Parses a single file and returns its structure (symbols, calls).
+  rpc ParseFile (ParseRequest) returns (ParseResponse);
+
+  // Indexes a repository or directory, streaming progress updates.
+  rpc IndexRepository (IndexRequest) returns (stream IndexProgress);
+
+  // Generates a "Skeleton View" of the code graph centered on a symbol.
+  rpc SliceGraph (SliceRequest) returns (SliceResponse);
+}
+
+// --- Request/Response Messages ---
+
+message ParseRequest {
+  string file_path = 1;      // Path to the file (relative or absolute)
+  string content = 2;        // Optional content (if not provided, service reads from file_path)
+  string language = 3;       // Optional explicit language (e.g., "python", "rust")
+}
+
+message ParseResponse {
+  string file_path = 1;
+  repeated Symbol symbols = 2;
+  repeated string errors = 3;
+}
+
+message Symbol {
+  string name = 1;
+  string qualified_name = 2;
+  string type = 3;           // "function", "class", "method", "variable"
+  int32 start_line = 4;
+  int32 end_line = 5;
+  string hash = 6;           // Content hash of the symbol
+  repeated string calls = 7; // Qualified names of called symbols
+  repeated string inherits_from = 8;
+}
+
+message IndexRequest {
+  string root_path = 1;      // Root directory to index
+  bool recursive = 2;
+  repeated string ignore_patterns = 3;
+}
+
+message IndexProgress {
+  string current_file = 1;
+  int32 files_processed = 2;
+  int32 total_files = 3;
+  string status = 4;         // "indexing", "uploading", "complete", "error"
+  string error_message = 5;
+}
+
+message SliceRequest {
+  string target_symbol_uri = 1; // Full URI of the symbol to center on
+  int32 max_depth = 2;          // Graph traversal depth
+}
+
+message SliceResponse {
+  string context = 1;           // The generated skeleton code
+  int64 original_size = 2;      // Size in bytes
+  int64 pruned_size = 3;        // Size in bytes
+  double savings_percent = 4;   // (1 - pruned/original) * 100
+}
