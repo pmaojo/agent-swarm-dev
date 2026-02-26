@@ -21,6 +21,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy source code
 COPY sdk/python/lib ./sdk/python/lib
 COPY sdk/python/agents ./sdk/python/agents
+COPY sdk/python/data ./sdk/python/data
 COPY scripts ./scripts
 COPY scenarios ./scenarios
 COPY swarm_schema.yaml .
