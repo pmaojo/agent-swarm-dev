@@ -87,7 +87,7 @@ const fn default_service_hp() -> i32 {
     100
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CountryState {
     pub id: String,
     pub name: String,

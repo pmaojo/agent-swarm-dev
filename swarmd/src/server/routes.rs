@@ -239,7 +239,8 @@ pub async fn post_knowledge_tree_node(
 ) -> Json<IngestKnowledgeNodeResponse> {
     let node = map_ingest_request_to_node(&payload);
     let triples = knowledge_node_to_triples(&node, &payload);
-    let _ = state.synapse.ingest(triples).await;
+    let triples_refs: Vec<(&str, &str, &str)> = triples.iter().map(|(s, p, o)| (s.as_str(), p.as_str(), o.as_str())).collect();
+    let _ = state.synapse.ingest(triples_refs).await;
 
     Json(IngestKnowledgeNodeResponse {
         status: "ingested".to_string(),
@@ -468,6 +469,9 @@ fn map_ingest_request_to_node(payload: &KnowledgeNodeIngestRequest) -> Knowledge
             time_hours: payload.time_cost_hours,
         },
         unlocked: true,
+        documentation: payload.docs_text.clone(),
+        source_type: payload.source_type.clone(),
+        source_ref: payload.source_ref.clone(),
     }
 }
 
