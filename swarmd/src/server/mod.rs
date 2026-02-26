@@ -6,18 +6,20 @@ use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::Mutex;
 use tracing::info;
 use crate::synapse::SynapseClient;
-use crate::server::contracts::AuditRecord;
+use crate::server::contracts::{AuditRecord, GatewayEvent};
 
 #[derive(Clone)]
 pub struct AppState {
     pub synapse: SynapseClient,
     pub audit_log: Arc<Mutex<Vec<AuditRecord>>>,
+    pub event_tx: broadcast::Sender<GatewayEvent>,
 }
 
-pub async fn start_server(port: u16, synapse: SynapseClient) -> anyhow::Result<()> {
+pub async fn start_server(port: u16, synapse: SynapseClient, event_tx: broadcast::Sender<GatewayEvent>) -> anyhow::Result<()> {
     let state = AppState {
         synapse,
         audit_log: Arc::new(Mutex::new(Vec::new())),
+        event_tx,
     };
 
     let app = Router::new()
@@ -28,7 +30,7 @@ pub async fn start_server(port: u16, synapse: SynapseClient) -> anyhow::Result<(
         .route("/api/v1/events", post(routes::post_event))
         .route("/api/v1/mission/assign", post(routes::post_mission_assign))
         .route("/api/v1/knowledge-tree/nodes", post(routes::post_knowledge_tree_node))
-        .route("/api/v1/knowledge-tree/nodes/{node_id}/documentation", get(routes::get_knowledge_node_documentation))
+        .route("/api/v1/events/combat/stream", get(routes::ws_handler))
         .with_state(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));

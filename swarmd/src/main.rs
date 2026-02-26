@@ -4,10 +4,11 @@ mod synapse;
 mod workers;
 mod notifications;
 mod discovery;
+mod chaos;
 
 use anyhow::Result;
 use tracing::{info, error};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, broadcast};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -19,6 +20,7 @@ async fn main() -> Result<()> {
 
     // 2. Setup Communication Channels
     let (tx, rx) = mpsc::channel(100);
+    let (event_tx, _) = broadcast::channel(100);
 
     // 3. Connect to Synapse Core
     let syn_client = synapse::SynapseClient::connect(&cfg.synapse_grpc_host, &cfg.synapse_grpc_port).await?;
@@ -26,6 +28,12 @@ async fn main() -> Result<()> {
 
     // Run geopolitical discovery
     discovery::discover_repositories(&syn_client, ".").await;
+
+    // Start Chaos Engine
+    let chaos = chaos::ChaosEngine::new(event_tx.clone());
+    tokio::spawn(async move {
+        chaos.run().await;
+    });
 
     // 4. Spawn Background Workers (Telegram, Trello, etc)
     workers::start_background_workers(
@@ -40,7 +48,7 @@ async fn main() -> Result<()> {
     ).await;
 
     // 5. Start HTTP Gateway (blocking)
-    server::start_server(cfg.gateway_port, syn_client).await?;
+    server::start_server(cfg.gateway_port, syn_client, event_tx).await?;
     
     Ok(())
 }

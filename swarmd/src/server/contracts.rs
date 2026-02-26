@@ -100,7 +100,7 @@ pub struct KnowledgeNodeCost {
     pub time_hours: i32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct KnowledgeNode {
     pub id: String,
     pub domain: String,
@@ -249,6 +249,7 @@ pub enum EventType {
     BugSpawned,
     ServiceDamaged,
     ServiceRecovered,
+    JulesCloudBuilding,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

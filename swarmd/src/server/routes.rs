@@ -1,6 +1,11 @@
-use axum::{extract::{Path, State}, Json};
+use axum::{
+    extract::{ws::{Message, WebSocket, WebSocketUpgrade}, Path, State},
+    response::IntoResponse,
+    Json,
+};
 use chrono::Utc;
-use tracing::info;
+use tracing::{info, warn};
+use tokio::sync::broadcast;
 
 use crate::server::contracts::{
     ActiveQuest, AuditRecord, CommandPhase, ControlCommand, ControlCommandAck, CountryState,
@@ -49,14 +54,15 @@ pub async fn get_game_state(State(state): State<AppState>) -> Json<GameState> {
         if let Ok(parsed) = serde_json::from_str::<Vec<serde_json::Value>>(&res_json) {
             if let Some(first) = parsed.first() {
                 if let Some(t) = first.get("total").or_else(|| first.get("?total")) {
-                    spend = t.as_str().unwrap_or("0").parse().unwrap_or(0.0);
+                    let cleaned = _clean_numeric(t.as_str().unwrap_or("0"));
+                    spend = cleaned.parse().unwrap_or(0.0);
                 }
             }
         }
     }
 
     Json(GameState {
-        system_status: current_status,
+        system_status: current_status.clone(),
         daily_budget: DailyBudget {
             max: 10.0,
             spent: spend,
@@ -66,7 +72,7 @@ pub async fn get_game_state(State(state): State<AppState>) -> Json<GameState> {
         active_quests: vec![],
         fog_map: serde_json::json!({}),
         repositories: vec![],
-        countries: build_countries(),
+        countries: build_countries(&current_status),
         knowledge_tree: build_knowledge_tree(),
         sovereign_controls: PolicyApprovalStatus {
             approved: true,
@@ -271,6 +277,39 @@ pub async fn get_knowledge_node_documentation(
     })
 }
 
+pub async fn ws_handler(
+    ws: WebSocketUpgrade,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    ws.on_upgrade(|socket| handle_socket(socket, state))
+}
+
+async fn handle_socket(mut socket: WebSocket, state: AppState) {
+    let mut rx = state.event_tx.subscribe();
+
+    while let Ok(event) = rx.recv().await {
+        // Wrap in the same envelope format as Python gateway
+        let envelope = serde_json::json!({
+            "type": event.r#type,
+            "payload": event
+        });
+        
+        if let Ok(msg) = serde_json::to_string(&envelope) {
+            if socket.send(Message::Text(msg.into())).await.is_err() {
+                break;
+            }
+        }
+    }
+}
+
+fn _clean_numeric(val: &str) -> String {
+    if let Some(pos) = val.find("^^") {
+        val[..pos].trim_matches('"').to_string()
+    } else {
+        val.trim_matches('"').to_string()
+    }
+}
+
 fn execute_command(command: &ControlCommand) -> String {
     format!("{:?}_EXECUTED", command.command)
 }
@@ -313,19 +352,88 @@ fn parse_system_status(raw: &str) -> SystemStatus {
     }
 }
 
-fn build_countries() -> Vec<CountryState> {
-    vec![CountryState {
-        id: "country-core".to_string(),
-        name: "The Core Empire".to_string(),
-        services: vec![ServiceState {
-            id: "service-orchestrator".to_string(),
-            name: "orchestrator".to_string(),
-            health: ServiceHealth::Healthy,
-            hp: 100,
-            latency_ms: 60.0,
-            error_rate: 0.01,
-        }],
-    }]
+fn build_countries(status: &SystemStatus) -> Vec<CountryState> {
+    let health = match status {
+        SystemStatus::Operational => ServiceHealth::Healthy,
+        SystemStatus::Degraded => ServiceHealth::Degraded,
+        SystemStatus::Halted => ServiceHealth::Halted,
+        _ => ServiceHealth::Healthy,
+    };
+
+    vec![
+        CountryState {
+            id: "country-core".to_string(),
+            name: "The Core Empire".to_string(),
+            services: vec![
+                ServiceState {
+                    id: "service-orchestrator".to_string(),
+                    name: "orchestrator".to_string(),
+                    health: health.clone(),
+                    hp: 100,
+                    latency_ms: 60.0,
+                    error_rate: 0.01,
+                },
+                ServiceState {
+                    id: "service-gateway".to_string(),
+                    name: "gateway".to_string(),
+                    health: health.clone(),
+                    hp: 100,
+                    latency_ms: 45.0,
+                    error_rate: 0.005,
+                },
+            ],
+        },
+        CountryState {
+            id: "country-frontend".to_string(),
+            name: "The Front-End Republic".to_string(),
+            services: vec![
+                ServiceState {
+                    id: "service-visualizer".to_string(),
+                    name: "visualizer".to_string(),
+                    health: health.clone(),
+                    hp: 100,
+                    latency_ms: 30.0,
+                    error_rate: 0.001,
+                },
+                ServiceState {
+                    id: "service-web".to_string(),
+                    name: "web".to_string(),
+                    health: health.clone(),
+                    hp: 100,
+                    latency_ms: 120.0,
+                    error_rate: 0.02,
+                },
+            ],
+        },
+        CountryState {
+            id: "country-security".to_string(),
+            name: "The Security Kingdom".to_string(),
+            services: vec![
+                ServiceState {
+                    id: "service-guardian".to_string(),
+                    name: "guardian".to_string(),
+                    health: health.clone(),
+                    hp: 100,
+                    latency_ms: 10.0,
+                    error_rate: 0.0,
+                },
+            ],
+        },
+        CountryState {
+            id: "country-cloud".to_string(),
+            name: "The Cloud Kingdom".to_string(),
+            services: vec![
+                ServiceState {
+                    id: "service-jules".to_string(),
+                    name: "Jules".to_string(),
+                    health: health.clone(),
+                    hp: 100,
+                    latency_ms: 200.0,
+                    error_rate: 0.05,
+                },
+            ],
+        },
+    ]
 }
 
 fn build_knowledge_tree() -> Vec<KnowledgeNode> {

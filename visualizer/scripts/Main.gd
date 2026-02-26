@@ -107,6 +107,37 @@ func _poll_combat_stream() -> void:
 			var event_data: Dictionary = parser.get_data()
 			if get_node_or_null("HexGridManager"):
 				$HexGridManager.apply_combat_event(event_data)
+				_apply_vfx(event_data)
+
+func _apply_vfx(event_data: Dictionary) -> void:
+	var type: String = str(event_data.get("type", ""))
+	if type == "SERVICE_DAMAGED" or type == "BUG_SPAWNED":
+		_shake_screen(0.2, 15.0)
+	elif type == "JULES_CLOUD_BUILDING":
+		_pulse_jules()
+
+func _shake_screen(duration: float, intensity: float) -> void:
+	var camera: Camera3D = get_node_or_null("Camera3D")
+	if not camera: return
+	var original_pos: Vector3 = camera.position
+	var t: float = 0.0
+	while t < duration:
+		camera.position = original_pos + Vector3(randf_range(-1,1), randf_range(-1,1), randf_range(-1,1)) * intensity * (1.0 - t/duration) * 0.01
+		await get_tree().process_frame
+		t += get_process_delta_time()
+	camera.position = original_pos
+
+func _pulse_jules() -> void:
+	if not has_node("HexGridManager"): return
+	var grid: Node3D = $HexGridManager
+	for key in grid._service_nodes.keys():
+		if key.ends_with("::service-jules"):
+			var model: Node3D = grid._service_nodes[key].get("model")
+			if is_instance_valid(model):
+				var tween = create_tween()
+				var orig_scale = model.scale
+				tween.tween_property(model, "scale", orig_scale * 1.2, 0.1).set_trans(Tween.TRANS_BOUNCE)
+				tween.tween_property(model, "scale", orig_scale, 0.2)
 
 func _bind_hex_grid_selection() -> void:
 	if has_node("HexGridManager"):

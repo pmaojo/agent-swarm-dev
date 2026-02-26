@@ -4,7 +4,7 @@ import uuid
 import time
 import os
 from pathlib import Path
-from typing import Dict, Any, List, Literal, Tuple
+from typing import Dict, Any, List, Literal, Tuple, Optional, Union
 from contextlib import asynccontextmanager
 from datetime import datetime
 
@@ -86,13 +86,88 @@ _service_metric_history: Dict[str, ServiceMetrics] = {}
 orch = OrchestratorAgent()
 fog_service = FogService(orch)
 
+def _clean_numeric(val: Any) -> str:
+    """Cleans RDF literals from Synapse to extract raw numeric string."""
+    if isinstance(val, str) and "^^" in val:
+        return val.split("^^")[0].strip('"')
+    if isinstance(val, str):
+        return val.strip('"')
+    return str(val or "0")
+
 PROFILE_SOURCE_PATH = Path(__file__).resolve().parents[1] / "data" / "character_profiles.json"
 character_registry = CharacterRegistry(
     JsonCharacterProfileSource(PROFILE_SOURCE_PATH),
     sink=JsonCharacterProfileSink(PROFILE_SOURCE_PATH),
 )
 
+# --- Chaos Engine (Game Simulator) ---
+class ChaosEngine:
+    def __init__(self, manager: ConnectionManager, queue: asyncio.Queue):
+        self.manager = manager
+        self.queue = queue
+        self.running = False
+        self._task = None
 
+    async def start(self):
+        self.running = True
+        self._task = asyncio.create_task(self._simulation_loop())
+        print("🌀 Chaos Engine Started")
+
+    async def stop(self):
+        self.running = False
+        if self._task:
+            self._task.cancel()
+        print("🌀 Chaos Engine Stopped")
+
+    async def _simulation_loop(self):
+        import random
+        while self.running:
+            try:
+                # 1. Randomly spawn a bug or damage a service
+                if random.random() < 0.3:
+                    target_service = random.choice([
+                        "service-orchestrator", "service-gateway", 
+                        "service-visualizer", "service-web", 
+                        "service-guardian", "service-jules"
+                    ])
+                    event_type = random.choice([EventType.BUG_SPAWNED, EventType.SERVICE_DAMAGED])
+                    msg = "Chaos anomaly detected." if event_type == EventType.BUG_SPAWNED else "Simulation entropy rising."
+                    
+                    event = GatewayEvent(
+                        type=event_type,
+                        message=f"{msg} affecting {target_service}",
+                        details={"service_id": target_service, "source": "chaos_engine"},
+                        severity="WARNING"
+                    )
+                    await self.queue.put({"type": event.type.value, "payload": event.model_dump()})
+
+                # 2. Occasional "Jules" flair
+                if random.random() < 0.1:
+                    event = GatewayEvent(
+                        type=EventType.JULES_CLOUD_BUILDING,
+                        message="Jules Cloud pulsing with data",
+                        details={"service_id": "service-jules", "pulse_intensity": random.random()},
+                        severity="INFO"
+                    )
+                    await self.queue.put({"type": event.type.value, "payload": event.model_dump()})
+
+                # 3. Random recovery
+                if random.random() < 0.15:
+                    target_service = random.choice(["service-jules", "service-web", "service-orchestrator"])
+                    event = GatewayEvent(
+                        type=EventType.SERVICE_RECOVERED,
+                        message=f"{target_service} self-healed by Chaos Engine",
+                        details={"service_id": target_service},
+                        severity="INFO"
+                    )
+                    await self.queue.put({"type": event.type.value, "payload": event.model_dump()})
+
+            except Exception as e:
+                print(f"Chaos Engine Error: {e}")
+            
+            await asyncio.sleep(random.uniform(5.0, 15.0))
+
+chaos_engine = ChaosEngine(manager, combat_event_queue)
 
 def _rust_gateway_base_url() -> str:
     return os.environ.get("RUST_GATEWAY_URL", "").rstrip("/")
@@ -102,7 +177,7 @@ def _rust_gateway_enabled() -> bool:
     return bool(_rust_gateway_base_url())
 
 
-def _forward_json_request(method: str, path: str, payload: Dict[str, Any] | None = None) -> Dict[str, Any]:
+def _forward_json_request(method: str, path: str, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     base_url = _rust_gateway_base_url()
     if not base_url:
         raise HTTPException(status_code=503, detail="Rust gateway forwarding is not configured")
@@ -138,7 +213,8 @@ def fetch_stats() -> Dict[str, Any]:
         pending = 0
         if pending_res:
             val = pending_res[0].get('?count') or pending_res[0].get('count')
-            if val: pending = int(val)
+            if val:
+                pending = int(_clean_numeric(val))
 
         # 3. Failed Tasks (All time? Or today? Let's do all time for now as failure log persists)
         failed_query = 'PREFIX nist: <http://nist.gov/caisi/> SELECT (COUNT(?s) as ?count) WHERE { ?s nist:resultState "on_failure" }'
@@ -146,7 +222,8 @@ def fetch_stats() -> Dict[str, Any]:
         failed = 0
         if failed_res:
             val = failed_res[0].get('?count') or failed_res[0].get('count')
-            if val: failed = int(val)
+            if val:
+                failed = int(_clean_numeric(val))
 
         # 4. Daily Spend
         today = datetime.now().strftime("%Y-%m-%d")
@@ -163,7 +240,10 @@ def fetch_stats() -> Dict[str, Any]:
         spend = 0.0
         if spend_res:
             val = spend_res[0].get('?total') or spend_res[0].get('total')
-            if val: spend = float(val)
+            if val:
+                if isinstance(val, str) and "^^" in val:
+                    val = val.split("^^")[0].strip('"')
+                spend = float(val)
 
         # 5. Active Agents (List of agents from schema)
         active_agents = list(orch.agents.keys())
@@ -229,7 +309,7 @@ def _build_service_state(country_id: str, service_id: str, service_name: str, sy
         )
         if fail_res:
             val = fail_res[0].get('?count') or fail_res[0].get('count')
-            test_failures = int(val or 0)
+            test_failures = int(_clean_numeric(val))
     except Exception:
         test_failures = 0
 
@@ -240,7 +320,7 @@ def _build_service_state(country_id: str, service_id: str, service_name: str, sy
         )
         if worker_res:
             val = worker_res[0].get('?count') or worker_res[0].get('count')
-            worker_errors = int(val or 0)
+            worker_errors = int(_clean_numeric(val))
     except Exception:
         worker_errors = 0
 
@@ -309,7 +389,10 @@ def fetch_game_state() -> Dict[str, Any]:
         spend = 0.0
         if spend_res:
             val = spend_res[0].get('?total') or spend_res[0].get('total')
-            if val: spend = float(val)
+            if val:
+                if isinstance(val, str) and "^^" in val:
+                    val = val.split("^^")[0].strip('"')
+                spend = float(val)
 
         max_budget = 10.0
         try:
@@ -340,7 +423,7 @@ def fetch_game_state() -> Dict[str, Any]:
                 if fail_res:
                     val = fail_res[0].get('?count') or fail_res[0].get('count')
                     if val:
-                        fails = int(val)
+                        fails = int(_clean_numeric(val))
                         hp = max(0, profile.loadout.hit_points - (fails * 5))
             except Exception:
                 pass
@@ -416,6 +499,13 @@ def fetch_game_state() -> Dict[str, Any]:
                 name="The Security Kingdom",
                 services=[
                     _build_service_state("country-security", "service-guardian", "guardian", normalized_status, budget_ratio),
+                ],
+            ),
+            CountryState(
+                id="country-cloud",
+                name="The Cloud Kingdom",
+                services=[
+                    _build_service_state("country-cloud", "service-jules", "Jules", normalized_status, budget_ratio),
                 ],
             ),
         ]
@@ -537,9 +627,11 @@ async def broadcast_stats_loop():
 async def lifespan(app: FastAPI):
     # Startup
     task = asyncio.create_task(broadcast_stats_loop())
+    await chaos_engine.start()
     yield
     # Shutdown
     task.cancel()
+    await chaos_engine.stop()
     orch.close()
 
 app = FastAPI(lifespan=lifespan)

@@ -25,7 +25,12 @@ const COUNTRY_COLORS: Dictionary = {
 	"The Swarm Motherland": "blue",
 	"The Core Empire": "red",
 	"The Front-End Republic": "green",
-	"The Security Kingdom": "yellow"
+	"The Security Kingdom": "yellow",
+	"The Cloud Kingdom": "neutral"
+}
+
+const SPECIAL_BUILDINGS: Dictionary = {
+	"service-jules": "res://addons/kaykit_medieval_hexagon_pack/Assets/gltf/buildings/neutral/building_market_A.gltf"
 }
 
 const DEFAULT_COUNTRY_CENTERS: Array[Vector2i] = [
@@ -149,15 +154,12 @@ func _sync_services(country_id: String, country_name: String, center: Vector2i, 
 func _sync_service_node(country_id: String, country_name: String, service_id: String, service_name: String, health: String, hp: int, q: int, r: int) -> void:
 	var key: String = _service_key(country_id, service_id)
 	var bucket: Dictionary = _service_nodes.get(key, {})
-	var color_key: String = str(COUNTRY_COLORS.get(country_name, "neutral"))
-	var scene_path: String = str(BUILDING_ASSET_TEMPLATES.get(color_key, BUILDING_ASSET_TEMPLATES["neutral"]))
-	var status_color: Color = SERVICE_HEALTH_COLORS.get(health, SERVICE_HEALTH_COLORS["healthy"])
-	var pos: Vector3 = axial_to_world(q, r) + Vector3(0.0, 0.5, 0.0)
-
-	if bucket.is_empty():
+		var color_key: String = str(COUNTRY_COLORS.get(country_name, "neutral"))
+		var scene_path: String = SPECIAL_BUILDINGS.get(service_id, str(BUILDING_ASSET_TEMPLATES.get(color_key, BUILDING_ASSET_TEMPLATES["neutral"])))
 		var model: Node3D = load(scene_path).instantiate()
 		model.position = pos
-		model.scale = Vector3(0.5, 0.5, 0.5)
+		var scale_factor: float = 0.5 * (hp / 100.0)
+		model.scale = Vector3(scale_factor, scale_factor, scale_factor)
 		_set_mesh_modulate(model, status_color)
 		add_child(model)
 
@@ -170,6 +172,8 @@ func _sync_service_node(country_id: String, country_name: String, service_id: St
 	var existing_model: Node3D = bucket.get("model")
 	if is_instance_valid(existing_model):
 		existing_model.position = pos
+		var scale_factor: float = 0.5 * (hp / 100.0)
+		existing_model.scale = Vector3(scale_factor, scale_factor, scale_factor)
 		_set_mesh_modulate(existing_model, status_color)
 	var existing_label: Label3D = bucket.get("label")
 	if is_instance_valid(existing_label):

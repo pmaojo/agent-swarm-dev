@@ -1,0 +1,48 @@
+# Stage 1: Build Frontend (React)
+FROM node:20-slim AS frontend-builder
+WORKDIR /app
+COPY commander-dashboard ./commander-dashboard
+WORKDIR /app/commander-dashboard
+RUN npm install
+RUN npm run build
+
+# Stage 2: Build Rust Gateway (swarmd)
+FROM rust:1.75-slim AS rust-builder
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    pkg-config libssl-dev protobuf-compiler libprotobuf-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY Cargo.toml Cargo.lock ./
+COPY swarmd ./swarmd
+COPY synapse-engine/crates ./synapse-engine/crates
+
+# Build only swarmd
+RUN cargo build --release -p swarmd
+
+# Stage 3: Runtime
+FROM debian:bookworm-slim
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl ca-certificates libssl3 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy built binary
+COPY --from=rust-builder /app/target/release/swarmd ./swarmd
+
+# Copy built frontend
+COPY --from=frontend-builder /app/commander-dashboard/dist ./commander-dashboard/dist
+
+# Environment variables
+ENV PORT=18789
+ENV GATEWAY_PORT=18789
+
+# Expose port
+EXPOSE 18789
+
+# Healthcheck
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD curl --fail http://127.0.0.1:18789/api/v1/game-state || exit 1
+
+# Run application
+CMD ["./swarmd"]
