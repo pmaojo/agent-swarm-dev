@@ -1,6 +1,6 @@
+use crate::server::contracts::{GatewayEvent, EventType};
 use std::time::Duration;
 use tokio::sync::broadcast;
-use crate::server::contracts::{GatewayEvent, EventType};
 use chrono::Utc;
 use rand::seq::SliceRandom;
 use rand::Rng;
