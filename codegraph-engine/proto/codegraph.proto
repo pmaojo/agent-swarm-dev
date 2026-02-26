@@ -1,71 +1,60 @@
 syntax = "proto3";
 
-package codegraph;
+package codegraph.v1;
 
-option go_package = "github.com/swarm/codegraph/gen/go";
-option java_multiple_files = true;
-option java_package = "com.swarm.codegraph";
-option java_outer_classname = "CodeGraphProto";
-
-// The CodeGraph service definition.
+// Service definition
 service CodeGraphService {
-  // Parses a single file and returns its structure (symbols, calls).
-  rpc ParseFile (ParseRequest) returns (ParseResponse);
+  // Parses a file and returns its symbols and relationships
+  rpc ParseFile (ParseFileRequest) returns (ParseFileResponse);
 
-  // Indexes a repository or directory, streaming progress updates.
-  rpc IndexRepository (IndexRequest) returns (stream IndexProgress);
+  // Indexes a repository (bulk operation)
+  rpc IndexRepository (IndexRepositoryRequest) returns (IndexRepositoryResponse);
 
-  // Generates a "Skeleton View" of the code graph centered on a symbol.
-  rpc SliceGraph (SliceRequest) returns (SliceResponse);
+  // Generates a skeleton view of the code graph based on a target symbol
+  rpc SliceGraph (SliceGraphRequest) returns (SliceGraphResponse);
 }
 
-// --- Request/Response Messages ---
-
-message ParseRequest {
-  string file_path = 1;      // Path to the file (relative or absolute)
-  string content = 2;        // Optional content (if not provided, service reads from file_path)
-  string language = 3;       // Optional explicit language (e.g., "python", "rust")
+// Messages
+message ParseFileRequest {
+  string content = 1;
+  string language = 2; // e.g., "python", "rust"
+  string filepath = 3;
 }
 
-message ParseResponse {
-  string file_path = 1;
-  repeated Symbol symbols = 2;
-  repeated string errors = 3;
+message ParseFileResponse {
+  repeated Symbol symbols = 1;
 }
 
 message Symbol {
   string name = 1;
-  string qualified_name = 2;
-  string type = 3;           // "function", "class", "method", "variable"
-  int32 start_line = 4;
-  int32 end_line = 5;
-  string hash = 6;           // Content hash of the symbol
-  repeated string calls = 7; // Qualified names of called symbols
-  repeated string inherits_from = 8;
+  string type = 2;
+  int32 start_line = 3;
+  int32 end_line = 4;
+  string hash = 5;
+  repeated string calls = 6;
+  repeated string inherits_from = 7;
 }
 
-message IndexRequest {
-  string root_path = 1;      // Root directory to index
-  bool recursive = 2;
-  repeated string ignore_patterns = 3;
+message IndexRepositoryRequest {
+  string root_path = 1;
+  string synapse_host = 2; // Address of the Synapse instance to ingest data into
 }
 
-message IndexProgress {
-  string current_file = 1;
-  int32 files_processed = 2;
-  int32 total_files = 3;
-  string status = 4;         // "indexing", "uploading", "complete", "error"
-  string error_message = 5;
+message IndexRepositoryResponse {
+  int32 files_processed = 1;
+  int32 symbols_indexed = 2;
+  repeated string errors = 3;
 }
 
-message SliceRequest {
-  string target_symbol_uri = 1; // Full URI of the symbol to center on
-  int32 max_depth = 2;          // Graph traversal depth
+message SliceGraphRequest {
+  string target_symbol_uri = 1;
+  int32 max_depth = 2;
+  string synapse_host = 3; // To query the graph
 }
 
-message SliceResponse {
-  string context = 1;           // The generated skeleton code
-  int64 original_size = 2;      // Size in bytes
-  int64 pruned_size = 3;        // Size in bytes
-  double savings_percent = 4;   // (1 - pruned/original) * 100
+message SliceGraphResponse {
+  string context = 1; // The skeleton code
+  int64 original_size = 2;
+  int64 pruned_size = 3;
+  float savings_percent = 4;
 }
