@@ -1,119 +1,57 @@
-# Diseño Técnico: CodeGraph Rust Microservices
+# Technical Design: Rust Microservices for CodeGraph Engine
 
-**Autor:** SRE Team (Agent Jules)
-**Fecha:** 2025-02-17
-**Estado:** Draft
+## Overview
+This document outlines the architecture for migrating the Python-based `CodeParser`, `CodeGraphIndexer`, and `CodeGraphSlicer` modules to a unified Rust microservice, `codegraph-engine`. The goal is to improve performance, scalability, and type safety by leveraging Rust's concurrency model and zero-cost abstractions.
 
-## 1. Visión General
+## Architecture
 
-Este documento detalla la arquitectura técnica para migrar los componentes críticos de `CodeGraph` (`CodeParser`, `CodeGraphIndexer`, `CodeGraphSlicer`) de Python a un microservicio de alto rendimiento en Rust (`codegraph-engine`). El objetivo es eliminar el overhead del GIL de Python y maximizar el uso de CPU multi-core para operaciones intensivas.
+### Components
+1.  **CodeGraph Engine (Rust)**:
+    -   A standalone gRPC server built with `tonic`.
+    -   Uses `tree-sitter` bindings for high-performance parsing.
+    -   Handles concurrent file processing and indexing.
+    -   Exposes `ParseFile`, `IndexRepository`, and `SliceGraph` RPC methods.
 
-## 2. Arquitectura del Sistema
+2.  **Orchestrator Integration (Python)**:
+    -   The Orchestrator (`sdk/python/agents/orchestrator.py`) will act as a client to the `codegraph-engine`.
+    -   Existing Python classes (`CodeParser`, `CodeGraphIndexer`, `CodeGraphSlicer`) will be refactored to delegate logic to the gRPC service.
+    -   Fallback logic: If the `codegraph-engine` is unavailable, the Python implementation can serve as a backup (optional, or we can enforce the service dependency).
 
-La nueva arquitectura introduce un servicio gRPC independiente que será consumido por el `Orchestrator` y otros agentes de Python.
+### Data Flow
+1.  **Parsing**: The client sends file content (or path) to `ParseFile`. The engine parses it using `tree-sitter` and returns a structured list of symbols and relationships.
+2.  **Indexing**: The client triggers `IndexRepository`. The engine recursively scans the directory, parses files in parallel (using `rayon`), and ingests the results directly into Synapse via its own gRPC connection or returns the data to the client for ingestion. *Decision: Engine ingests directly to Synapse for efficiency.*
+3.  **Slicing**: The client requests a slice for a specific symbol URI via `SliceGraph`. The engine queries Synapse (if needed) or uses cached graph data to construct the skeleton view.
 
-```mermaid
-graph TD
-    subgraph Python SDK
-        Orchestrator[Orchestrator Agent]
-        IndexerPy[CodeGraphIndexer (Wrapper)]
-        SlicerPy[CodeGraphSlicer (Wrapper)]
-    end
+## Interfaces
+The communication will be defined by `codegraph-engine/proto/codegraph.proto`.
 
-    subgraph Rust Microservice (codegraph-engine)
-        GRPC[gRPC Server (Tonic)]
-        ParserRs[CodeParser (tree-sitter)]
-        IndexerRs[Indexer Logic (rayon)]
-        SlicerRs[Slicer Logic]
-    end
+```protobuf
+syntax = "proto3";
 
-    subgraph Synapse (Knowledge Graph)
-        KG[Semantic Engine]
-    end
+package codegraph.v1;
 
-    Orchestrator -->|Calls| IndexerPy
-    IndexerPy -->|gRPC| GRPC
-    SlicerPy -->|gRPC| GRPC
-    IndexerRs -->|HTTP/SPARQL| KG
-    SlicerRs -->|HTTP/SPARQL| KG
+service CodeGraphService {
+  rpc ParseFile (ParseFileRequest) returns (ParseFileResponse);
+  rpc IndexRepository (IndexRepositoryRequest) returns (IndexRepositoryResponse);
+  rpc SliceGraph (SliceGraphRequest) returns (SliceGraphResponse);
+}
+
+// ... (See Proposal for message definitions)
 ```
 
-### 2.1 Comunicación
+## Implementation Plan
+1.  **Setup**: Initialize `codegraph-engine` as a Cargo workspace member.
+2.  **Proto**: Define `codegraph.proto`.
+3.  **Server**: Implement the gRPC server in `main.rs`.
+4.  **Logic**: Port parsing logic from Python to Rust using `tree-sitter` crates.
+5.  **Client**: Update Python SDK to use the generated gRPC client.
 
-*   **Protocolo:** gRPC (Google Protocol Buffers v3).
-*   **Transporte:** HTTP/2.
-*   **Serialización:** Protobuf.
+## Security
+-   The service will run in the same trusted network as the Orchestrator and Synapse.
+-   No external access exposed.
+-   Standard gRPC TLS can be enabled if required.
 
-## 3. Definición del Servicio (gRPC)
-
-El servicio `CodeGraphService` expondrá métodos para las operaciones principales. Ver `codegraph-engine/proto/codegraph.proto` para la definición exacta.
-
-### Métodos Principales
-
-1.  **`ParseFile(FileRequest) returns (ParseResponse)`**
-    *   Recibe contenido de archivo o path.
-    *   Retorna AST simplificado o lista de símbolos (Function, Class, Calls).
-    *   Sustituye a `CodeParser.parse_file`.
-
-2.  **`IndexRepository(IndexRequest) returns (stream IndexProgress)`**
-    *   Recibe path del repositorio.
-    *   Ejecuta `walk` en paralelo, parsea archivos, calcula hashes.
-    *   Genera tripletas RDF y las envía a Synapse (directamente desde Rust o retornándolas a Python).
-    *   **Decisión:** Rust enviará directamente a Synapse para evitar overhead de serialización hacia Python. Python solo recibe progreso/estado.
-
-3.  **`SliceGraph(SliceRequest) returns (SliceResponse)`**
-    *   Recibe `symbol_uri` y `depth`.
-    *   Consulta Synapse (SPARQL) para obtener nodos relacionados.
-    *   Lee archivos locales.
-    *   Genera el "Skeleton Code" usando lógica de slicing optimizada en Rust.
-
-## 4. Implementación en Rust
-
-El proyecto se estructurará como un Workspace de Cargo:
-
-```
-codegraph-engine/
-├── Cargo.toml (workspace)
-├── proto/
-│   └── codegraph.proto
-├── codegraph-server/ (bin)
-│   ├── main.rs (gRPC entrypoint)
-│   └── service.rs (impl CodeGraphService)
-├── codegraph-core/ (lib)
-│   ├── parser.rs (tree-sitter wrapper)
-│   ├── indexer.rs (parallel logic)
-│   └── slicer.rs (graph/text logic)
-└── codegraph-client/ (optional rust client)
-```
-
-### 4.1 Bibliotecas Clave
-
-*   **Async Runtime:** `tokio`
-*   **gRPC:** `tonic` (high performance, async)
-*   **Protobuf:** `prost`
-*   **Parsing:** `tree-sitter`, `tree-sitter-python`, `tree-sitter-rust`, etc.
-*   **Parallelism:** `rayon` (para tareas CPU-bound síncronas si es necesario, o `tokio::spawn` para async IO).
-*   **HTTP Client:** `reqwest` (para hablar con Synapse SPARQL endpoint).
-*   **RDF:** `sophia` o `rio_turtle` (para generación eficiente de RDF).
-
-## 5. Estrategia de Migración
-
-1.  **Fase 1: Dual Stack**
-    *   Desplegar `codegraph-engine` como sidecar o servicio independiente.
-    *   Modificar `sdk/python/lib/code_parser.py` para intentar conectar gRPC primero, fallback a implementación local Python si falla.
-
-2.  **Fase 2: Switchover**
-    *   Hacer obligatorio el servicio Rust para entornos de producción/ci.
-    *   Eliminar lógica pesada de Python, dejando solo los stubs gRPC.
-
-## 6. Consideraciones de Seguridad
-
-*   El servicio Rust tendrá acceso de lectura al sistema de archivos (repositorios).
-*   Se debe validar que los paths solicitados estén dentro de los límites permitidos (sandbox).
-*   Autenticación gRPC (mTLS o Token) si se despliega fuera de localhost.
-
-## 7. Plan de Pruebas
-
-*   **Unit Tests (Rust):** Pruebas exhaustivas de parsing y slicing.
-*   **Integration Tests:** Levantar servicio Rust y Synapse mock, ejecutar suite de pruebas existente en Python (`test_code_parser_perf.py`) apuntando al nuevo servicio.
-*   **Benchmark:** Comparar throughput (archivos/seg) entre Python puro y Rust impl.
+## Performance Targets
+-   **Parsing**: < 10ms per file (vs ~50-100ms in Python).
+-   **Indexing**: Full repo index in < 5s for 10k files.
+-   **Slicing**: < 20ms response time.
