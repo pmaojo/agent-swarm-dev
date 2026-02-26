@@ -3,7 +3,7 @@ pub mod contracts;
 
 use axum::{routing::{get, post}, Router};
 use std::{net::SocketAddr, sync::Arc};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, broadcast};
 use tracing::info;
 use crate::synapse::SynapseClient;
 use crate::server::contracts::{AuditRecord, GatewayEvent};

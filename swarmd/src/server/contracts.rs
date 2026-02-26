@@ -70,7 +70,7 @@ pub enum ServiceHealth {
     UnderAttack,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ServiceState {
     pub id: String,
     pub name: String,
