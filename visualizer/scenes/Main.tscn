@@ -9,6 +9,7 @@ script = ExtResource("1")
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=1883056717]
 transform = Transform3D(0.7071068, -0.49999994, 0.5000001, 0, 0.70710695, 0.7071067, -0.7071068, -0.49999994, 0.5000001, -2.8322706, 5.077382, -9.536743e-07)
+layers = 3
 shadow_enabled = true
 
 [node name="Camera3D" type="Camera3D" parent="." unique_id=835346987]
@@ -19,75 +20,94 @@ script = ExtResource("2")
 
 [node name="CanvasLayer" type="CanvasLayer" parent="." unique_id=1126013046]
 
-[node name="HUD" type="PanelContainer" parent="CanvasLayer"]
-anchors_preset = 0
+[node name="HUD" type="PanelContainer" parent="CanvasLayer" unique_id=1455725307]
 offset_left = 16.0
 offset_top = 16.0
 offset_right = 490.0
 offset_bottom = 310.0
 
-[node name="Margin" type="MarginContainer" parent="CanvasLayer/HUD"]
+[node name="Margin" type="MarginContainer" parent="CanvasLayer/HUD" unique_id=1320043483]
+layout_mode = 2
 theme_override_constants/margin_left = 12
 theme_override_constants/margin_top = 12
 theme_override_constants/margin_right = 12
 theme_override_constants/margin_bottom = 12
 
-[node name="VBox" type="VBoxContainer" parent="CanvasLayer/HUD/Margin"]
+[node name="VBox" type="VBoxContainer" parent="CanvasLayer/HUD/Margin" unique_id=1619867952]
+layout_mode = 2
 
-[node name="Title" type="Label" parent="CanvasLayer/HUD/Margin/VBox"]
+[node name="Title" type="Label" parent="CanvasLayer/HUD/Margin/VBox" unique_id=615664866]
+layout_mode = 2
 text = "⚔️ Trono de la Sinapsis"
 
-[node name="TurnBanner" type="Label" parent="CanvasLayer/HUD/Margin/VBox"]
+[node name="TurnBanner" type="Label" parent="CanvasLayer/HUD/Margin/VBox" unique_id=949276455]
+layout_mode = 2
 text = "Turno 1 · Proyectos 0 · Reinos 0"
 
-[node name="Stats" type="VBoxContainer" parent="CanvasLayer/HUD/Margin/VBox"]
+[node name="Stats" type="VBoxContainer" parent="CanvasLayer/HUD/Margin/VBox" unique_id=1582269073]
+layout_mode = 2
 
-[node name="ServicesLabel" type="Label" parent="CanvasLayer/HUD/Margin/VBox/Stats"]
+[node name="ServicesLabel" type="Label" parent="CanvasLayer/HUD/Margin/VBox/Stats" unique_id=1063755745]
+layout_mode = 2
 text = "Servicios vigilados: 0"
 
-[node name="ThreatLabel" type="Label" parent="CanvasLayer/HUD/Margin/VBox/Stats"]
+[node name="ThreatLabel" type="Label" parent="CanvasLayer/HUD/Margin/VBox/Stats" unique_id=1353751]
+layout_mode = 2
 text = "Amenazas: 0 en asedio"
 
-[node name="DegradedLabel" type="Label" parent="CanvasLayer/HUD/Margin/VBox/Stats"]
+[node name="DegradedLabel" type="Label" parent="CanvasLayer/HUD/Margin/VBox/Stats" unique_id=1052289025]
+layout_mode = 2
 text = "Degradados: 0 · Detenidos: 0"
 
-[node name="Actions" type="VBoxContainer" parent="CanvasLayer/HUD/Margin/VBox"]
+[node name="Actions" type="VBoxContainer" parent="CanvasLayer/HUD/Margin/VBox" unique_id=1972085829]
+layout_mode = 2
 
-[node name="CharacterSelectorLabel" type="Label" parent="CanvasLayer/HUD/Margin/VBox/Actions"]
+[node name="CharacterSelectorLabel" type="Label" parent="CanvasLayer/HUD/Margin/VBox/Actions" unique_id=1105113882]
+layout_mode = 2
 text = "Personaje activo"
 
-[node name="CharacterSelector" type="OptionButton" parent="CanvasLayer/HUD/Margin/VBox/Actions"]
+[node name="CharacterSelector" type="OptionButton" parent="CanvasLayer/HUD/Margin/VBox/Actions" unique_id=985336118]
+layout_mode = 2
 
-[node name="DispatchQuestButton" type="Button" parent="CanvasLayer/HUD/Margin/VBox/Actions"]
+[node name="DispatchQuestButton" type="Button" parent="CanvasLayer/HUD/Margin/VBox/Actions" unique_id=1687865511]
+layout_mode = 2
 text = "📯 Forjar Misión Épica"
 
-[node name="PauseButton" type="Button" parent="CanvasLayer/HUD/Margin/VBox/Actions"]
+[node name="PauseButton" type="Button" parent="CanvasLayer/HUD/Margin/VBox/Actions" unique_id=119608459]
+layout_mode = 2
 text = "⏸️ Sellar Nodo"
 
-[node name="ResumeButton" type="Button" parent="CanvasLayer/HUD/Margin/VBox/Actions"]
+[node name="ResumeButton" type="Button" parent="CanvasLayer/HUD/Margin/VBox/Actions" unique_id=1403567792]
+layout_mode = 2
 text = "▶️ Reabrir Frente"
 
-[node name="PatchButton" type="Button" parent="CanvasLayer/HUD/Margin/VBox/Actions"]
+[node name="PatchButton" type="Button" parent="CanvasLayer/HUD/Margin/VBox/Actions" unique_id=1057894497]
+layout_mode = 2
 text = "🩹 Patch"
 
-[node name="RollbackButton" type="Button" parent="CanvasLayer/HUD/Margin/VBox/Actions"]
+[node name="RollbackButton" type="Button" parent="CanvasLayer/HUD/Margin/VBox/Actions" unique_id=1971530914]
+layout_mode = 2
 text = "⏪ Rollback"
 
-[node name="RestartButton" type="Button" parent="CanvasLayer/HUD/Margin/VBox/Actions"]
+[node name="RestartButton" type="Button" parent="CanvasLayer/HUD/Margin/VBox/Actions" unique_id=1213499740]
+layout_mode = 2
 text = "🔁 Reinicio"
 
-[node name="IsolateButton" type="Button" parent="CanvasLayer/HUD/Margin/VBox/Actions"]
+[node name="IsolateButton" type="Button" parent="CanvasLayer/HUD/Margin/VBox/Actions" unique_id=1953673251]
+layout_mode = 2
 text = "🛡️ Aislamiento"
 
-[node name="CommandStatus" type="Label" parent="CanvasLayer/HUD/Margin/VBox/Actions"]
+[node name="CommandStatus" type="Label" parent="CanvasLayer/HUD/Margin/VBox/Actions" unique_id=254501107]
+layout_mode = 2
 text = "Estado de mando: aguardando órdenes"
 
-[node name="OrderLog" type="RichTextLabel" parent="CanvasLayer/HUD/Margin/VBox"]
-fit_content = true
+[node name="OrderLog" type="RichTextLabel" parent="CanvasLayer/HUD/Margin/VBox" unique_id=1904773402]
+layout_mode = 2
 size_flags_vertical = 3
 text = "Consejo de Guerra: sin alertas."
+fit_content = true
 
-[node name="TelemetryPanel" type="PanelContainer" parent="CanvasLayer"]
+[node name="TelemetryPanel" type="PanelContainer" parent="CanvasLayer" unique_id=708369153]
 anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
@@ -96,21 +116,19 @@ offset_top = 16.0
 offset_right = -16.0
 offset_bottom = 470.0
 
-[node name="TelemetryMargin" type="MarginContainer" parent="CanvasLayer/TelemetryPanel"]
+[node name="TelemetryMargin" type="MarginContainer" parent="CanvasLayer/TelemetryPanel" unique_id=12812468]
+layout_mode = 2
 theme_override_constants/margin_left = 12
 theme_override_constants/margin_top = 12
 theme_override_constants/margin_right = 12
 theme_override_constants/margin_bottom = 12
 
 [node name="RichTextLabel" type="RichTextLabel" parent="CanvasLayer/TelemetryPanel/TelemetryMargin" unique_id=1437217254]
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
+layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 text = "Waiting for game state..."
 
-
-[node name="CharacterLab" parent="CanvasLayer" instance=ExtResource("3")]
+[node name="CharacterLab" parent="CanvasLayer" unique_id=19949265 instance=ExtResource("3")]
 
 [node name="HTTPRequest" type="HTTPRequest" parent="." unique_id=1583219651]
