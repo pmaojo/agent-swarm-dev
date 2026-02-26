@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  # The Core Synapse Engine (Graph Database)
+  synapse:
+    build:
+      context: ./synapse-engine
+      dockerfile: Dockerfile
+    volumes:
+      - ./synapse-data:/data
+    environment:
+      - GRAPH_STORAGE_PATH=/data
+    restart: unless-stopped
+
+  # The FastEmbed API (Remote Embeddings)
+  fastembed:
+    build:
+      context: .
+      dockerfile: Dockerfile.fastembed
+    ports:
+      - "11434:11434"
+    restart: unless-stopped
+
+  # The Commander Dashboard & Python Agent Runtime
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "18789:18789"
+    environment:
+      - SYNAPSE_GRPC_HOST=synapse
+      - SYNAPSE_GRPC_PORT=50051
+      - EMBEDDING_PROVIDER=remote
+      - EMBEDDING_API_URL=http://fastembed:11434/api/embeddings
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - TRELLO_MOCK_MODE=true
+    depends_on:
+      - synapse
+      - fastembed
+    restart: unless-stopped

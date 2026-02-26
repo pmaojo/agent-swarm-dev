@@ -24,6 +24,9 @@ COPY sdk/python/agents ./sdk/python/agents
 COPY scripts ./scripts
 COPY scenarios ./scenarios
 COPY swarm_schema.yaml .
+# Ensure we have the latest generated Python files from grpc based on the container's version limit
+COPY synapse-engine/crates/semantic-engine/proto/semantic_engine.proto ./
+RUN python -m grpc_tools.protoc -I. --python_out=./sdk/python/agents/synapse_proto --grpc_python_out=./sdk/python/agents/synapse_proto semantic_engine.proto
 # Ensure commander-dashboard/dist exists for mounting
 RUN mkdir -p commander-dashboard/dist
 
@@ -33,7 +36,7 @@ COPY --from=frontend-builder /app/commander-dashboard/dist ./commander-dashboard
 # Environment variables
 ENV PORT=18789
 ENV PYTHONUNBUFFERED=1
-ENV PYTHONPATH=/app/sdk/python/lib:/app/sdk/python
+ENV PYTHONPATH=/app/sdk/python/lib:/app/sdk/python:/app/sdk/python/agents/synapse_proto
 
 # Expose port
 EXPOSE 18789

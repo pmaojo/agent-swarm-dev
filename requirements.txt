@@ -1,5 +1,6 @@
 fastembed
 flask
+grpcio
 grpcio-tools
 synapse-sdk
 pyyaml
