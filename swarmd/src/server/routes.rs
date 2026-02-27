@@ -82,8 +82,64 @@ pub async fn get_game_state(State(state): State<AppState>) -> Json<GameState> {
     })
 }
 
-pub async fn get_graph_nodes() -> Json<GraphData> {
-    Json(GraphData::default())
+pub async fn get_graph_nodes(State(state): State<AppState>) -> Json<GraphData> {
+    // 1. Fetch all triples from Synapse
+    let query = "SELECT ?s ?p ?o WHERE { ?s ?p ?o } LIMIT 500";
+    let mut elements = GraphElements::default();
+    
+    if let Ok(res_json) = state.synapse.query(query).await {
+        if let Ok(parsed) = serde_json::from_str::<Vec<serde_json::Value>>(&res_json) {
+            let mut node_map = std::collections::HashMap::new();
+            
+            for row in parsed {
+                let s = _clean_val(row.get("s").or_else(|| row.get("?s")));
+                let p = _clean_val(row.get("p").or_else(|| row.get("?p")));
+                let o = _clean_val(row.get("o").or_else(|| row.get("?o")));
+                
+                if s.is_empty() { continue; }
+
+                // Group by subject to form nodes
+                let node_data = node_map.entry(s.clone()).or_insert_with(|| GraphNodeData {
+                    id: s.clone(),
+                    label: s.split('/').last().unwrap_or(&s).to_string(),
+                    node_type: "Entity".to_string(),
+                    active: false,
+                    triples: vec![],
+                });
+                
+                node_data.triples.push(GraphTriple {
+                    subject: s.clone(),
+                    predicate: p.clone(),
+                    object: o.clone(),
+                });
+
+                // If object looks like a URI, create an edge
+                if o.starts_with("http") {
+                    elements.edges.push(GraphEdge {
+                        data: GraphEdgeData {
+                            id: format!("{}-{}", s, o),
+                            source: s.clone(),
+                            target: o.clone(),
+                            label: p.split('/').last().unwrap_or(&p).to_string(),
+                        }
+                    });
+                }
+            }
+
+            for (_, data) in node_map {
+                elements.nodes.push(GraphNode { data });
+            }
+        }
+    }
+
+    Json(GraphData { elements })
+}
+
+fn _clean_val(val: Option<&serde_json::Value>) -> String {
+    match val {
+        Some(serde_json::Value::String(s)) => s.trim_matches(|c| c == '"' || c == '<' || c == '>').to_string(),
+        _ => String::new(),
+    }
 }
 
 pub async fn get_audit_log(State(state): State<AppState>) -> Json<Vec<AuditRecord>> {

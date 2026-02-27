@@ -147,24 +147,50 @@ pub struct GameState {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct GraphNode {
+pub struct GraphNodeData {
     pub id: String,
     pub label: String,
     #[serde(rename = "type")]
     pub node_type: String,
+    pub active: bool,
+    #[serde(default)]
+    pub triples: Vec<GraphTriple>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct GraphEdge {
+pub struct GraphTriple {
+    pub subject: String,
+    pub predicate: String,
+    pub object: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct GraphNode {
+    pub data: GraphNodeData,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct GraphEdgeData {
+    pub id: String,
     pub source: String,
     pub target: String,
     pub label: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct GraphEdge {
+    pub data: GraphEdgeData,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
-pub struct GraphData {
+pub struct GraphElements {
     pub nodes: Vec<GraphNode>,
     pub edges: Vec<GraphEdge>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct GraphData {
+    pub elements: GraphElements,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
