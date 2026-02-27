@@ -10,6 +10,8 @@ services:
       - ./synapse-data:/data
     environment:
       - GRAPH_STORAGE_PATH=/data
+    ports:
+      - "50051:50051"
     restart: unless-stopped
 
   # The FastEmbed API (Remote Embeddings)

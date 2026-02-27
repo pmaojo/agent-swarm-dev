@@ -21,6 +21,7 @@ dotenvy = "0.15"
 chrono = { version = "0.4.43", features = ["serde"] }
 uuid = { version = "1.21.0", features = ["v4"] }
 rand = "0.8"
+tower-http = { version = "0.5", features = ["fs"] }
 
 [build-dependencies]
 tonic-build = "0.11"

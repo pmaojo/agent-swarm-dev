@@ -31,6 +31,7 @@ pub async fn start_server(port: u16, synapse: SynapseClient, event_tx: broadcast
         .route("/api/v1/mission/assign", post(routes::post_mission_assign))
         .route("/api/v1/knowledge-tree/nodes", post(routes::post_knowledge_tree_node))
         .route("/api/v1/events/combat/stream", get(routes::ws_handler))
+        .fallback_service(tower_http::services::ServeDir::new("commander-dashboard/dist/"))
         .with_state(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
