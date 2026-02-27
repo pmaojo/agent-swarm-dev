@@ -32,9 +32,10 @@ COPY --from=rust-builder /app/target/release/swarmd ./swarmd
 
 # Copy Python SDK and agents
 COPY sdk/python ./sdk/python
+COPY requirements.txt ./
 
 # Install Python requirements
-RUN pip3 install --no-cache-dir --break-system-packages -r sdk/python/requirements.txt || true
+RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt || true
 
 # Copy built frontend
 COPY --from=frontend-builder /app/commander-dashboard/dist ./commander-dashboard/dist
