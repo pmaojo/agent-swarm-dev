@@ -12,6 +12,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.modules['semantic_engine_pb2'] = MagicMock()
 sys.modules['semantic_engine_pb2_grpc'] = MagicMock()
 
+sys.modules['agents.synapse_proto.codegraph_pb2'] = MagicMock()
+sys.modules['agents.synapse_proto.codegraph_pb2_grpc'] = MagicMock()
+
 with patch('agents.orchestrator.OrchestratorAgent') as MockOrch:
     instance = MockOrch.return_value
     instance.agents = {"Coder": {}, "Reviewer": {}}
