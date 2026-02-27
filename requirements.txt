@@ -1,7 +1,7 @@
 fastembed
 flask
-grpcio
-grpcio-tools
+grpcio==1.78.1
+grpcio-tools==1.78.1
 synapse-sdk
 pyyaml
 openai
