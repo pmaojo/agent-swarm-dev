@@ -6,6 +6,8 @@ import uuid
 import grpc
 import requests
 import logging
+import hashlib
+from collections import OrderedDict
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 from openai import OpenAI
@@ -68,6 +70,10 @@ class LLMService:
         self.channel = None
         self.stub = None
         self.namespace = "default"
+
+        # @synapse:rule Implement in-memory LRU cache for LLM completion to reduce redundant LLM API calls and improve latency.
+        self._cache = OrderedDict()
+        self._cache_max_size = 100
 
         self.connect_synapse()
         self.ensure_finance_node()
@@ -268,6 +274,23 @@ class LLMService:
 
         response_format = {"type": "json_object"} if json_mode else None
 
+        # Compute cache key after messages are populated
+        cache_key_data = {
+            "messages": messages,
+            "json_mode": json_mode,
+            "tools": tools,
+            "tool_choice": tool_choice,
+            "model": self.model,
+            "temperature": 0.7
+        }
+        cache_key = hashlib.md5(json.dumps(cache_key_data, sort_keys=True).encode('utf-8')).hexdigest()
+
+        if cache_key in self._cache:
+            # Move to end to mark as recently used
+            result = self._cache.pop(cache_key)
+            self._cache[cache_key] = result
+            return result
+
         try:
             response = self.client.chat.completions.create(
                 model=self.model,
@@ -284,8 +307,16 @@ class LLMService:
                 self.log_spend(usage.prompt_tokens, usage.completion_tokens)
 
             if tools:
-                return response.choices[0].message
-            return response.choices[0].message.content
+                result = response.choices[0].message
+            else:
+                result = response.choices[0].message.content
+
+            # Store in cache
+            self._cache[cache_key] = result
+            if len(self._cache) > self._cache_max_size:
+                self._cache.popitem(last=False)
+
+            return result
         except BudgetExceededException:
             raise # Propagate up
         except Exception as e:
