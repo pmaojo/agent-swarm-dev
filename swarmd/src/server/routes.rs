@@ -9,7 +9,8 @@ use tokio::sync::broadcast;
 
 use crate::server::contracts::{
     ActiveQuest, AuditRecord, CommandPhase, ControlCommand, ControlCommandAck, CountryState,
-    DailyBudget, EventAck, GatewayEvent, GameState, GraphData, IngestKnowledgeNodeResponse,
+    DailyBudget, EventAck, GatewayEvent, GameState, GraphData, GraphEdge, GraphEdgeData,
+    GraphElements, GraphNode, GraphNodeData, GraphTriple, IngestKnowledgeNodeResponse,
     KnowledgeNode, KnowledgeNodeCost, KnowledgeNodeDocumentationResponse, KnowledgeNodeIngestRequest,
     MissionAssignment, PartyMember, PartyStats, PolicyApprovalStatus, QuestStatus, RepositoryState,
     ServiceHealth, ServiceState, SystemStatus,
