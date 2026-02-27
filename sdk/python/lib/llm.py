@@ -280,7 +280,8 @@ class LLMService:
             "json_mode": json_mode,
             "tools": tools,
             "tool_choice": tool_choice,
-            "model": self.model
+            "model": self.model,
+            "temperature": 0.7
         }
         cache_key = hashlib.md5(json.dumps(cache_key_data, sort_keys=True).encode('utf-8')).hexdigest()
 
