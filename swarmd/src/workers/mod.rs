@@ -19,7 +19,7 @@ pub async fn start_background_workers(
     rx: mpsc::Receiver<Notification>,
 ) {
     let client = Client::builder()
-        .timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(15))
         .build()
         .unwrap();
 
