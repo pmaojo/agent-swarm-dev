@@ -24,11 +24,17 @@ RUN cargo build --release -p swarmd
 FROM debian:bookworm-slim
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl ca-certificates libssl3 \
+    curl ca-certificates libssl3 python3 python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy built binary
 COPY --from=rust-builder /app/target/release/swarmd ./swarmd
+
+# Copy Python SDK and agents
+COPY sdk/python ./sdk/python
+
+# Install Python requirements
+RUN pip3 install --no-cache-dir --break-system-packages -r sdk/python/requirements.txt || true
 
 # Copy built frontend
 COPY --from=frontend-builder /app/commander-dashboard/dist ./commander-dashboard/dist
