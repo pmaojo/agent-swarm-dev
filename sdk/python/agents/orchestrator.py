@@ -22,9 +22,9 @@ sys.path.insert(0, os.path.join(SDK_PYTHON_PATH, "lib"))
 sys.path.insert(0, os.path.join(SDK_PYTHON_PATH, "agents"))
 
 try:
-    from synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
+    from synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc, codegraph_pb2, codegraph_pb2_grpc
 except ImportError:
-    from agents.synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
+    from agents.synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc, codegraph_pb2, codegraph_pb2_grpc
 
 from llm import LLMService
 from product_manager import ProductManagerAgent
@@ -51,6 +51,13 @@ class OrchestratorAgent:
         self.grpc_port = int(os.getenv("SYNAPSE_GRPC_PORT", "50052"))
         self.channel = None
         self.stub = None
+
+        # CodeGraph Microservice Configuration
+        self.codegraph_host = os.getenv("CODEGRAPH_GRPC_HOST", "localhost")
+        self.codegraph_port = int(os.getenv("CODEGRAPH_GRPC_PORT", "50053"))
+        self.codegraph_channel = None
+        self.codegraph_stub = None
+
         self.namespace = "default"
         self.agents = {}
 
@@ -101,10 +108,27 @@ class OrchestratorAgent:
             print(f"❌ Failed to connect to Synapse: {e}")
             self.stub = None
 
+        # Connect to CodeGraph Engine Microservice
+        try:
+            self.codegraph_channel = grpc.insecure_channel(f"{self.codegraph_host}:{self.codegraph_port}")
+            # Non-blocking ping
+            try:
+                grpc.channel_ready_future(self.codegraph_channel).result(timeout=1)
+                self.codegraph_stub = codegraph_pb2_grpc.CodeGraphServiceStub(self.codegraph_channel)
+                print("✅ Connected to CodeGraph Engine")
+            except grpc.FutureTimeoutError:
+                print("⚠️  CodeGraph Engine not reachable.")
+                self.codegraph_stub = None
+        except Exception as e:
+            print(f"❌ Failed to connect to CodeGraph Engine: {e}")
+            self.codegraph_stub = None
+
     def close(self):
         """Close gRPC channel"""
         if self.channel:
             self.channel.close()
+        if self.codegraph_channel:
+            self.codegraph_channel.close()
         for agent in self.agents.values():
             if hasattr(agent, 'close'):
                 agent.close()

@@ -1,5 +1,31 @@
 {
-  "selected_character_id": "char-coder",
+  "selected_character_id": "char-product-manager",
+  "selected_character_loadout": {
+    "prompt_profile": {
+      "profile_id": "prompt.reviewer",
+      "version": "2026-01"
+    },
+    "tool_loadout": {
+      "loadout_id": "tools.review",
+      "tool_ids": [
+        "search",
+        "test",
+        "lint"
+      ]
+    },
+    "doc_packs": [
+      {
+        "pack_id": "docs.security",
+        "version": "2"
+      }
+    ],
+    "skills": [
+      {
+        "skill_id": "skill-creator",
+        "enabled": true
+      }
+    ]
+  },
   "profiles": [
     {
       "id": "char-product-manager",

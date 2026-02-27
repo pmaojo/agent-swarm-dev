@@ -12,6 +12,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.modules['semantic_engine_pb2'] = MagicMock()
 sys.modules['semantic_engine_pb2_grpc'] = MagicMock()
 
+sys.modules['agents.synapse_proto.codegraph_pb2'] = MagicMock()
+sys.modules['agents.synapse_proto.codegraph_pb2_grpc'] = MagicMock()
+
 with patch('agents.orchestrator.OrchestratorAgent') as MockOrch:
     instance = MockOrch.return_value
     instance.agents = {"Coder": {}, "Reviewer": {}}
@@ -179,7 +182,7 @@ class CombatStreamTests(unittest.TestCase):
 
         try:
             response = self.client.post('/api/v1/characters/loadout', json={
-                "character_id": "char-a",
+                "character_id": "char-a", "action": "apply",
                 "loadout": {
                     "prompt_profile": {"profile_id": "prompt.survivor", "version": "v9"},
                     "tool_loadout": {"loadout_id": "tools.persist", "tool_ids": ["search"]},

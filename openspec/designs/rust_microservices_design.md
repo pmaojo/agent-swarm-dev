@@ -2,7 +2,7 @@
 
 **Autor:** SRE Team (Agent Jules)
 **Fecha:** 2025-02-17
-**Estado:** Draft
+**Estado:** Approved
 
 ## 1. Visión General
 
@@ -117,3 +117,23 @@ codegraph-engine/
 *   **Unit Tests (Rust):** Pruebas exhaustivas de parsing y slicing.
 *   **Integration Tests:** Levantar servicio Rust y Synapse mock, ejecutar suite de pruebas existente en Python (`test_code_parser_perf.py`) apuntando al nuevo servicio.
 *   **Benchmark:** Comparar throughput (archivos/seg) entre Python puro y Rust impl.
+
+## 8. Integración con OrchestratorAgent (Python SDK)
+
+Para conectar el ecosistema de agentes Python con el nuevo microservicio `codegraph-engine`, se implementará un cliente gRPC dentro de la clase `OrchestratorAgent` (`sdk/python/agents/orchestrator.py`).
+
+**Modificaciones a `OrchestratorAgent`**:
+
+1.  **Importación de Protobufs**:
+    Se importarán los archivos generados `codegraph_pb2` y `codegraph_pb2_grpc` desde el namespace `synapse_proto`.
+
+2.  **Inicialización (`__init__`)**:
+    Se añadirán las variables de entorno `CODEGRAPH_GRPC_HOST` (por defecto `localhost`) y `CODEGRAPH_GRPC_PORT` (por defecto `50053`).
+    Se inicializarán `self.codegraph_channel` y `self.codegraph_stub` en `None`.
+
+3.  **Conexión (`connect`)**:
+    Se creará un `grpc.insecure_channel` apuntando al host y puerto configurados.
+    Se instanciará el stub `CodeGraphServiceStub` y se comprobará la conexión de forma similar a como se hace con Synapse.
+
+4.  **Desconexión (`close`)**:
+    Se cerrará `self.codegraph_channel` para liberar los recursos correctamente durante el ciclo de vida del agente.
