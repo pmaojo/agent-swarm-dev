@@ -20,6 +20,7 @@ pub async fn start_agency(synapse: SynapseClient) {
                 ?task a swarm:Task ;
                       swarm:internalState "REQUIREMENTS" ;
                       swarm:title ?title .
+                FILTER NOT EXISTS { ?task swarm:internalState "PROCESSING" }
                 ?agent a swarm:Agent ;
                        swarm:status "Standby" .
             }
