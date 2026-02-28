@@ -12,17 +12,16 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, List, ListItem, ListState, Clear},
     Frame, Terminal,
 };
-use std::{io, time::{Duration, Instant}, signal, panic};
+use std::{io, time::{Duration, Instant}, panic};
 use tokio::sync::mpsc;
 
 // Cleanup function to restore terminal on exit/crash
 fn cleanup_terminal() {
     // Print reset sequences to restore terminal
-    print!("\x1b[?1049l");  // Exit alternate screen
-    print!("\x1bc");         // Reset terminal
-    print!("\x1b[?1000l");   // Disable mouse
-    print!("\n");
-    let _ = std::io::stdout().flush();
+    eprint!("\x1b[?1049l");  // Exit alternate screen
+    eprint!("\x1bc");         // Reset terminal  
+    eprint!("\x1b[?1000l");   // Disable mouse
+    eprint!("\n");
 }
 use futures_util::StreamExt;
 use tokio_tungstenite::connect_async;
@@ -50,25 +49,30 @@ struct App {
 }
 
 impl App {
-    fn new() -> App {
+    async fn new() -> App {
         let mut list_state = ListState::default();
         list_state.select(Some(0));
         let mut knowledge_state = ListState::default();
         knowledge_state.select(Some(0));
+        
+        // Fetch real knowledge nodes from Synapse
+        let knowledge_nodes = Self::fetch_knowledge_nodes().await;
+        
+        // Fetch real system status
+        let status = Self::fetch_system_status().await;
+        let mut messages = vec!["Initializing neural links...".to_string()];
+        if let Some(s) = status {
+            messages.push(s);
+        }
+        
         App { 
             frame_count: 0,
-            messages: vec!["Initializing neural links...".to_string()],
+            messages,
             input: String::new(),
             connected: false,
             list_state,
             active_panel: ActivePanel::Input,
-            knowledge_nodes: vec![
-                "Neural Link v1".to_string(),
-                "Cyber-Psychosis Guard".to_string(),
-                "Quantum Compiler".to_string(),
-                "Swarm Mind v2".to_string(),
-                "NIST Authorization".to_string(),
-            ],
+            knowledge_nodes,
             knowledge_state,
             actions: vec![
                 "LAUNCH MISSION".to_string(),
@@ -77,6 +81,59 @@ impl App {
                 "SCAN SECTOR".to_string(),
             ],
             action_index: 0,
+        }
+    }
+    
+    async fn fetch_knowledge_nodes() -> Vec<String> {
+        let client = reqwest::Client::new();
+        match client.get("http://127.0.0.1:18789/api/v1/knowledge-tree/nodes")
+            .timeout(Duration::from_secs(3))
+            .send()
+            .await
+        {
+            Ok(resp) => {
+                match resp.json::<serde_json::Value>().await {
+                    Ok(json) => {
+                        let nodes = json.as_array()
+                            .map(|arr| arr.iter()
+                                .filter_map(|n| n.get("id").or_else(|| n.get("name")))
+                                .filter_map(|v| v.as_str())
+                                .map(|s| s.to_string())
+                                .collect()
+                            );
+                        nodes.unwrap_or_else(|| vec!["No knowledge nodes".to_string()])
+                    }
+                    Err(_) => vec!["Failed to parse knowledge".to_string()]
+                }
+            }
+            Err(_) => vec!["Connect to gateway for knowledge".to_string()]
+        }
+    }
+    
+    async fn fetch_system_status() -> Option<String> {
+        let client = reqwest::Client::new();
+        match client.get("http://127.0.0.1:18789/api/v1/game-state")
+            .timeout(Duration::from_secs(3))
+            .send()
+            .await
+        {
+            Ok(resp) => {
+                match resp.json::<serde_json::Value>().await {
+                    Ok(json) => {
+                        let status = json.get("system_status")
+                            .and_then(|s| s.as_str())
+                            .unwrap_or("UNKNOWN");
+                        let budget = json.get("daily_budget").and_then(|b| {
+                            let max = b.get("max").and_then(|m| m.as_f64()).unwrap_or(0.0);
+                            let spent = b.get("spent").and_then(|s| s.as_f64()).unwrap_or(0.0);
+                            Some(format!("${spent:.2}/${max:.2}"))
+                        });
+                        Some(format!("System: {} | Budget: {}", status, budget.unwrap_or_default()))
+                    }
+                    Err(_) => None
+                }
+            }
+            Err(_) => None
         }
     }
 
@@ -107,6 +164,60 @@ impl App {
         };
     }
 
+    fn handle_action(&mut self, action: &str) -> String {
+        // Handle real actions via HTTP API
+        match action {
+            "LAUNCH MISSION" => {
+                // Show prompt for mission task
+                "Enter mission task in command panel".to_string()
+            }
+            "HALT SWARM" => {
+                // Send HALT command to gateway
+                let client = reqwest::blocking::Client::new();
+                let result = client.post("http://127.0.0.1:18789/api/v1/control/commands")
+                    .json(&serde_json::json!({
+                        "command_type": "HALT",
+                        "target": "all",
+                        "reason": "Operator initiated halt"
+                    }))
+                    .send();
+                match result {
+                    Ok(resp) if resp.status().is_success() => "[SUCCESS] Swarm HALTED".to_string(),
+                    Ok(resp) => format!("[ERROR] HALT failed: {}", resp.status()),
+                    Err(e) => format!("[ERROR] Connection failed: {}", e)
+                }
+            }
+            "RESET BRAIN" => {
+                // Clear memory / reset agent state
+                let client = reqwest::blocking::Client::new();
+                let result = client.post("http://127.0.0.1:18789/api/v1/control/commands")
+                    .json(&serde_json::json!({
+                        "command_type": "RESET",
+                        "target": "orchestrator",
+                        "reason": "Brain reset requested"
+                    }))
+                    .send();
+                match result {
+                    Ok(resp) if resp.status().is_success() => "[SUCCESS] Brain reset complete".to_string(),
+                    Ok(resp) => format!("[ERROR] Reset failed: {}", resp.status()),
+                    Err(e) => format!("[ERROR] Connection failed: {}", e)
+                }
+            }
+            "SCAN SECTOR" => {
+                // Query knowledge graph / scan for new info
+                let client = reqwest::blocking::Client::new();
+                let result = client.get("http://127.0.0.1:18789/api/v1/graph-nodes")
+                    .send();
+                match result {
+                    Ok(resp) if resp.status().is_success() => "[SUCCESS] Sector scanned - new intel acquired".to_string(),
+                    Ok(resp) => format!("[ERROR] Scan failed: {}", resp.status()),
+                    Err(e) => format!("[ERROR] Connection failed: {}", e)
+                }
+            }
+            _ => format!("[UNKNOWN] Action: {}", action)
+        }
+    }
+    
     fn handle_input(&mut self, input: String, command_tx: &mpsc::Sender<String>) {
         let normalized = input.trim().to_lowercase();
         if normalized == "hello" || normalized == "hola" {
@@ -146,14 +257,14 @@ async fn main() -> Result<()> {
     let (status_tx, mut status_rx) = mpsc::channel(1);
 
     tokio::spawn(async move {
-        let url = "ws://127.0.0.1:18792/api/v1/events/combat/stream";
+        let url = "ws://127.0.0.1:18789/api/v1/events/combat/stream";
         let client = reqwest::Client::new();
         
         loop {
             // Check for outgoing commands
             while let Ok(cmd) = command_rx.try_recv() {
                 if cmd == "LAUNCH MISSION" {
-                    let _ = client.post("http://127.0.0.1:18792/api/v1/mission/assign")
+                    let _ = client.post("http://127.0.0.1:18789/api/v1/mission/assign")
                         .json(&serde_json::json!({
                             "agent_id": "http://swarm.os/agents/Coder",
                             "repo_id": "root",
@@ -163,7 +274,7 @@ async fn main() -> Result<()> {
                         .await;
                 } else {
                     // Regular command from TUI input
-                    let _ = client.post("http://127.0.0.1:18792/api/v1/mission/assign")
+                    let _ = client.post("http://127.0.0.1:18789/api/v1/mission/assign")
                         .json(&serde_json::json!({
                             "agent_id": "http://swarm.os/agents/Coder",
                             "repo_id": "root",
@@ -203,7 +314,7 @@ async fn main() -> Result<()> {
 
     // create app and run it
     let tick_rate = Duration::from_millis(50);
-    let mut app = App::new();
+    let mut app = App::new().await;
     let res = run_app(&mut terminal, &mut app, tick_rate, &mut rx, &mut status_rx, command_tx).await;
 
     // restore terminal
