@@ -20,7 +20,7 @@ services:
       context: .
       dockerfile: Dockerfile.fastembed
     ports:
-      - "11434:11434"
+      - "11435:11434"
     restart: unless-stopped
 
   # The Commander Dashboard & Python Agent Runtime
@@ -47,14 +47,14 @@ services:
       - fastembed
     restart: unless-stopped
 
-  # The Semantic Analysis Engine (GitHub Semantic)
-  semantic:
-    image: ghcr.io/github/semantic:latest
-    volumes:
-      - .:/repo
-    working_dir: /repo
-    entrypoint: ["semantic"]
-    restart: "no" # Runs as a task/one-off or via exec
+  # The Semantic Analysis Engine (GitHub Semantic) - TEMPORARILY DISABLED (IMAGE DENIED)
+  # semantic:
+  #   image: ghcr.io/github/semantic:latest
+  #   volumes:
+  #     - .:/repo
+  #   working_dir: /repo
+  #   entrypoint: ["semantic"]
+  #   restart: "no"
 
 networks:
   default:

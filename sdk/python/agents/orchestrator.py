@@ -12,6 +12,7 @@ import sys
 import yaml
 import uuid
 import asyncio
+from dotenv import load_dotenv
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 
@@ -45,6 +46,9 @@ SKOS = "http://www.w3.org/2004/02/skos/core#"
 
 class OrchestratorAgent:
     def __init__(self):
+        # Load environment variables
+        load_dotenv(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', '.env')))
+        
         self.model = os.getenv("LLM_MODEL", "gpt-4")
         self.api_key = os.getenv("OPENAI_API_KEY")
         self.grpc_host = os.getenv("SYNAPSE_GRPC_HOST", "localhost")
