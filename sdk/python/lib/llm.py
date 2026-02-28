@@ -82,12 +82,8 @@ class LLMService:
             return
         try:
             self.channel = grpc.insecure_channel(f"{self.grpc_host}:{self.grpc_port}")
-            try:
-                grpc.channel_ready_future(self.channel).result(timeout=2)
-                self.stub = semantic_engine_pb2_grpc.SemanticEngineStub(self.channel)
-            except grpc.FutureTimeoutError:
-                logger.warning("⚠️  Synapse not reachable within 2s timeout. Budgeting disabled.")
-                self.stub = None
+            self.stub = semantic_engine_pb2_grpc.SemanticEngineStub(self.channel)
+            # Remove blocking grpc.channel_ready_future.result() call which causes deadlocks inside asyncio threads
         except Exception as e:
             logger.warning(f"⚠️  LLMService failed to connect to Synapse: {e}")
             self.stub = None

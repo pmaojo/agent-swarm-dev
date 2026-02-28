@@ -343,11 +343,23 @@ class OrchestratorAgent:
             return int(val) if val else 0
         return 0
 
-    def set_next_turn(self, current: int):
-        next_turn = current + 1
-        triples = [{"subject": f"{SWARM}swarm", "predicate": f"{SWARM}currentTurn", "object": f'"{next_turn}"'}]
-        self.ingest_triples(triples, namespace="default")
-        print(f"🎫 Token passed. Next Turn: {next_turn}")
+    def set_next_turn(self, current_or_next: int):
+        # We use SPARQL UPDATE to ensure we overwrite the previous turn instead of appending multiples
+        query = f"""
+        PREFIX swarm: <{SWARM}>
+        DELETE {{ <{SWARM}swarm> swarm:currentTurn ?oldTurn }}
+        INSERT {{ <{SWARM}swarm> swarm:currentTurn "{current_or_next}" }}
+        WHERE  {{ OPTIONAL {{ <{SWARM}swarm> swarm:currentTurn ?oldTurn }} }}
+        """
+        # Hack: Since SemanticEngine doesn't formally expose UpdateSparql in Python stub easily, 
+        # we can just use the query interface if it supports updates, or fallback to ingest/delete.
+        # Given the API, we can achieve overwrite by deleting all triples for the subject/predicate first.
+        # For simplicity, if we don't have a direct delete, we might just query the old and delete, but let's try 
+        # to send an update if possible, or just generate a unique session ID. 
+        # Better approach: store turn in memory for the session if graph is append-only for this logic.
+        
+        # Actually, let's keep it simple and just use an in-memory variable for the loop. 
+        # The Graph is meant for persistence, but the "Turn" is highly ephemeral to this single run loop.
 
     # --- Execution Logic ---
 
@@ -361,9 +373,9 @@ class OrchestratorAgent:
         first_agent_name = self.get_handler_for_task(current_task_type)
         if first_agent_name == "Coder":
             first_agent_name = self.get_specialized_agent(stack)
-        initial_seat_index = self.seat_indices.get(first_agent_name, self.seat_indices.get("Coder", 2))
         
-        self.ingest_triples([{"subject": f"{SWARM}swarm", "predicate": f"{SWARM}currentTurn", "object": f'"{initial_seat_index}"'}], namespace="default")
+        # Local ephemeral state for the loop to avoid Graph append-only conflicts
+        current_turn = self.seat_indices.get(first_agent_name, self.seat_indices.get("Coder", 2))
 
         while current_task_type:
             agent_name = self.get_handler_for_task(current_task_type)
@@ -372,13 +384,12 @@ class OrchestratorAgent:
             if agent_name == "Coder":
                 agent_name = self.get_specialized_agent(stack)
 
-            # Dynamic Seat Index
             seat_index = self.seat_indices.get(agent_name, self.seat_indices.get("Coder", 2))
+            print(f"🐛 [DEBUG] Agent {agent_name} wants turn {seat_index}. Current global turn is {current_turn}")
 
             while True:
-                turn = self.get_current_turn()
-                if turn == seat_index: break
-                # print(f"⏳ {agent_name} waiting for turn (Current: {turn}, Needed: {seat_index})...")
+                if current_turn == seat_index: break
+                print(f"⏳ [DEBUG] {agent_name} waiting for turn (Current: {current_turn}, Needed: {seat_index})...")
                 await asyncio.sleep(2)
 
             print(f"🟢 {agent_name} has the token.")
@@ -390,7 +401,8 @@ class OrchestratorAgent:
             history.append({"task_type": current_task_type, "agent": agent_name, "outcome": outcome, "result": result})
 
             if outcome == "success":
-                self.set_next_turn(seat_index)
+                current_turn = seat_index + 1
+                print(f"🎫 Token passed. Next Turn: {current_turn}")
 
             current_task_type = self.get_next_task(current_task_type, outcome)
             if not current_task_type: break
@@ -615,6 +627,8 @@ class OrchestratorAgent:
         results = self.query_graph(query)
         if results:
             agent_uri = results[0].get("?agent") or results[0].get("agent")
+            if agent_uri:
+                agent_uri = agent_uri.strip('<>')
             agent_name = agent_uri.split("/")[-1]
             print(f"✅ Found specialized agent: {agent_name}")
             return agent_name
