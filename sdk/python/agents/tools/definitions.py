@@ -162,5 +162,22 @@ TOOLS_SCHEMA = [
                 "required": ["url"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "semantic_analysis",
+            "description": "Perform semantic code analysis (symbols/tags) on a file and ingest results into the knowledge base.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "The path to the file to analyze."
+                    }
+                },
+                "required": ["path"]
+            }
+        }
     }
 ]

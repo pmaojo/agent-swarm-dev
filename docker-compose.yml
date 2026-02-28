@@ -46,3 +46,16 @@ services:
       - synapse
       - fastembed
     restart: unless-stopped
+
+  # The Semantic Analysis Engine (GitHub Semantic)
+  semantic:
+    image: ghcr.io/github/semantic:latest
+    volumes:
+      - .:/repo
+    working_dir: /repo
+    entrypoint: ["semantic"]
+    restart: "no" # Runs as a task/one-off or via exec
+
+networks:
+  default:
+    name: swarm_network

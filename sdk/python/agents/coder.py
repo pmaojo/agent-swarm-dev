@@ -10,6 +10,7 @@ import grpc
 import sys
 import time
 import uuid
+import subprocess
 from typing import Dict, Any, Optional, List
 
 # Add path to lib and agents
@@ -132,6 +133,36 @@ class CoderAgent:
             time.sleep(5)
         return {"status": "failure", "error": "Approval timed out."}
 
+    def _tool_file_ops(self, func_name: str, args: Dict) -> Any:
+        if func_name == "read_file": return read_file(args.get("path"))
+        elif func_name == "write_file":
+            path = args.get("path")
+            result = write_file(path, args.get("content"))
+            self.record_artifact(path, args.get("content"))
+            if path not in self.modified_files: self.modified_files.append(path)
+            return result
+        elif func_name == "patch_file":
+            path = args.get("path")
+            result = patch_file(path, args.get("search_content"), args.get("replace_content"))
+            if path not in self.modified_files: self.modified_files.append(path)
+            return result
+        elif func_name == "list_dir": return list_dir(args.get("path", "."))
+        return None
+
+    def _tool_sys_ops(self, func_name: str, args: Dict) -> Any:
+        if func_name == "read_logs": return read_logs(args.get("path"), args.get("lines", 50), args.get("grep"))
+        elif func_name == "execute_command": return execute_command(args.get("command"), args.get("reason"))
+        elif func_name == "semantic_analysis":
+            path = args.get("path")
+            bridge_script = os.path.join(SDK_PYTHON_PATH, "..", "..", "scripts", "semantic_bridge.py")
+            cmd = [sys.executable, bridge_script, path]
+            try:
+                subprocess.run(cmd, capture_output=True, text=True, check=True)
+                return {"status": "success", "message": f"Semantic analysis ingested for {path}"}
+            except Exception as e:
+                return {"status": "failure", "error": f"Semantic bridge failed: {e}"}
+        return None
+
     def execute_tool(self, func_name: str, args: Dict) -> Any:
         """Dispatcher for tool execution."""
         msg = f"🔨 [Coder] Executing tool: {func_name} with args: {args}"
@@ -139,22 +170,13 @@ class CoderAgent:
         report_tool(func_name, args, agent_id="Coder")
         report_thought(f"Initiating {func_name} for mission objectives.", agent_id="Coder")
         try:
-            if func_name == "read_file": return read_file(args.get("path"))
-            elif func_name == "write_file":
-                path = args.get("path")
-                result = write_file(path, args.get("content"))
-                self.record_artifact(path, args.get("content"))
-                if path not in self.modified_files: self.modified_files.append(path)
-                return result
-            elif func_name == "patch_file":
-                path = args.get("path")
-                result = patch_file(path, args.get("search_content"), args.get("replace_content"))
-                if path not in self.modified_files: self.modified_files.append(path)
-                return result
-            elif func_name == "list_dir": return list_dir(args.get("path", "."))
-            elif func_name == "read_logs": return read_logs(args.get("path"), args.get("lines", 50), args.get("grep"))
-            elif func_name == "execute_command": return execute_command(args.get("command"), args.get("reason"))
-            elif func_name == "search_documentation": return self.browser.search_documentation(args.get("query"))
+            res = self._tool_file_ops(func_name, args)
+            if res is not None: return res
+            
+            res = self._tool_sys_ops(func_name, args)
+            if res is not None: return res
+
+            if func_name == "search_documentation": return self.browser.search_documentation(args.get("query"))
             elif func_name == "read_url": return self.browser.read_url(args.get("url"))
             else: return f"Error: Unknown tool '{func_name}'"
         except Exception as e:
