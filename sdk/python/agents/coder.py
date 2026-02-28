@@ -250,12 +250,18 @@ class CoderAgent:
         while step < max_steps:
             try:
                 # Call LLM
-                completion_msg = self.llm.completion(
-                    prompt="",
-                    messages=messages,
-                    tools=TOOLS_SCHEMA,
-                    tool_choice="auto"
-                )
+                try:
+                    completion_msg = self.llm.completion(
+                        prompt="",
+                        messages=messages,
+                        tools=TOOLS_SCHEMA,
+                        tool_choice="auto"
+                    )
+                except Exception as llm_e:
+                    print(f"❌ [Coder] LLM Exception: {llm_e}")
+                    with open("litellm_error.json", "w") as dump_f:
+                        json.dump(messages, dump_f, indent=2)
+                    raise llm_e
 
                 message = completion_msg
                 
