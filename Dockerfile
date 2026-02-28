@@ -12,7 +12,10 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends     curl     git     && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  curl \
+  git \
+  && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements
 COPY requirements.txt .
@@ -27,9 +30,11 @@ COPY scenarios ./scenarios
 COPY swarm_schema.yaml .
 # Ensure we have the latest generated Python files from grpc based on the container's version limit
 COPY synapse-engine/crates/semantic-engine/proto/semantic_engine.proto ./
-RUN python -m grpc_tools.protoc -I. --python_out=./sdk/python/agents/synapse_proto --grpc_python_out=./sdk/python/agents/synapse_proto semantic_engine.proto
-# Ensure commander-dashboard/dist exists for mounting
-RUN mkdir -p commander-dashboard/dist
+RUN python -m grpc_tools.protoc -I. \
+  --python_out=./sdk/python/agents/synapse_proto \
+  --grpc_python_out=./sdk/python/agents/synapse_proto \
+  semantic_engine.proto \
+  && mkdir -p commander-dashboard/dist
 
 # Copy built frontend from Stage 1
 COPY --from=frontend-builder /app/commander-dashboard/dist ./commander-dashboard/dist

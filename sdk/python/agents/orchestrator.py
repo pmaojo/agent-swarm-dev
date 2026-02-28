@@ -353,10 +353,17 @@ class OrchestratorAgent:
 
     async def execute_sequence(self, task: str, stack: str):
         print("🏛️  Mode: COUNCIL (Table Order). Enforcing turn-taking.")
-        self.ingest_triples([{"subject": f"{SWARM}swarm", "predicate": f"{SWARM}currentTurn", "object": '"0"'}], namespace="default")
-
+        
         current_task_type = self.get_initial_task_type()
         history = []
+
+        # Determine the seat index for the first agent to correctly set the initial turn
+        first_agent_name = self.get_handler_for_task(current_task_type)
+        if first_agent_name == "Coder":
+            first_agent_name = self.get_specialized_agent(stack)
+        initial_seat_index = self.seat_indices.get(first_agent_name, self.seat_indices.get("Coder", 2))
+        
+        self.ingest_triples([{"subject": f"{SWARM}swarm", "predicate": f"{SWARM}currentTurn", "object": f'"{initial_seat_index}"'}], namespace="default")
 
         while current_task_type:
             agent_name = self.get_handler_for_task(current_task_type)
