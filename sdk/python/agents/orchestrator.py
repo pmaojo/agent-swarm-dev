@@ -404,6 +404,11 @@ class OrchestratorAgent:
             seat_index = self.seat_indices.get(agent_name, self.seat_indices.get("Coder", 2))
             print(f"🐛 [DEBUG] Agent {agent_name} wants turn {seat_index}. Current global turn is {current_turn}")
 
+            # Fix: Sync turn to seat_index if we are jumping agents (e.g. back to Coder)
+            if current_turn != seat_index:
+                 print(f"🎫 Synchronizing turn: {current_turn} -> {seat_index}")
+                 current_turn = seat_index
+
             while True:
                 if current_turn == seat_index: break
                 print(f"⏳ [DEBUG] {agent_name} waiting for turn (Current: {current_turn}, Needed: {seat_index})...")

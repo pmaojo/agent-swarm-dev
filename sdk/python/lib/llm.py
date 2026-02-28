@@ -297,6 +297,10 @@ class LLMService:
             # Ensure we avoid -latest in v1beta unless absolutely necessary
             if "-latest" in target_model:
                 target_model = target_model.replace("-latest", "")
+            
+            # Use specific stable version for flash to avoid 404
+            if "flash" in target_model and "-001" not in target_model:
+                target_model = target_model.replace("gemini-1.5-flash", "gemini-1.5-flash-001")
         
         # LiteLLM cleanup
         if target_model.endswith("-latest") and "gemini" not in target_model.lower():

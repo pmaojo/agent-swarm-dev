@@ -156,6 +156,10 @@ class ApiSandboxTool:
         logger.info(f"🛠️ Creating API Sandbox for {service_name}...")
 
         # 1. Save spec to temp file
+        # HACK: If spec doesn't have version, add it to avoid Apicentric failure
+        if "openapi:" not in spec_content and "swagger:" not in spec_content:
+            spec_content = "openapi: 3.0.0\n" + spec_content
+        
         spec_path = os.path.join(SANDBOX_DIR, f"{service_name}.openapi.yaml")
         with open(spec_path, "w") as f:
             f.write(spec_content)
