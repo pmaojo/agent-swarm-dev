@@ -69,10 +69,7 @@ class CoderAgent:
 
     def check_skill_unlocked(self, skill_id: str) -> bool:
         """Check if the agent has unlocked a specific skill in Synapse."""
-        if not self.stub: return True # Default allow if Synapse down (or fail safe?) - User said "Humilde", so maybe fail?
-        # Let's default to False for strict mode, but True for now to avoid blocking basic dev if graph empty.
-        # User guideline: "Strictly in Graph". So default False if connected.
-
+        if not self.stub: return True
         query = f"""
         PREFIX swarm: <{SWARM}>
         ASK WHERE {{
@@ -81,8 +78,6 @@ class CoderAgent:
         """
         try:
             res = self.stub.QuerySparql(semantic_engine_pb2.SparqlRequest(query=query, namespace="default"))
-            # Parse boolean
-            # Assuming JSON response like {"boolean": true}
             data = json.loads(res.results_json)
             if isinstance(data, dict): return data.get("boolean", False)
             return False
@@ -92,22 +87,13 @@ class CoderAgent:
     def record_artifact(self, filename: str, content: str = "Modified via Tool"):
         """Record the generated artifact in Synapse."""
         if not self.stub: return
-
         subject = f"{SWARM}artifact/code/{int(time.time())}_{os.path.basename(filename)}"
         triples = [
             {"subject": subject, "predicate": f"{SWARM}type", "object": f"{SWARM}ArtifactType"},
             {"subject": subject, "predicate": f"{SWARM}description", "object": f'"{content}"'},
             {"subject": subject, "predicate": f"{SWARM}hasProperty", "object": f"{SWARM}prop/path/{filename}"},
         ]
-
-        pb_triples = []
-        for t in triples:
-            pb_triples.append(semantic_engine_pb2.Triple(
-                subject=t["subject"],
-                predicate=t["predicate"],
-                object=t["object"]
-            ))
-
+        pb_triples = [semantic_engine_pb2.Triple(subject=t["subject"], predicate=t["predicate"], object=t["object"]) for t in triples]
         try:
             self.stub.IngestTriples(semantic_engine_pb2.IngestRequest(triples=pb_triples, namespace=self.namespace))
         except Exception as e:
@@ -116,23 +102,13 @@ class CoderAgent:
     def record_negotiation(self, reviewer_agent: Any, execution_uuid: str):
         """Record P2P negotiation triple."""
         if not self.stub: return
-
         coder_uri = f"{SWARM}agent/Coder"
         reviewer_uri = f"{SWARM}agent/{reviewer_agent.__class__.__name__}" if reviewer_agent else f"{SWARM}agent/Reviewer"
-
         triples = [
             {"subject": coder_uri, "predicate": f"{SWARM}negotiatedWith", "object": reviewer_uri},
             {"subject": execution_uuid, "predicate": f"{SWARM}involvedInNegotiation", "object": coder_uri}
         ]
-
-        pb_triples = []
-        for t in triples:
-             pb_triples.append(semantic_engine_pb2.Triple(
-                subject=t["subject"],
-                predicate=t["predicate"],
-                object=t["object"]
-            ))
-
+        pb_triples = [semantic_engine_pb2.Triple(subject=t["subject"], predicate=t["predicate"], object=t["object"]) for t in triples]
         try:
             self.stub.IngestTriples(semantic_engine_pb2.IngestRequest(triples=pb_triples, namespace=self.namespace))
             print(f"🔗 [Coder] Recorded negotiation with Reviewer (Execution: {execution_uuid})")
@@ -141,15 +117,11 @@ class CoderAgent:
 
     def wait_for_approval(self, cmd_uuid: str, command: str) -> Dict[str, Any]:
         """Poll Synapse for command approval."""
-        report_thought(f"COMMAND_SUSPENDED: Waiting for authorization on '{command}'")
+        report_thought(f"COMMAND_SUSPENDED: Waiting for authorization on '{command}'", agent_id="Coder")
         print(f"⏳ [Coder] Waiting for approval for: '{command}' (UUID: {cmd_uuid})")
-        print("   -> Reply via Telegram: /approve <UUID>")
-
         guard = CommandGuard()
         start_time = time.time()
-        timeout = 600 # 10 minutes timeout
-
-        while time.time() - start_time < timeout:
+        while time.time() - start_time < 600:
             status = guard.check_status(cmd_uuid)
             if status == "APPROVED":
                 print("✅ [Coder] Command APPROVED. Resuming execution...")
@@ -157,9 +129,7 @@ class CoderAgent:
             elif status == "REJECTED":
                 print("⛔ [Coder] Command REJECTED by user.")
                 return {"status": "failure", "error": "Command rejected by user."}
-
-            time.sleep(5) # Poll every 5s
-
+            time.sleep(5)
         return {"status": "failure", "error": "Approval timed out."}
 
     def execute_tool(self, func_name: str, args: Dict) -> Any:
@@ -168,10 +138,8 @@ class CoderAgent:
         print(msg)
         report_tool(func_name, args, agent_id="Coder")
         report_thought(f"Initiating {func_name} for mission objectives.", agent_id="Coder")
-
         try:
-            if func_name == "read_file":
-                return read_file(args.get("path"))
+            if func_name == "read_file": return read_file(args.get("path"))
             elif func_name == "write_file":
                 path = args.get("path")
                 result = write_file(path, args.get("content"))
@@ -183,123 +151,40 @@ class CoderAgent:
                 result = patch_file(path, args.get("search_content"), args.get("replace_content"))
                 if path not in self.modified_files: self.modified_files.append(path)
                 return result
-            elif func_name == "list_dir":
-                return list_dir(args.get("path", "."))
-            elif func_name == "read_logs":
-                return read_logs(args.get("path"), args.get("lines", 50), args.get("grep"))
-            elif func_name == "execute_command":
-                return execute_command(args.get("command"), args.get("reason"))
-            elif func_name == "search_documentation":
-                return self.browser.search_documentation(args.get("query"))
-            elif func_name == "read_url":
-                return self.browser.read_url(args.get("url"))
-            else:
-                return f"Error: Unknown tool '{func_name}'"
+            elif func_name == "list_dir": return list_dir(args.get("path", "."))
+            elif func_name == "read_logs": return read_logs(args.get("path"), args.get("lines", 50), args.get("grep"))
+            elif func_name == "execute_command": return execute_command(args.get("command"), args.get("reason"))
+            elif func_name == "search_documentation": return self.browser.search_documentation(args.get("query"))
+            elif func_name == "read_url": return self.browser.read_url(args.get("url"))
+            else: return f"Error: Unknown tool '{func_name}'"
         except Exception as e:
             return f"Error executing tool '{func_name}': {e}"
 
-    def generate_code_with_verification(self, task: str, context: Optional[Dict] = None) -> Dict[str, Any]:
-        """
-        Main Agent Loop using Tool Calling.
-        """
-        # Skill Check: TDD Level 2
+    def _check_skills(self, task: str) -> str:
+        """Check for required skills and modify task if locked."""
         if "TDD" in task.upper() or "TEST DRIVEN" in task.upper():
             if not self.check_skill_unlocked("tdd-level-2"):
                 print("🔒 [Coder] Skill 'TDD Level 2' is LOCKED. Performing basic implementation instead.")
-                # We don't halt, but we might adjust the prompt or just warn.
-                # User said: "before attempting TDD Level 2... check".
-                # If locked, maybe we append a constraint to the prompt?
-                task += "\n[CONSTRAINT: TDD Level 2 is LOCKED. Do not use advanced mocking patterns.]"
-            else:
-                print("🔓 [Coder] Skill 'TDD Level 2' UNLOCKED. Advanced testing enabled.")
+                return task + "\n[CONSTRAINT: TDD Level 2 is LOCKED. Do not use advanced mocking patterns.]"
+            print("🔓 [Coder] Skill 'TDD Level 2' UNLOCKED. Advanced testing enabled.")
+        return task
 
-        # Expand Context using Smart Context Parser
-        task_with_context = self.context_parser.expand_context(task)
-
-        print(f"🧠 [Coder] Starting Task: {task[:50]}...")
-        report_event(EventType.MISSION_ASSIGNED, f"Coder starting task: {task[:50]}...", details={"task": task})
-
+    def _prepare_mission_messages(self, task: str, context: Optional[Dict]) -> List[Dict]:
+        """Construct the initial message list for the LLM."""
         system_prompt = """
         You are a Tactical Software Engineer Agent (CoderAgent).
-        You have direct access to the filesystem, shell, and internet (via BrowserTool).
-
-        Your Goal: Implement the requested feature or fix completely.
-
-        Guidelines:
-        1. EXPLORE FIRST: Use `list_dir` and `read_file` to understand the codebase.
-        2. SMART CONTEXT: If you see @file:path in the prompt, the content is already provided below.
-        3. RESEARCH: If you encounter an error or need documentation, use `search_documentation` and `read_url`. Do not guess.
-        4. SURGICAL EDITS: Use `patch_file` for partial edits. Only use `write_file` for new files or complete rewrites.
-        5. TAGGING SKILL: When you discover a new constraint or best practice, add a comment in the code:
-           `// @synapse:constraint Always use X for Y`
-           This helps the Swarm learn.
-        6. TEST DRIVEN: Create or update tests. Verify with `pytest` or `npm test`.
-        7. SAFETY: Dangerous commands (rm, npm install) require approval.
-
-        When you are confident the task is complete and VERIFIED, return a final text summary.
+        Guidelines: EXPLORE FIRST, SMART CONTEXT, RESEARCH, SURGICAL EDITS, TAGGING SKILL, TEST DRIVEN, SAFETY.
+        When complete and VERIFIED, return a final text summary.
         """
-
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"Task: {task_with_context}"}
+            {"role": "user", "content": f"Task: {self.context_parser.expand_context(task)}"}
         ]
-
-        # Add history from context if available
         if context and context.get("history"):
-            hist_msg = "History of previous attempts:\n"
-            for h in context["history"]:
-                hist_msg += f"- {h.get('outcome')}: {json.dumps(h.get('result', {}))}\n"
+            hist_msg = "History:\n" + "\n".join([f"- {h.get('outcome')}: {json.dumps(h.get('result', {}))}" for h in context["history"]])
             messages.append({"role": "user", "content": hist_msg})
             report_thought("Analyzing previous mission attempts for context.", agent_id="Coder")
-
-        max_steps = 20 # Limit tool steps
-        step = 0
-
-        while step < max_steps:
-                try:
-                    # Call LLM
-                    try:
-                        message_response = self.llm.completion(
-                            prompt="",
-                            messages=messages,
-                            tools=TOOLS_SCHEMA,
-                            tool_choice="auto"
-                        )
-                    except Exception as llm_e:
-                        print(f"❌ [Coder] LLM Exception: {llm_e}")
-                        with open("litellm_error.json", "w") as dump_f:
-                            json.dump(messages, dump_f, indent=2)
-                        raise llm_e
-
-                    if hasattr(message_response, "content") and message_response.content:
-                        report_thought(message_response.content, agent_id="Coder")
-
-                    # IMPORTANT: Keep the assistant message in LiteLLM's native Message object format 
-                    # (or convert to dict but preserve the exact `tool_calls` objects) so it can translate 
-                    # back to Gemini's `functionCall` properly when we make the next call.
-                    messages.append(message_response.model_dump() if hasattr(message_response, "model_dump") else message_response)
-
-                    # Process Tool Calls
-                    tool_calls = getattr(message_response, "tool_calls", None)
-                    if tool_calls:
-                        tool_responses = self._process_tool_calls(tool_calls)
-                        messages.extend(tool_responses)
-
-                        # Check for HALT
-                        halt = self._should_halt(tool_responses)
-                        if halt: return halt
-                    else:
-                        content = message_response.content if hasattr(message_response, "content") else str(message_response)
-                        print("🏁 [Coder] Finished.")
-                        return {"status": "success", "result": content, "saved_files": self.modified_files}
-
-                    step += 1
-
-                except Exception as e:
-                    print(f"❌ [Coder] Error in loop: {e}")
-                    return {"status": "failure", "error": str(e)}
-
-        return {"status": "failure", "error": "Max steps exceeded"}
+        return messages
 
     def _process_tool_calls(self, tool_calls) -> List[Dict]:
         """Execute a list of tool calls and return responses."""
@@ -310,27 +195,47 @@ class CoderAgent:
                 args = json.loads(tool_call.function.arguments)
             except json.JSONDecodeError:
                 args = {}
-
             report_thought(f"Executing tool call: {func_name}", agent_id="Coder")
             result = self.execute_tool(func_name, args)
+            if isinstance(result, dict) and result.get("status") == "pending_approval":
+                result = self.wait_for_approval(result.get("uuid"), command=args.get('command'))
             report_thought(f"Tool {func_name} returned status: {result.get('status') if isinstance(result, dict) else 'success'}", agent_id="Coder")
-            
             responses.append({
-                "tool_call_id": tool_call.id,
-                "role": "tool",
-                "name": func_name,
-                "content": json.dumps(result) if not isinstance(result, str) else result
+                "tool_call_id": tool_call.id, "role": "tool", "name": func_name,
+                "content": json.dumps(result) if isinstance(result, (dict, list)) else str(result)
             })
-    def _should_halt(self, responses: List[Dict]) -> Optional[Dict]:
-        for resp in responses:
-            if "SYSTEM_HALTED" in resp["content"]:
-                return {"status": "failure", "error": f"System Halted: {resp['content']}"}
-        return None
+        return responses
 
+    def generate_code_with_verification(self, task: str, context: Optional[Dict] = None) -> Dict[str, Any]:
+        """Main Agent Loop using Tool Calling."""
+        task = self._check_skills(task)
+        messages = self._prepare_mission_messages(task, context)
+        print(f"🧠 [Coder] Starting Task: {task[:50]}...")
+        report_event(EventType.MISSION_ASSIGNED, f"Coder starting task: {task[:50]}...", details={"task": task})
+        max_steps = 20
+        step = 0
+        while step < max_steps:
+            try:
+                message_response = self.llm.completion(prompt="", messages=messages, tools=TOOLS_SCHEMA, tool_choice="auto")
+                if hasattr(message_response, "content") and message_response.content:
+                    report_thought(message_response.content, agent_id="Coder")
+                messages.append(message_response.model_dump() if hasattr(message_response, "model_dump") else message_response)
+                if hasattr(message_response, "tool_calls") and message_response.tool_calls:
+                    tool_responses = self._process_tool_calls(message_response.tool_calls)
+                    for resp in tool_responses:
+                        if "SYSTEM_HALTED" in resp["content"]: return {"status": "failure", "error": f"System Halted: {resp['content']}"}
+                        messages.append(resp)
+                        step += 1
+                else:
+                    content = message_response.content if hasattr(message_response, "content") else str(message_response)
+                    print("🏁 [Coder] Finished.")
+                    return {"status": "success", "result": content, "saved_files": self.modified_files}
+            except Exception as e:
+                print(f"❌ [Coder] Error in loop: {e}")
+                return {"status": "failure", "error": str(e)}
+        return {"status": "failure", "error": "Max steps exceeded"}
 
     def research_stack(self, stack: str) -> List[str]:
-        # Reuse existing research logic but maybe using tools?
-        # For now keep legacy JSON mode for research as it's pure knowledge query.
         print(f"🔎 [Coder] Researching stack: {stack}...")
         system_prompt = "You are a Senior Tech Lead. Identify top 5 best practices for this stack. Return JSON: {'principles': []}."
         try:
@@ -341,74 +246,35 @@ class CoderAgent:
             return []
 
     def negotiate(self, task: str, reviewer_agent: Any, context: Dict) -> Dict[str, Any]:
-        """
-        P2P Negotiation Loop with Reviewer.
-        Delegated by Orchestrator.
-        """
         print("🤝 [Coder] Starting P2P Negotiation Session with Reviewer...")
-        max_negotiations = 3
-        negotiation_count = 0
-        execution_uuid = str(uuid.uuid4()) # Traceability for this session
-
-        while negotiation_count < max_negotiations:
-            # 1. Generate & Self-Verify (Using Tool Loop)
+        max_negotiations, negation_count = 3, 0
+        execution_uuid = str(uuid.uuid4())
+        while negation_count < max_negotiations:
             result = self.generate_code_with_verification(task, context)
-
-            if result.get("status") == "failure":
-                 # Failed self-correction, return failure
-                 return result
-
-            # 2. Update Context for Reviewer
-            step_record = {
-                "agent": "Coder",
-                "outcome": "success",
-                "result": result, # Now text summary
-                "negotiation_round": negotiation_count
-            }
-            context["history"] = context.get("history", []) + [step_record]
-
-            # 3. Call Reviewer (Directly)
-            print(f"📨 [Coder] Sending code to Reviewer (Round {negotiation_count+1})...")
+            if result.get("status") == "failure": return result
+            context["history"] = context.get("history", []) + [{
+                "agent": "Coder", "outcome": "success", "result": result, "negotiation_round": negation_count
+            }]
+            print(f"📨 [Coder] Sending code to Reviewer (Round {negation_count+1})...")
             self.record_negotiation(reviewer_agent, execution_uuid)
-
             review_result = reviewer_agent.run(task, context)
-
-            outcome = review_result.get("status")
-            if outcome == "success":
+            if review_result.get("status") == "success":
                 print("✅ [Coder] Reviewer Approved!")
-                return {
-                    "status": "success",
-                    "final_result": result,
-                    "review": review_result,
-                    "negotiations": negotiation_count + 1
-                }
-
-            # 4. Handle Rejection
+                return {"status": "success", "final_result": result, "review": review_result, "negotiations": negation_count + 1}
             issues = review_result.get("issues", [])
             print(f"🛑 [Coder] Reviewer Rejected: {issues}")
-            task = f"{task}\n\nReviewer Feedback (Round {negotiation_count+1}):\n" + "\n".join(issues)
-            negotiation_count += 1
-
-        return {
-            "status": "failure",
-            "error": "Max negotiation rounds exhausted",
-            "last_feedback": issues
-        }
+            task = f"{task}\n\nReviewer Feedback (Round {negation_count+1}):\n" + "\n".join(issues)
+            negation_count += 1
+        return {"status": "failure", "error": "Max negotiation rounds exhausted", "last_feedback": issues}
 
     def run(self, task: str, context: Optional[Dict] = None) -> Dict[str, Any]:
-        report_thought(f"ANALYZING_MISSION: {task}")
+        report_thought(f"ANALYZING_MISSION: {task}", agent_id="Coder")
         result = self.generate_code_with_verification(task, context)
-        
         if "error" not in result:
-             report_thought("MISSION_SUCCESS: Protocol completed. Results deployed.")
+             report_thought("MISSION_SUCCESS: Protocol completed. Results deployed.", agent_id="Coder")
         else:
-             report_thought("NODE_ERROR: Protocol failed. Energy leakage detected.")
-
-        return {
-            "status": "success" if "error" not in result else "failure",
-            "task": task,
-            "result": result
-        }
+             report_thought("NODE_ERROR: Protocol failed. Energy leakage detected.", agent_id="Coder")
+        return {"status": "success" if "error" not in result else "failure", "task": task, "result": result}
 
 if __name__ == "__main__":
     task = " ".join(sys.argv[1:]) if len(sys.argv) > 1 else "List current directory"
