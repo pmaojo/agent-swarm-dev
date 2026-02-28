@@ -53,8 +53,13 @@ class LLMService:
 
         self.api_key = os.getenv("GEMINI_API_KEY") or os.getenv("OPENAI_API_KEY")
         self.model = os.getenv("LLM_MODEL", "gemini/gemini-flash-latest")
-        self.fallback_models = ["openrouter/minimax/minimax-01"] # Fallback to Minimax M2.5 (free)
-
+        # Configure Fallbacks (Ordered by preference)
+        self.fallback_models = [
+            "openrouter/google/gemma-2-9b-it:free",
+            "openrouter/meta-llama/llama-3.1-8b-instruct:free",
+            "ollama/deepseek-r1:4b",
+            "ollama/qwen3:4b"  # Most stable local model
+        ]
         if self.mock_mode:
             logger.info("🤖 LLMService initialized in MOCK MODE.")
         else:
@@ -299,15 +304,19 @@ class LLMService:
                 if not target_model.startswith("gemini/"):
                     target_model = f"gemini/{target_model}"
             
-            # Map OpenRouter fallback properly
+            # Map fallback properly with explicit keys
             processed_fallbacks = []
             for m in self.fallback_models:
+                fallback_dict = {"model": m}
                 if m.startswith("openrouter/"):
-                    processed_fallbacks.append(m)
-                else:
-                    processed_fallbacks.append(f"openrouter/{m}")
+                    fallback_dict["api_key"] = os.getenv("OPENROUTER_API_KEY")
+                elif "/" not in m:
+                    fallback_dict["model"] = f"openrouter/{m}"
+                    fallback_dict["api_key"] = os.getenv("OPENROUTER_API_KEY")
+                processed_fallbacks.append(fallback_dict)
 
             # Use LiteLLM's completion with native fallback support
+            # We explicitly map the main model's API key, and give openrouter fallbacks their own keys via the dict.
             response = completion(
                 model=target_model,
                 messages=messages,

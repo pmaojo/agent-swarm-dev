@@ -265,20 +265,10 @@ class CoderAgent:
 
                 message = completion_msg
                 
-                # Standardize the assistant's tool call message into strictly OpenAI spec for LiteLLM
-                msg_dict = {"role": "assistant", "content": message.content or ""}
-                if hasattr(message, "tool_calls") and message.tool_calls:
-                    msg_dict["tool_calls"] = []
-                    for t in message.tool_calls:
-                        msg_dict["tool_calls"].append({
-                            "id": t.id,
-                            "type": "function",
-                            "function": {
-                                "name": t.function.name,
-                                "arguments": t.function.arguments
-                            }
-                        })
-                messages.append(msg_dict)
+                # IMPORTANT: Keep the assistant message in LiteLLM's native Message object format 
+                # (or convert to dict but preserve the exact `tool_calls` objects) so it can translate 
+                # back to Gemini's `functionCall` properly when we make the next call.
+                messages.append(message.model_dump() if hasattr(message, "model_dump") else message)
 
                 if message.tool_calls:
                     for tool_call in message.tool_calls:
@@ -303,14 +293,13 @@ class CoderAgent:
                             result = self.wait_for_approval(uuid_val, command=args.get('command'))
 
                         # Feed back result
-                        # Gemini requires the tool response to be a valid JSON object string. 
-                        # LiteLLM wants "content" to be a string that parses as JSON.
-                        safe_result_dict = {"result": result} if not isinstance(result, (dict, list)) else result
+                        # For LiteLLM -> Gemini, the content must be a string containing the result.
+                        # LiteLLM internally maps {"role": "tool", "content": "..."} to `functionResponse.response`
                         messages.append({
                             "role": "tool",
                             "tool_call_id": tool_call.id,
                             "name": func_name,
-                            "content": json.dumps(safe_result_dict)
+                            "content": json.dumps(result) if isinstance(result, (dict, list)) else str(result)
                         })
                 else:
                     content = message.content
