@@ -287,6 +287,26 @@ pub async fn post_mission_assign(
     State(state): State<AppState>,
     Json(mission): Json<MissionAssignment>,
 ) -> Json<ControlCommandAck> {
+    let task_id = uuid::Uuid::new_v4().to_string();
+    let task_uri = format!("http://swarm.os/tasks/{}", task_id);
+    let agent_uri = if mission.agent_id.is_empty() {
+        "http://swarm.os/agents/Coder".to_string()
+    } else {
+        mission.agent_id.clone()
+    };
+
+    let title_lit = format!("\"{}\"", mission.task);
+    let agent_ref = format!("<{}>", agent_uri);
+
+    let triples = vec![
+        (task_uri.as_str(), "http://www.w3.org/1999/02/22-rdf-syntax-ns#type", "http://swarm.os/ontology/Task"),
+        (task_uri.as_str(), "http://swarm.os/ontology/title", title_lit.as_str()),
+        (task_uri.as_str(), "http://swarm.os/ontology/internalState", "\"REQUIREMENTS\""),
+        (task_uri.as_str(), "http://swarm.os/ontology/assignedTo", agent_ref.as_str()),
+    ];
+
+    let _ = state.synapse.ingest(triples).await;
+
     let command = ControlCommand {
         command: crate::server::contracts::ControlCommandType::AssignMission,
         actor: "swarmd".to_string(),

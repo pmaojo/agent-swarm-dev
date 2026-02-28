@@ -21,6 +21,8 @@ venv/
 
 # Data
 synapse-data/
+data/graphs/
+.fastembed_cache/
 
 # Tools
 protoc/

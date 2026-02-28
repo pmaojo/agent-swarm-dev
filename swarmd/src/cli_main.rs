@@ -90,6 +90,24 @@ impl App {
             ActivePanel::Actions => ActivePanel::Input,
         };
     }
+
+    fn handle_input(&mut self, input: String, command_tx: &mpsc::Sender<String>) {
+        let normalized = input.trim().to_lowercase();
+        if normalized == "hello" || normalized == "hola" {
+            self.add_message("[SYSTEM] Neural link established. Hello, Operator.".to_string());
+        } else if normalized == "status" {
+            let status = if self.connected { "SECURE" } else { "SEVERED" };
+            self.add_message(format!("[SYSTEM] Core telemetry: {}", status));
+        } else if normalized == "mission" || normalized == "launch" {
+            self.add_message("[SYSTEM] Mission protocols identified. Use ACTION matrix to execute.".to_string());
+        } else if normalized == "help" {
+            self.add_message("[SYSTEM] Available: hello, status, mission, help, or any command to assign a mission".to_string());
+        } else {
+            // Send as a real mission
+            self.add_message(format!("[SYSTEM] Assigning mission: {}", input));
+            let _ = command_tx.try_send(input);
+        }
+    }
 }
 
 #[tokio::main]
@@ -103,11 +121,38 @@ async fn main() -> Result<()> {
 
     // Setup WebSocket communication
     let (tx, mut rx) = mpsc::channel(100);
+    let (command_tx, mut command_rx) = mpsc::channel(10);
     let (status_tx, mut status_rx) = mpsc::channel(1);
 
     tokio::spawn(async move {
         let url = "ws://127.0.0.1:18792/api/v1/events/combat/stream";
+        let client = reqwest::Client::new();
+        
         loop {
+            // Check for outgoing commands
+            while let Ok(cmd) = command_rx.try_recv() {
+                if cmd == "LAUNCH MISSION" {
+                    let _ = client.post("http://127.0.0.1:18792/api/v1/mission/assign")
+                        .json(&serde_json::json!({
+                            "agent_id": "http://swarm.os/agents/Coder",
+                            "repo_id": "root",
+                            "task": "Scan and analyze neural nodes"
+                        }))
+                        .send()
+                        .await;
+                } else {
+                    // Regular command from TUI input
+                    let _ = client.post("http://127.0.0.1:18792/api/v1/mission/assign")
+                        .json(&serde_json::json!({
+                            "agent_id": "http://swarm.os/agents/Coder",
+                            "repo_id": "root",
+                            "task": cmd
+                        }))
+                        .send()
+                        .await;
+                }
+            }
+
             match connect_async(url).await {
                 Ok((mut ws_stream, _)) => {
                     let _ = status_tx.send(true).await;
@@ -138,7 +183,7 @@ async fn main() -> Result<()> {
     // create app and run it
     let tick_rate = Duration::from_millis(50);
     let mut app = App::new();
-    let res = run_app(&mut terminal, &mut app, tick_rate, &mut rx, &mut status_rx).await;
+    let res = run_app(&mut terminal, &mut app, tick_rate, &mut rx, &mut status_rx, command_tx).await;
 
     // restore terminal
     disable_raw_mode()?;
@@ -162,6 +207,7 @@ async fn run_app<B: Backend>(
     tick_rate: Duration,
     rx: &mut mpsc::Receiver<String>,
     status_rx: &mut mpsc::Receiver<bool>,
+    command_tx: mpsc::Sender<String>,
 ) -> io::Result<()> {
     let mut last_tick = Instant::now();
     loop {
@@ -180,11 +226,14 @@ async fn run_app<B: Backend>(
                     KeyCode::Backspace if app.active_panel == ActivePanel::Input => { app.input.pop(); },
                     KeyCode::Enter => {
                         if app.active_panel == ActivePanel::Input && !app.input.is_empty() {
-                            app.add_message(format!("[USER] {}", app.input));
+                            let input = app.input.clone();
+                            app.add_message(format!("[USER] {}", input));
+                            app.handle_input(input, &command_tx);
                             app.input.clear();
                         } else if app.active_panel == ActivePanel::Actions {
                             let action = app.actions[app.action_index].clone();
                             app.add_message(format!("[SYSTEM] Executing: {}", action));
+                            let _ = command_tx.try_send(action);
                         }
                     },
                     KeyCode::Up => {
@@ -230,9 +279,9 @@ async fn run_app<B: Backend>(
         while let Ok(connected) = status_rx.try_recv() {
             app.connected = connected;
             if connected {
-                app.add_message("System link established.".to_string());
-            } else {
-                app.add_message("System link severed. Retrying...".to_string());
+                app.add_message("[ONLINE] Neural link established.".to_string());
+            } else if app.frame_count % 100 == 0 { // Don't spam
+                app.add_message("[OFFLINE] Neural link severed. Retrying...".to_string());
             }
         }
 

@@ -41,7 +41,7 @@ SWARM = "http://swarm.os/ontology/"
 class CoderAgent:
     def __init__(self):
         self.grpc_host = os.getenv("SYNAPSE_GRPC_HOST", "localhost")
-        self.grpc_port = int(os.getenv("SYNAPSE_GRPC_PORT", "50051"))
+        self.grpc_port = int(os.getenv("SYNAPSE_GRPC_PORT", "50054"))
         self.namespace = "default"
         self.llm = LLMService()
         self.channel = None
@@ -141,6 +141,7 @@ class CoderAgent:
 
     def wait_for_approval(self, cmd_uuid: str, command: str) -> Dict[str, Any]:
         """Poll Synapse for command approval."""
+        report_thought(f"COMMAND_SUSPENDED: Waiting for authorization on '{command}'")
         print(f"⏳ [Coder] Waiting for approval for: '{command}' (UUID: {cmd_uuid})")
         print("   -> Reply via Telegram: /approve <UUID>")
 
@@ -385,7 +386,14 @@ class CoderAgent:
         }
 
     def run(self, task: str, context: Optional[Dict] = None) -> Dict[str, Any]:
+        report_thought(f"ANALYZING_MISSION: {task}")
         result = self.generate_code_with_verification(task, context)
+        
+        if "error" not in result:
+             report_thought(f"MISSION_SUCCESS: Protocol completed. Results deployed.")
+        else:
+             report_thought(f"NODE_ERROR: Protocol failed. Energy leakage detected.")
+
         return {
             "status": "success" if "error" not in result else "failure",
             "task": task,
