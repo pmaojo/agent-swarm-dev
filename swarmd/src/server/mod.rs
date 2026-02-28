@@ -33,6 +33,7 @@ pub async fn start_server(port: u16, synapse: SynapseClient, event_tx: broadcast
         .route("/api/v1/events", post(routes::post_event))
         .route("/api/v1/mission/assign", post(routes::post_mission_assign))
         .route("/api/v1/knowledge-tree/nodes", post(routes::post_knowledge_tree_node))
+        .route("/api/v1/knowledge-tree/:node_id/docs", get(routes::get_knowledge_node_documentation))
         .route("/api/v1/events/combat/stream", get(routes::ws_handler))
         .fallback_service(tower_http::services::ServeDir::new("commander-dashboard/dist/"))
         .with_state(state);

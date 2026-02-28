@@ -7,7 +7,7 @@ mod discovery;
 mod chaos;
 
 use anyhow::Result;
-use tracing::{info, error};
+use tracing::info;
 use tokio::sync::{mpsc, broadcast};
 
 #[tokio::main]

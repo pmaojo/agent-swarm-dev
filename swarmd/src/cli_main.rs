@@ -6,13 +6,13 @@ use crossterm::{
 };
 use ratatui::{
     backend::{Backend, CrosstermBackend},
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Span, Line},
-    widgets::{Block, Borders, Paragraph, List, ListItem, ListState, Clear},
+    widgets::{Block, Borders, Paragraph, List, ListItem, ListState},
     Frame, Terminal,
 };
-use std::{io, time::{Duration, Instant}, panic};
+use std::{io, time::{Duration, Instant}};
 use tokio::sync::mpsc;
 
 // Cleanup function to restore terminal on exit/crash
@@ -164,6 +164,7 @@ impl App {
         };
     }
 
+    #[allow(dead_code)]
     fn handle_action(&mut self, action: &str) -> String {
         // Handle real actions via HTTP API
         match action {

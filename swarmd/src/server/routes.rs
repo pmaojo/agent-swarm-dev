@@ -5,15 +5,14 @@ use axum::{
 };
 use serde::Deserialize;
 use chrono::Utc;
-use tracing::{info, warn};
-use tokio::sync::broadcast;
+use tracing::info;
 
 use crate::server::contracts::{
-    ActiveQuest, AuditRecord, CommandPhase, ControlCommand, ControlCommandAck, CountryState,
+    AuditRecord, CommandPhase, ControlCommand, ControlCommandAck, CountryState,
     DailyBudget, EventAck, GatewayEvent, GameState, GraphData, GraphEdge, GraphEdgeData,
     GraphElements, GraphNode, GraphNodeData, GraphTriple, IngestKnowledgeNodeResponse,
     KnowledgeNode, KnowledgeNodeCost, KnowledgeNodeDocumentationResponse, KnowledgeNodeIngestRequest,
-    MissionAssignment, PartyMember, PartyStats, PolicyApprovalStatus, QuestStatus, RepositoryState,
+    MissionAssignment, PartyMember, PartyStats, PolicyApprovalStatus, RepositoryState,
     ServiceHealth, ServiceState, SystemStatus,
 };
 use crate::server::AppState;
@@ -94,6 +93,32 @@ pub async fn get_game_state(State(state): State<AppState>) -> Json<GameState> {
         serde_json::json!({})
     };
 
+    // Load Repositories from JSON file
+    let repo_path = std::path::Path::new("sdk/python/data/repositories.json");
+    let repositories: Vec<RepositoryState> = if let Ok(content) = std::fs::read_to_string(repo_path) {
+        if let Ok(repo_doc) = serde_json::from_str::<serde_json::Value>(&content) {
+            repo_doc.get("repositories")
+                .and_then(|r| r.as_array())
+                .map(|arr| {
+                    arr.iter().filter_map(|r| {
+                        Some(RepositoryState {
+                            id: r.get("id")?.as_str()?.to_string(),
+                            name: r.get("name")?.as_str()?.to_string(),
+                            swarm: r.get("swarm")
+                                .and_then(|s| s.as_array())
+                                .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                                .unwrap_or_default(),
+                        })
+                    }).collect()
+                })
+                .unwrap_or_default()
+        } else {
+            vec![]
+        }
+    } else {
+        vec![]
+    };
+
     Json(GameState {
         system_status: current_status.clone(),
         selected_character_id: char_doc.selected_character_id,
@@ -106,7 +131,7 @@ pub async fn get_game_state(State(state): State<AppState>) -> Json<GameState> {
         party,
         active_quests: vec![],
         fog_map,
-        repositories: vec![],
+        repositories,
         countries: build_countries(&current_status),
         knowledge_tree: build_knowledge_tree(),
         sovereign_controls: PolicyApprovalStatus {

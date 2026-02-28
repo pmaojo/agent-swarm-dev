@@ -1,5 +1,4 @@
 use anyhow::Result;
-use dotenvy::dotenv;
 use serde::Deserialize;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -16,7 +15,6 @@ pub struct AppConfig {
     pub trello_api_key: Option<String>,
     pub trello_token: Option<String>,
     pub trello_board_id: Option<String>,
-    pub trello_mock_mode: bool,
 }
 
 impl AppConfig {
@@ -44,9 +42,6 @@ impl AppConfig {
             trello_api_key: std::env::var("TRELLO_API_KEY").ok(),
             trello_token: std::env::var("TRELLO_TOKEN").ok(),
             trello_board_id: std::env::var("TRELLO_BOARD_ID").ok(),
-            trello_mock_mode: std::env::var("TRELLO_MOCK_MODE")
-                .map(|v| v.to_lowercase() == "true" || v == "1")
-                .unwrap_or(false),
         })
     }
 }

@@ -1,5 +1,5 @@
 use crate::synapse::SynapseClient;
-use tracing::{info, error};
+use tracing::info;
 
 pub async fn discover_repositories(synapse: &SynapseClient, _project_root: &str) {
     info!("🌍 Starting Geopolitical Discovery (Repositories as Countries)...");

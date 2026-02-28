@@ -3,6 +3,8 @@
 # 1. Ensure Synapse is built (Light Version)
 # 2. FastEmbed server (port 11434)
 # 3. Synapse (port 50051)
+# 4. Swarmd Gateway (port 18789)
+# 5. Swarm CLI (TUI)
 
 set -e
 
@@ -52,21 +54,31 @@ else
     echo "✅ Synapse already running on $SYNAPSE_PORT"
 fi
 
-# 4. Start Unified Swarmd Orchestrator
-if ! pgrep -f "swarmd" > /dev/null; then
-    echo "▶️  Starting Swarm Orchestrator (swarmd)..."
-    # Ensure swarmd is built
-    if [ ! -f "$PROJECT_DIR/target/release/swarmd" ]; then
-        echo "🔨 Building swarmd..."
-        cargo build --release -p swarmd > /dev/null 2>&1
-    fi
-    nohup ./target/release/swarmd > swarmd.log 2>&1 &
+# 4. Start Swarmd Gateway
+if ! pgrep -f "swarmd$" > /dev/null; then
+    echo "▶️  Starting Swarm Gateway (swarmd)..."
+    # Build in debug mode
+    cargo build -p swarmd > /dev/null 2>&1
+    nohup ./target/debug/swarmd > swarmd.log 2>&1 &
     sleep 2
 else
-    echo "✅ Swarm Orchestrator already running"
+    echo "✅ Swarm Gateway already running"
+fi
+
+# 5. Start Swarm CLI (TUI)
+if ! pgrep -f "swarm-cli" > /dev/null; then
+    echo "▶️  Starting Swarm CLI (TUI)..."
+    # Build CLI if needed
+    cargo build -p swarmd --bin swarm-cli > /dev/null 2>&1
+    # Start CLI in background (requires terminal)
+    nohup ./target/debug/swarm-cli > swarm-cli.log 2>&1 &
+    sleep 2
+else
+    echo "✅ Swarm CLI already running"
 fi
 
 echo "🎉 All services ready!"
 echo "   - FastEmbed: http://localhost:11434"
 echo "   - Synapse: localhost:$SYNAPSE_PORT (Data: ./synapse-data)"
-echo "   - Swarmd (Gateway/Web/Bots): Active (Logs: swarmd.log)"
+echo "   - Swarm Gateway: http://localhost:18789"
+echo "   - Swarm CLI: Run ./target/debug/swarm-cli"
