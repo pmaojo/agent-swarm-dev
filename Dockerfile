@@ -45,5 +45,5 @@ EXPOSE 18789
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD curl --fail http://127.0.0.1:18789/status || exit 1
 
-# Run application
-CMD ["python", "-m", "gateway_runtime"]
+# Start the unified Rust gateway
+CMD ["/app/swarmd/target/release/swarmd"]
