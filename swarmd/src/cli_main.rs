@@ -82,6 +82,12 @@ impl App {
         self.list_state.select(Some(self.messages.len().saturating_sub(1)));
     }
 
+    pub fn clear_messages(&mut self) {
+        self.messages.clear();
+        self.messages.push("[SYSTEM] Neural stream purged.".to_string());
+        self.list_state.select(Some(0));
+    }
+
     fn next_panel(&mut self) {
         self.active_panel = match self.active_panel {
             ActivePanel::Input => ActivePanel::Knowledge,
@@ -303,7 +309,7 @@ fn ui(f: &mut Frame, app: &mut App) {
     let main_layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(7), // Logo
+            Constraint::Length(5), // Compact Logo
             Constraint::Min(0),    // Panels
             Constraint::Length(3), // Input
         ])
@@ -324,10 +330,9 @@ fn ui(f: &mut Frame, app: &mut App) {
     ];
     let color = colors[(app.frame_count / 4 % 6) as usize];
     let banner_text = "
-             __                               
- .----.-----|  .-----.-----.-----.--.--.-----.
- |  __|  _  |  |  _  |__ --|__ --|  |  |__ --|
- |____|_____|__|_____|_____|_____|_____|_____|
+   __ _ _ _ ___ ___ _____ 
+  | _ | | | | _ | _ |     |
+  |___|__|_||_|_| _| _| _|_|
 ";
     let status_color = if app.connected { Color::Green } else { Color::Red };
     let status_text = if app.connected { "ONLINE" } else { "OFFLINE" };
@@ -348,9 +353,9 @@ fn ui(f: &mut Frame, app: &mut App) {
         ]))
     }).collect();
     
-    let k_border_style = if app.active_panel == ActivePanel::Knowledge { Style::default().fg(Color::Yellow) } else { Style::default().fg(Color::DarkGray) };
+    let k_title = if app.active_panel == ActivePanel::Knowledge { " [ SELECTED: KNOWLEDGE ] " } else { " KNOWLEDGE " };
     let knowledge = List::new(knowledge_items)
-        .block(Block::default().borders(Borders::ALL).title(" KNOWLEDGE ").border_style(k_border_style))
+        .block(Block::default().borders(Borders::ALL).title(k_title).border_style(k_border_style))
         .highlight_style(Style::default().bg(Color::Rgb(30, 30, 50)).add_modifier(Modifier::BOLD))
         .highlight_symbol(">> ");
     f.render_stateful_widget(knowledge, panel_layout[0], &mut app.knowledge_state);
@@ -369,9 +374,9 @@ fn ui(f: &mut Frame, app: &mut App) {
         ListItem::new(Line::from(vec![Span::styled(m, style)]))
     }).collect();
 
-    let s_border_style = if app.active_panel == ActivePanel::Stream { Style::default().fg(Color::Yellow) } else { Style::default().fg(Color::DarkGray) };
+    let s_title = if app.active_panel == ActivePanel::Stream { " [ SELECTED: NEURAL STREAM ] " } else { " NEURAL STREAM " };
     let stream = List::new(messages)
-        .block(Block::default().borders(Borders::ALL).title(" NEURAL STREAM ").border_style(s_border_style));
+        .block(Block::default().borders(Borders::ALL).title(s_title).border_style(s_border_style));
     f.render_stateful_widget(stream, panel_layout[1], &mut app.list_state);
 
     // 4. Right: Action Matrix
@@ -384,28 +389,23 @@ fn ui(f: &mut Frame, app: &mut App) {
         ListItem::new(Line::from(vec![Span::styled(format!(" [{}] ", a), style)]))
     }).collect();
 
-    let a_border_style = if app.active_panel == ActivePanel::Actions { Style::default().fg(Color::Yellow) } else { Style::default().fg(Color::DarkGray) };
+    let a_title = if app.active_panel == ActivePanel::Actions { " [ SELECTED: ACTIONS ] " } else { " ACTIONS " };
     let actions_list = List::new(actions)
-        .block(Block::default().borders(Borders::ALL).title(" ACTIONS ").border_style(a_border_style));
+        .block(Block::default().borders(Borders::ALL).title(a_title).border_style(a_border_style));
     f.render_widget(actions_list, panel_layout[2]);
 
     // 5. Bottom: Input Command
-    let i_border_style = if app.active_panel == ActivePanel::Input { Style::default().fg(Color::Yellow) } else { Style::default().fg(Color::DarkGray) };
+    let i_title = if app.active_panel == ActivePanel::Input { " [ SELECTED: COMMAND MATRIX ] " } else { " COMMAND MATRIX " };
     let input_text = format!("> {}", app.input);
     let input = Paragraph::new(input_text)
         .style(Style::default().fg(Color::Green))
-        .block(Block::default().borders(Borders::ALL).title(" COMMAND MATRIX ").border_style(i_border_style));
+        .block(Block::default().borders(Borders::ALL).title(i_title).border_style(i_border_style));
     f.render_widget(input, main_layout[2]);
     
     // Help hint
-    let help_hint = Paragraph::new(" [TAB] Switch Panel | [ESC/Q] Quit | [ENTER] Execute ")
-        .style(Style::default().fg(Color::DarkGray))
+    let help_hint = Paragraph::new(" [TAB] Switch | [ENTER] Run | [^L] Clear | [^R] Sync | [^A] Launch Mission ")
+        .style(Style::default().fg(Color::Rgb(100, 100, 100)))
         .alignment(ratatui::layout::Alignment::Right);
-    let help_area = Rect {
-        x: main_layout[2].x + 1,
-        y: main_layout[2].y + 2,
-        width: main_layout[2].width - 2,
-        height: 1,
-    };
-    // f.render_widget(help_hint, help_area);
+    
+    f.render_widget(help_hint, main_layout[2]);
 }

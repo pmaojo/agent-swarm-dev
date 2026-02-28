@@ -16,11 +16,8 @@ impl ChaosEngine {
     }
 
     pub async fn run(&self) {
-        tracing::info!("🌀 Rust Chaos Engine Started");
-        let mut interval = tokio::time::interval(Duration::from_secs(10));
-
-        loop {
-            interval.tick().await;
+        tracing::info!("🌀 Chaos Engine Standby (Anomalies Disabled)");
+        return;
 
             let mut rng = rand::thread_rng();
 

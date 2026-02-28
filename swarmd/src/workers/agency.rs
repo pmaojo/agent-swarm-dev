@@ -81,7 +81,7 @@ pub async fn start_agency(synapse: SynapseClient) {
             }
         }
 
-        sleep(Duration::from_secs(15)).await;
+        sleep(Duration::from_secs(5)).await;
     }
 }
 
