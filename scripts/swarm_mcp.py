@@ -8,7 +8,11 @@ import json
 import os
 
 # Add agents to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'agents'))
+SDK_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'sdk', 'python'))
+sys.path.insert(0, SDK_ROOT)
+sys.path.insert(0, os.path.join(SDK_ROOT, 'agents'))
+sys.path.insert(0, os.path.join(SDK_ROOT, 'lib'))
+sys.path.insert(0, os.path.join(SDK_ROOT, 'agents', 'synapse_proto'))
 
 from orchestrator import OrchestratorAgent
 from coder import CoderAgent

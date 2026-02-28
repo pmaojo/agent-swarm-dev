@@ -22,6 +22,13 @@ pub enum QuestStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CharacterProfileDocument {
+    pub selected_character_id: Option<String>,
+    pub selected_character_loadout: CharacterLoadoutSelection,
+    pub profiles: Vec<CharacterProfile>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DailyBudget {
     pub max: f64,
     pub spent: f64,
@@ -126,7 +133,35 @@ fn default_knowledge_source_ref() -> String {
     "seed://default".to_string()
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct CharacterLoadoutSelection {
+    #[serde(default)]
+    pub primary_weapon: String,
+    #[serde(default)]
+    pub secondary_weapon: String,
+    #[serde(default)]
+    pub armor: String,
+    #[serde(default)]
+    pub hit_points: i32,
+    #[serde(default)]
+    pub mana: i32,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CharacterProfile {
+    #[serde(rename = "agent_id")]
+    pub id: String,
+    pub display_name: String,
+    #[serde(rename = "class")]
+    pub class_name: String,
+    pub level: i32,
+    pub base_success_rate: f64,
+    pub loadout: CharacterLoadoutSelection,
+    pub current_action: String,
+    pub location: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PolicyApprovalStatus {
     pub approved: bool,
     pub approved_by: Option<String>,
@@ -136,6 +171,8 @@ pub struct PolicyApprovalStatus {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct GameState {
     pub system_status: SystemStatus,
+    pub selected_character_id: Option<String>,
+    pub selected_character_loadout: CharacterLoadoutSelection,
     pub daily_budget: DailyBudget,
     pub party: Vec<PartyMember>,
     pub active_quests: Vec<ActiveQuest>,
@@ -276,6 +313,9 @@ pub enum EventType {
     ServiceDamaged,
     ServiceRecovered,
     JulesCloudBuilding,
+    ChaosAnomaly,
+    ControlCommand,
+    GameStateUpdate,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

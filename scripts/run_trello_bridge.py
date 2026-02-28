@@ -10,9 +10,11 @@ import time
 import logging
 
 # Add path to lib and agents
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'lib'))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'agents'))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+SDK_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'sdk', 'python'))
+sys.path.insert(0, SDK_ROOT)
+sys.path.insert(0, os.path.join(SDK_ROOT, 'agents'))
+sys.path.insert(0, os.path.join(SDK_ROOT, 'lib'))
+sys.path.insert(0, os.path.join(SDK_ROOT, 'agents', 'synapse_proto'))
 
 from trello_bridge import TrelloBridge
 from product_manager import ProductManagerAgent

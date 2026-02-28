@@ -10,7 +10,11 @@ import argparse
 from typing import Dict, Any, Optional
 
 # Add agents to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'agents'))
+SDK_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'sdk', 'python'))
+sys.path.insert(0, SDK_ROOT)
+sys.path.insert(0, os.path.join(SDK_ROOT, 'agents'))
+sys.path.insert(0, os.path.join(SDK_ROOT, 'lib'))
+sys.path.insert(0, os.path.join(SDK_ROOT, 'agents', 'synapse_proto'))
 
 from orchestrator import OrchestratorAgent
 
@@ -21,13 +25,13 @@ class SwarmFlow:
     def log(self, agent: str, message: str):
         print(f"📝 [{agent}] {message}")
         
-    def run(self, task: str) -> Dict[str, Any]:
+    def run(self, task: str, stack: str = "python") -> Dict[str, Any]:
         """Execute the full swarm flow"""
-        self.log("Orchestrator", f"Starting advanced reasoning flow for: {task}")
+        self.log("Orchestrator", f"Starting advanced reasoning flow for: {task} (Stack: {stack})")
         
         # The Orchestrator now manages the entire flow internally via Graph reasoning
         # so we just delegate to it.
-        result = self.orchestrator.run(task)
+        result = self.orchestrator.run(task, stack=stack)
         
         self.log("Swarm", f"✅ Workflow Complete")
         
@@ -43,6 +47,7 @@ class SwarmFlow:
 def main():
     parser = argparse.ArgumentParser(description="Run Agent Swarm")
     parser.add_argument("task", nargs="*", default=["Create a simple API"], help="Task description")
+    parser.add_argument("--stack", default="python", help="Tech stack")
     parser.add_argument("--no-memory", action="store_true", help="Disable memory (Deprecated: Orchestrator always uses Synapse now)")
     args = parser.parse_args()
     
@@ -52,7 +57,7 @@ def main():
     print(f"\n🚀 Starting Swarm Flow (Graph-Driven)")
     print(f"📋 Task: {task}\n")
     
-    result = flow.run(task)
+    result = flow.run(task, stack=args.stack)
     
     print(f"\n{'='*50}")
     print(f"✅ Deployment URL: {result.get('url', 'N/A')}")

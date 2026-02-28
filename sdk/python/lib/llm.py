@@ -10,7 +10,8 @@ import hashlib
 from collections import OrderedDict
 from datetime import datetime
 from typing import Dict, Any, List, Optional
-from openai import OpenAI
+from litellm import completion
+from dotenv import load_dotenv
 from tenacity import retry, stop_after_attempt, wait_random_exponential, retry_if_not_exception_type
 
 # Configure logging
@@ -44,24 +45,22 @@ class BudgetExceededException(Exception):
 
 class LLMService:
     def __init__(self):
+        # Load environment variables from .env
+        load_dotenv(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".env")))
         self.mock_mode = os.getenv("MOCK_LLM", "false").lower() == "true"
 
-        self.api_key = os.getenv("OPENAI_API_KEY")
-        self.model = os.getenv("LLM_MODEL", "gpt-4o")
-
-        self.base_url = os.getenv("OPENAI_BASE_URL")
+        self.api_key = os.getenv("GEMINI_API_KEY") or os.getenv("OPENAI_API_KEY")
+        self.model = os.getenv("LLM_MODEL", "gemini/gemini-flash-latest")
+        self.fallback_models = ["openrouter/minimax/minimax-01"] # Fallback to Minimax M2.5 (free)
 
         if self.mock_mode:
             logger.info("🤖 LLMService initialized in MOCK MODE.")
-            self.client = None
         else:
             if not self.api_key:
-                logger.warning("⚠️  OPENAI_API_KEY not found. Defaulting to MOCK MODE.")
+                logger.warning("⚠️  Neither GEMINI_API_KEY nor OPENAI_API_KEY found. Defaulting to MOCK MODE.")
                 self.mock_mode = True
-                self.client = None
             else:
-                logger.info(f"🟢 LLMService initialized (Model: {self.model})")
-                self.client = OpenAI(api_key=self.api_key, base_url=self.base_url)
+                logger.info(f"🟢 LLMService initialized (Model: {self.model}, Fallbacks: {self.fallback_models})")
 
         # Synapse Connection
         self.grpc_host = os.getenv("SYNAPSE_GRPC_HOST", "localhost")
@@ -146,6 +145,8 @@ class LLMService:
 
         total = results[0].get("?total") or results[0].get("total")
         try:
+            if isinstance(total, str):
+                total = total.strip('"')
             return float(total) if total else 0.0
         except:
             return 0.0
@@ -272,6 +273,7 @@ class LLMService:
                 {"role": "user", "content": prompt}
             ]
 
+        # LiteLLM uses 'response_format' similar to OpenAI
         response_format = {"type": "json_object"} if json_mode else None
 
         # Compute cache key after messages are populated
@@ -292,21 +294,39 @@ class LLMService:
             return result
 
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
+            # Manual mapping for Gemini to ensure LiteLLM routes correctly to Google AI Studio
+            target_model = self.model
+            if "gemini" in target_model.lower():
+                # Google AI Studio expects 'gemini/gemini-1.5-flash' or similar
+                if not target_model.startswith("gemini/"):
+                    target_model = f"gemini/{target_model}"
+            
+            # Map OpenRouter fallback properly
+            processed_fallbacks = []
+            for m in self.fallback_models:
+                if m.startswith("openrouter/"):
+                    processed_fallbacks.append(m)
+                else:
+                    processed_fallbacks.append(f"openrouter/{m}")
+
+            # Use LiteLLM's completion with native fallback support
+            response = completion(
+                model=target_model,
                 messages=messages,
+                api_key=self.api_key,
                 response_format=response_format,
                 tools=tools,
                 tool_choice=tool_choice,
-                temperature=0.7
+                temperature=0.7,
+                fallbacks=processed_fallbacks
             )
 
             # Track Usage
             usage = response.usage
             if usage:
-                self.log_spend(usage.prompt_tokens, usage.completion_tokens)
+                self.log_spend(usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0))
 
-            if tools:
+            if tools and response.choices[0].message.tool_calls:
                 result = response.choices[0].message
             else:
                 result = response.choices[0].message.content
@@ -320,7 +340,7 @@ class LLMService:
         except BudgetExceededException:
             raise # Propagate up
         except Exception as e:
-            logger.error(f"Error calling LLM: {e}")
+            logger.error(f"Error calling LLM via LiteLLM: {e}")
             raise
 
     def get_structured_completion(self, prompt: str, system_prompt: str) -> Dict[str, Any]:

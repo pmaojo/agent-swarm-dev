@@ -410,7 +410,7 @@ class OrchestratorAgent:
             validated = []
             for t in subtasks:
                  if isinstance(t, dict) and "description" in t and "stack" in t:
-                     if t["stack"] in ["python", "rust", "typescript", "javascript"]:
+                     if t["stack"] in ["python", "rust", "typescript", "javascript", "godot"]:
                          validated.append(t)
                      else:
                          print(f"⚠️ Unknown stack '{t.get('stack')}', defaulting to python.")
@@ -539,7 +539,9 @@ class OrchestratorAgent:
             b_res = self.query_graph(f'PREFIX swarm: <{SWARM}> SELECT ?max WHERE {{ <{SWARM}Finance> swarm:maxBudget ?max }} LIMIT 1')
             if b_res:
                 val = b_res[0].get('?max') or b_res[0].get('max')
-                if val: max_budget = float(val)
+                if val: 
+                    if isinstance(val, str): val = val.strip('"')
+                    max_budget = float(val)
 
             # 2. Get Total Spend
             today = datetime.now().strftime("%Y-%m-%d")
@@ -550,7 +552,9 @@ class OrchestratorAgent:
             spent = 0.0
             if s_res:
                 val = s_res[0].get('?total') or s_res[0].get('total')
-                if val: spent = float(val)
+                if val: 
+                    if isinstance(val, str): val = val.strip('"')
+                    spent = float(val)
 
             utilization = (spent / max_budget) if max_budget > 0 else 0.0
 

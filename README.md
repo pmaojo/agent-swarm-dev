@@ -5,11 +5,12 @@
 A neuro-symbolic agent swarm with graph-driven orchestration using Synapse knowledge graphs.
 
 ## ✨ Key Features
-* **Fog of War:** Agent visibility is limited by "fog", which is revealed by exploring the graph or generating new knowledge.
-* **Economic Constraints:** LLM usage is tracked against a daily budget. Overspending triggers a "HALT" state.
-* **Temporal Shadowing:** Agents can only act if the "Time Crystal" (global clock) permits.
-* **CodeGraph Intelligence:** Advanced code parsing and graph-based analysis for optimized context retrieval.
-* **API Sandbox (Apicentric):** Native integration with `apicentric` for contract-driven development. Architect agents spin up live mock APIs from OpenAPI specs, and Reviewers validate code against these sandboxes.
+
+- **Fog of War:** Agent visibility is limited by "fog", which is revealed by exploring the graph or generating new knowledge.
+- **Economic Constraints:** LLM usage is tracked against a daily budget. Overspending triggers a "HALT" state.
+- **Temporal Shadowing:** Agents can only act if the "Time Crystal" (global clock) permits.
+- **CodeGraph Intelligence:** Advanced code parsing and graph-based analysis for optimized context retrieval.
+- **API Sandbox (Apicentric):** Native integration with `apicentric` for contract-driven development. Architect agents spin up live mock APIs from OpenAPI specs, and Reviewers validate code against these sandboxes.
 
 ## 🧠 Architecture
 
@@ -84,7 +85,6 @@ python3 scripts/swarm_flow.py "Create a REST API"
 python3 scripts/swarm_flow.py "Implement user authentication" --verbose
 ```
 
-
 ## 🐳 Gateway Container: Build/Run Reproducible Flow
 
 Use the following exact commands to build and validate the gateway container end-to-end:
@@ -102,9 +102,9 @@ curl --fail http://127.0.0.1:18789/api/v1/game-state
 ```
 
 Notes:
+
 - The image copies runtime sources from `sdk/python/lib` and `sdk/python/agents`.
-- `PYTHONPATH` is configured to resolve `gateway_runtime` and package imports from `sdk/python`.
-- Entrypoint uses `python -m gateway_runtime` for stable module resolution.
+- `PYTHONPATH` is configured to resolve package imports from `sdk/python`.
 
 ## 🤖 Autonomous GSD Workflow (Trello + OpenSpec)
 
@@ -114,18 +114,19 @@ This system implements a fully autonomous "Get Shit Done" (GSD) workflow driven 
 
 The swarm operates through a continuous feedback loop between three specialized agents, using Trello lists as the state machine and the file system (OpenSpec) as the source of truth.
 
-| Stage | Agent | Action | Transition |
-|---|---|---|---|
-| **INBOX** | 🧠 **Product Manager** | Reads user idea, generates `openspec/specs/.../spec.md`, and links it to the card. | Moves to `REQUIREMENTS` |
-| **REQUIREMENTS** | 📐 **Architect** | Reads `spec.md`, generates Technical Design (`openspec/changes/.../design.md`), and updates card. | Moves to `DESIGN` |
-| **DESIGN** | 🛑 **Human-in-the-Loop** | **WAITING FOR APPROVAL**. A human must review the Design and apply the `[APPROVED]` label. | Manual Move to `TODO` |
-| **TODO** | 🏗️ **Orchestrator** | Detects `[APPROVED]` label, executes the implementation (Coder -> Reviewer), and verifies against Spec. | Moves to `DONE` |
+| Stage            | Agent                    | Action                                                                                                  | Transition              |
+| ---------------- | ------------------------ | ------------------------------------------------------------------------------------------------------- | ----------------------- |
+| **INBOX**        | 🧠 **Product Manager**   | Reads user idea, generates `openspec/specs/.../spec.md`, and links it to the card.                      | Moves to `REQUIREMENTS` |
+| **REQUIREMENTS** | 📐 **Architect**         | Reads `spec.md`, generates Technical Design (`openspec/changes/.../design.md`), and updates card.       | Moves to `DESIGN`       |
+| **DESIGN**       | 🛑 **Human-in-the-Loop** | **WAITING FOR APPROVAL**. A human must review the Design and apply the `[APPROVED]` label.              | Manual Move to `TODO`   |
+| **TODO**         | 🏗️ **Orchestrator**      | Detects `[APPROVED]` label, executes the implementation (Coder -> Reviewer), and verifies against Spec. | Moves to `DONE`         |
 
 ### 🛡️ NIST Guardrails
 
 To ensure safety and alignment, the **Orchestrator** enforces a strict policy:
-*   It will **ONLY** execute tasks from the `TODO` list if the Trello card has the **`[APPROVED]`** label.
-*   This acts as a mandatory "Human-in-the-Loop" checkpoint, preventing the swarm from writing code without explicit authorization of the design.
+
+- It will **ONLY** execute tasks from the `TODO` list if the Trello card has the **`[APPROVED]`** label.
+- This acts as a mandatory "Human-in-the-Loop" checkpoint, preventing the swarm from writing code without explicit authorization of the design.
 
 ### State Diagram
 
@@ -222,14 +223,14 @@ python3 scripts/simple_synapse_client.py
 
 ### Environment Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `LLM_MODEL` | `gpt-4` | Model for agent execution |
-| `OPENAI_API_KEY` | - | OpenAI API key |
-| `SYNAPSE_GRPC_HOST` | `localhost` | Synapse gRPC host |
-| `SYNAPSE_GRPC_PORT` | `50051` | Synapse gRPC port |
-| `EMBEDDING_PROVIDER` | `local` | Use `remote` for FastEmbed |
-| `EMBEDDING_API_URL` | `http://localhost:11434/api/embeddings` | Embeddings endpoint |
+| Variable             | Default                                 | Description                |
+| -------------------- | --------------------------------------- | -------------------------- |
+| `LLM_MODEL`          | `gpt-4`                                 | Model for agent execution  |
+| `OPENAI_API_KEY`     | -                                       | OpenAI API key             |
+| `SYNAPSE_GRPC_HOST`  | `localhost`                             | Synapse gRPC host          |
+| `SYNAPSE_GRPC_PORT`  | `50051`                                 | Synapse gRPC port          |
+| `EMBEDDING_PROVIDER` | `local`                                 | Use `remote` for FastEmbed |
+| `EMBEDDING_API_URL`  | `http://localhost:11434/api/embeddings` | Embeddings endpoint        |
 
 ### Synapse (Light Mode)
 
@@ -248,18 +249,19 @@ EMBEDDING_PROVIDER=remote ./synapse-engine/target/release/synapse
 
 ## 📦 Components
 
-| Component | Description |
-|-----------|-------------|
-| `synapse` | Graph DB (RDF triples) |
-| `embeddings_server.py` | FastEmbed HTTP API |
+| Component                | Description                |
+| ------------------------ | -------------------------- |
+| `synapse`                | Graph DB (RDF triples)     |
+| `embeddings_server.py`   | FastEmbed HTTP API         |
 | `agents/orchestrator.py` | Graph-driven orchestration |
-| `scripts/swarm_flow.py` | End-to-end swarm execution |
-| `swarm_schema.yaml` | Swarm behavior definition |
-| `scripts/test_flow.py` | Graph reasoning tests |
+| `scripts/swarm_flow.py`  | End-to-end swarm execution |
+| `swarm_schema.yaml`      | Swarm behavior definition  |
+| `scripts/test_flow.py`   | Graph reasoning tests      |
 
 ## 🧠 Neuro-Symbolic Memory
 
 The swarm combines:
+
 - **Symbolic**: RDF triples, SPARQL queries, ontologies
 - **Neural**: Vector embeddings for semantic search
 - **Graph**: Knowledge graph for reasoning and state management
@@ -267,6 +269,7 @@ The swarm combines:
 ## 📝 Adding New Agents
 
 1. Add agent to `swarm_schema.yaml`:
+
 ```yaml
 agents:
   YourAgent:
@@ -284,6 +287,7 @@ transitions:
 ```
 
 2. Implement agent in `agents/your_agent.py`:
+
 ```python
 from orchestrator import OrchestratorAgent
 
@@ -296,6 +300,7 @@ class YourAgent:
 ## 📊 Monitoring
 
 The Orchestrator logs each step:
+
 ```
 🚀 Orchestrator starting task: Create a REST API
 📍 Step: FeatureImplementationTask → Handler: Coder

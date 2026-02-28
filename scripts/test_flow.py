@@ -5,7 +5,12 @@ Test script for Swarm Flow and Organizational Knowledge
 import sys
 import os
 import json
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'agents'))
+# Add agents to path
+SDK_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'sdk', 'python'))
+sys.path.insert(0, SDK_ROOT)
+sys.path.insert(0, os.path.join(SDK_ROOT, 'agents'))
+sys.path.insert(0, os.path.join(SDK_ROOT, 'lib'))
+sys.path.insert(0, os.path.join(SDK_ROOT, 'agents', 'synapse_proto'))
 from orchestrator import OrchestratorAgent
 
 def test_flow_happy_path():

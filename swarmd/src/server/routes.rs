@@ -3,6 +3,7 @@ use axum::{
     response::IntoResponse,
     Json,
 };
+use serde::Deserialize;
 use chrono::Utc;
 use tracing::{info, warn};
 use tokio::sync::broadcast;
@@ -62,16 +63,49 @@ pub async fn get_game_state(State(state): State<AppState>) -> Json<GameState> {
         }
     }
 
+    // Load Character Profiles
+    let char_path = std::path::Path::new("sdk/python/data/character_profiles.json");
+    let char_content = std::fs::read_to_string(char_path).unwrap_or_else(|_| "{}".to_string());
+    let char_doc: crate::server::contracts::CharacterProfileDocument = serde_json::from_str(&char_content).unwrap_or_else(|_| crate::server::contracts::CharacterProfileDocument {
+        selected_character_id: None,
+        selected_character_loadout: crate::server::contracts::CharacterLoadoutSelection::default(),
+        profiles: vec![],
+    });
+
+    let party: Vec<PartyMember> = char_doc.profiles.iter().map(|p| PartyMember {
+        id: p.id.clone(),
+        name: p.display_name.clone(),
+        class_name: p.class_name.clone(),
+        level: p.level,
+        stats: PartyStats {
+            hp: p.loadout.hit_points,
+            mana: p.loadout.mana,
+            success_rate: format!("{:.0}%", p.base_success_rate * 100.0),
+        },
+        current_action: p.current_action.clone(),
+        location: p.location.clone(),
+    }).collect();
+
+    // Load Fog Map
+    let fog_path = std::path::Path::new("sdk/python/data/fog_state.json");
+    let fog_map = if let Ok(content) = std::fs::read_to_string(fog_path) {
+        serde_json::from_str(&content).unwrap_or(serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+
     Json(GameState {
         system_status: current_status.clone(),
+        selected_character_id: char_doc.selected_character_id,
+        selected_character_loadout: char_doc.selected_character_loadout,
         daily_budget: DailyBudget {
             max: 10.0,
             spent: spend,
             unit: "USD".to_string(),
         },
-        party: vec![],
+        party,
         active_quests: vec![],
-        fog_map: serde_json::json!({}),
+        fog_map,
         repositories: vec![],
         countries: build_countries(&current_status),
         knowledge_tree: build_knowledge_tree(),
@@ -303,6 +337,70 @@ pub async fn post_knowledge_tree_node(
         status: "ingested".to_string(),
         node,
     })
+}
+
+pub async fn get_characters() -> Json<serde_json::Value> {
+    let path = std::path::Path::new("sdk/python/data/character_profiles.json");
+    let content = std::fs::read_to_string(path).unwrap_or_else(|_| "{}".to_string());
+    let val: serde_json::Value = serde_json::from_str(&content).unwrap_or(serde_json::json!({}));
+    Json(val)
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CharacterSelectionRequest {
+    pub character_id: String,
+}
+
+pub async fn select_character(
+    Json(payload): Json<CharacterSelectionRequest>,
+) -> impl IntoResponse {
+    let path = std::path::Path::new("sdk/python/data/character_profiles.json");
+    let content = std::fs::read_to_string(path).unwrap_or_else(|_| "{}".to_string());
+    let mut doc: crate::server::contracts::CharacterProfileDocument = 
+        serde_json::from_str(&content).unwrap_or_else(|_| crate::server::contracts::CharacterProfileDocument {
+            selected_character_id: None,
+            selected_character_loadout: crate::server::contracts::CharacterLoadoutSelection::default(),
+            profiles: vec![],
+        });
+
+    doc.selected_character_id = Some(payload.character_id.clone());
+    
+    if let Ok(updated) = serde_json::to_string_pretty(&doc) {
+        let _ = std::fs::write(path, updated);
+    }
+
+    Json(serde_json::json!({ "selected_character_id": payload.character_id }))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CharacterLoadoutSaveRequest {
+    pub character_id: String,
+    pub loadout: crate::server::contracts::CharacterLoadoutSelection,
+}
+
+pub async fn save_character_loadout(
+    Json(payload): Json<CharacterLoadoutSaveRequest>,
+) -> impl IntoResponse {
+    let path = std::path::Path::new("sdk/python/data/character_profiles.json");
+    let content = std::fs::read_to_string(path).unwrap_or_else(|_| "{}".to_string());
+    let mut doc: crate::server::contracts::CharacterProfileDocument = 
+        serde_json::from_str(&content).unwrap_or_else(|_| crate::server::contracts::CharacterProfileDocument {
+            selected_character_id: None,
+            selected_character_loadout: crate::server::contracts::CharacterLoadoutSelection::default(),
+            profiles: vec![],
+        });
+
+    doc.selected_character_id = Some(payload.character_id.clone());
+    doc.selected_character_loadout = payload.loadout.clone();
+    
+    if let Ok(updated) = serde_json::to_string_pretty(&doc) {
+        let _ = std::fs::write(path, updated);
+    }
+
+    Json(serde_json::json!({
+        "selected_character_id": payload.character_id,
+        "selected_character_loadout": payload.loadout
+    }))
 }
 
 pub async fn get_knowledge_node_documentation(
