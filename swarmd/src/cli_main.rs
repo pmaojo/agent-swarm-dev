@@ -86,7 +86,7 @@ impl App {
     
     async fn fetch_knowledge_nodes() -> Vec<String> {
         let client = reqwest::Client::new();
-        match client.get("http://127.0.0.1:18789/api/v1/knowledge-tree/nodes")
+        match client.get("http://127.0.0.1:18789/api/v1/game-state")
             .timeout(Duration::from_secs(3))
             .send()
             .await
@@ -94,14 +94,21 @@ impl App {
             Ok(resp) => {
                 match resp.json::<serde_json::Value>().await {
                     Ok(json) => {
-                        let nodes = json.as_array()
+                        let nodes = json.get("knowledge_tree")
+                            .and_then(|n| n.as_array())
                             .map(|arr| arr.iter()
-                                .filter_map(|n| n.get("id").or_else(|| n.get("name")))
+                                .filter_map(|n| n.get("name").or_else(|| n.get("id")))
                                 .filter_map(|v| v.as_str())
                                 .map(|s| s.to_string())
-                                .collect()
+                                .collect::<Vec<String>>()
                             );
-                        nodes.unwrap_or_else(|| vec!["No knowledge nodes".to_string()])
+                        
+                        let resolved = nodes.unwrap_or_default();
+                        if resolved.is_empty() {
+                            vec!["No knowledge nodes found".to_string()]
+                        } else {
+                            resolved
+                        }
                     }
                     Err(_) => vec!["Failed to parse knowledge".to_string()]
                 }
