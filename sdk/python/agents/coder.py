@@ -256,28 +256,50 @@ class CoderAgent:
         step = 0
 
         while step < max_steps:
-            try:
-                # Call LLM
                 try:
-                    message_response = self.llm.completion(
-                        prompt="",
-                        messages=messages,
-                        tools=TOOLS_SCHEMA,
-                        tool_choice="auto"
-                    )
-                except Exception as llm_e:
-                    print(f"❌ [Coder] LLM Exception: {llm_e}")
-                    with open("litellm_error.json", "w") as dump_f:
-                        json.dump(messages, dump_f, indent=2)
-                    raise llm_e
+                    # Call LLM
+                    try:
+                        message_response = self.llm.completion(
+                            prompt="",
+                            messages=messages,
+                            tools=TOOLS_SCHEMA,
+                            tool_choice="auto"
+                        )
+                    except Exception as llm_e:
+                        print(f"❌ [Coder] LLM Exception: {llm_e}")
+                        with open("litellm_error.json", "w") as dump_f:
+                            json.dump(messages, dump_f, indent=2)
+                        raise llm_e
 
-                if hasattr(message_response, "content") and message_response.content:
-                    report_thought(message_response.content, agent_id="Coder")
+                    if hasattr(message_response, "content") and message_response.content:
+                        report_thought(message_response.content, agent_id="Coder")
 
-                # IMPORTANT: Keep the assistant message in LiteLLM's native Message object format 
-                # (or convert to dict but preserve the exact `tool_calls` objects) so it can translate 
-                # back to Gemini's `functionCall` properly when we make the next call.
-                messages.append(message_response.model_dump() if hasattr(message_response, "model_dump") else message_response)
+                    # IMPORTANT: Keep the assistant message in LiteLLM's native Message object format 
+                    # (or convert to dict but preserve the exact `tool_calls` objects) so it can translate 
+                    # back to Gemini's `functionCall` properly when we make the next call.
+                    messages.append(message_response.model_dump() if hasattr(message_response, "model_dump") else message_response)
+
+                    # Process Tool Calls
+                    tool_calls = getattr(message_response, "tool_calls", None)
+                    if tool_calls:
+                        tool_responses = self._process_tool_calls(tool_calls)
+                        messages.extend(tool_responses)
+
+                        # Check for HALT
+                        halt = self._should_halt(tool_responses)
+                        if halt: return halt
+                    else:
+                        content = message_response.content if hasattr(message_response, "content") else str(message_response)
+                        print("🏁 [Coder] Finished.")
+                        return {"status": "success", "result": content, "saved_files": self.modified_files}
+
+                    step += 1
+
+                except Exception as e:
+                    print(f"❌ [Coder] Error in loop: {e}")
+                    return {"status": "failure", "error": str(e)}
+
+        return {"status": "failure", "error": "Max steps exceeded"}
 
     def _process_tool_calls(self, tool_calls) -> List[Dict]:
         """Execute a list of tool calls and return responses."""
@@ -299,48 +321,12 @@ class CoderAgent:
                 "name": func_name,
                 "content": json.dumps(result) if not isinstance(result, str) else result
             })
-        return responses
-
     def _should_halt(self, responses: List[Dict]) -> Optional[Dict]:
         for resp in responses:
             if "SYSTEM_HALTED" in resp["content"]:
                 return {"status": "failure", "error": f"System Halted: {resp['content']}"}
         return None
 
-                        # Execute
-                        report_thought(f"Executing tool call: {func_name}", agent_id="Coder")
-                        result = self.execute_tool(func_name, args)
-                        report_thought(f"Tool {func_name} returned status: {result.get('status') if isinstance(result, dict) else 'success'}", agent_id="Coder")
-
-                        # Check for SYSTEM_HALTED (Kill Switch)
-                        if isinstance(result, dict) and "SYSTEM_HALTED" in str(result.get("error", "")):
-                            print("🛑 [Coder] System Halted. Aborting execution loop.")
-                            return {"status": "failure", "error": result["error"]}
-
-                        # Handle Pending Approval
-                        if isinstance(result, dict) and result.get("status") == "pending_approval":
-                            uuid_val = result.get("uuid")
-                            result = self.wait_for_approval(uuid_val, command=args.get('command'))
-
-                        # Feed back result
-                        # For LiteLLM -> Gemini, the content must be a string containing the result.
-                        # LiteLLM internally maps {"role": "tool", "content": "..."} to `functionResponse.response`
-                        messages.append({
-                            "role": "tool",
-                            "tool_call_id": tool_call.id,
-                            "name": func_name,
-                            "content": json.dumps(result) if isinstance(result, (dict, list)) else str(result)
-                        })
-                else:
-                    content = message_response.content if hasattr(message_response, "content") else str(message_response)
-                    print("🏁 [Coder] Finished.")
-                    return {"status": "success", "result": content, "saved_files": self.modified_files}
-
-            except Exception as e:
-                print(f"❌ [Coder] Error in loop: {e}")
-                return {"status": "failure", "error": str(e)}
-
-        return {"status": "failure", "error": "Max steps exceeded"}
 
     def research_stack(self, stack: str) -> List[str]:
         # Reuse existing research logic but maybe using tools?
