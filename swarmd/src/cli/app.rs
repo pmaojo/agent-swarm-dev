@@ -16,6 +16,8 @@ pub enum ActivePanel {
 pub struct KnowledgeNode {
     pub id: String,
     pub name: String,
+    pub domain: String,
+    pub level: u32,
 }
 
 pub struct App {
@@ -84,14 +86,16 @@ impl App {
                                 .filter_map(|n| {
                                     let id = n.get("id")?.as_str()?.to_string();
                                     let name = n.get("name")?.as_str()?.to_string();
-                                    Some(KnowledgeNode { id, name })
+                                    let domain = n.get("domain").and_then(|d| d.as_str()).unwrap_or("General").to_string();
+                                    let level = n.get("level").and_then(|l| l.as_u64()).unwrap_or(1) as u32;
+                                    Some(KnowledgeNode { id, name, domain, level })
                                 })
                                 .collect::<Vec<KnowledgeNode>>()
                             );
                         
                         let resolved = nodes.unwrap_or_default();
                         if resolved.is_empty() {
-                            vec![KnowledgeNode { id: "none".to_string(), name: "No knowledge nodes found".to_string() }]
+                            vec![KnowledgeNode { id: "none".to_string(), name: "No knowledge nodes found".to_string(), domain: "SYSTEM".to_string(), level: 0 }]
                         } else {
                             resolved
                         }
