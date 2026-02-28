@@ -12,8 +12,18 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, List, ListItem, ListState, Clear},
     Frame, Terminal,
 };
-use std::{io, time::{Duration, Instant}};
+use std::{io, time::{Duration, Instant}, signal, panic};
 use tokio::sync::mpsc;
+
+// Cleanup function to restore terminal on exit/crash
+fn cleanup_terminal() {
+    // Print reset sequences to restore terminal
+    print!("\x1b[?1049l");  // Exit alternate screen
+    print!("\x1bc");         // Reset terminal
+    print!("\x1b[?1000l");   // Disable mouse
+    print!("\n");
+    let _ = std::io::stdout().flush();
+}
 use futures_util::StreamExt;
 use tokio_tungstenite::connect_async;
 use serde_json::Value;
@@ -118,6 +128,11 @@ impl App {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Register panic handler to restore terminal on crash
+    std::panic::set_hook(Box::new(|_| {
+        cleanup_terminal();
+    }));
+
     // setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -199,6 +214,10 @@ async fn main() -> Result<()> {
         DisableMouseCapture
     )?;
     terminal.show_cursor()?;
+
+    // Reset terminal to clean state (fixes escape code garbage on exit)
+    println!("\x1b[?1049l"); // Exit alternate screen
+    println!("\x1bc");        // Reset terminal
 
     if let Err(err) = res {
         println!("{:?}", err)
