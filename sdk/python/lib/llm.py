@@ -12,7 +12,11 @@ from datetime import datetime
 from typing import Dict, Any, List, Optional
 from litellm import completion
 import litellm
-litellm.set_verbose = True
+# Disable telemetry and callbacks to avoid asyncio/threading conflicts
+litellm.telemetry = False
+litellm.success_callback = []
+litellm.failure_callback = []
+litellm.set_verbose = False
 from dotenv import load_dotenv
 from tenacity import retry, stop_after_attempt, wait_random_exponential, retry_if_not_exception_type
 
@@ -52,19 +56,17 @@ class LLMService:
         self.mock_mode = os.getenv("MOCK_LLM", "false").lower() == "true"
 
         self.api_key = os.getenv("GEMINI_API_KEY") or os.getenv("OPENAI_API_KEY")
-        self.model = os.getenv("LLM_MODEL", "gemini/gemini-1.5-flash-latest")
+        self.model = os.getenv("LLM_MODEL", "gemini/gemini-1.5-flash")
         # Configure Fallbacks (Ordered by preference)
         self.fallback_models = [
-            "gemini/gemini-1.5-flash-latest",
-            "ollama/deepseek-r1:8b",
-            "ollama/qwen2.5-coder:7b",
+            "gemini/gemini-1.5-flash",
             "openrouter/google/gemini-2.0-flash-001"
         ]
         
-        # Sense environment - if running from host, use the mapped port for Ollama/FastEmbed
-        # docker-compose mappings: 11435:11434
-        self.ollama_base = "http://localhost:11435" if os.getenv("RUNNING_IN_DOCKER", "false") == "false" else "http://fastembed:11434"
-        os.environ["OLLAMA_API_BASE"] = self.ollama_base
+        # Sense environment
+        # fastembed (11435) doesn't provide Ollama completion API - removing incorrect fallback
+        if "OLLAMA_API_BASE" in os.environ:
+             del os.environ["OLLAMA_API_BASE"]
 
         if self.mock_mode:
             logger.info("🤖 LLMService initialized in MOCK MODE.")
@@ -124,6 +126,9 @@ class LLMService:
         try:
             self.stub.IngestTriples(request)
         except Exception as e:
+            if "CANCELLED" in str(e) or "RST_STREAM" in str(e):
+                logger.warning("🔄 gRPC Connection Reset detected in Ingest. Reconnecting...")
+                self.connect_synapse()
             logger.error(f"❌ Ingest failed (ignoring for resilience): {e}")
 
     def _query(self, query: str) -> List[Dict]:
@@ -289,11 +294,11 @@ class LLMService:
         if "gemini" in target_model.lower():
             if not target_model.startswith("gemini/"):
                 target_model = f"gemini/{target_model}"
-            # Ensure we use specific versions if possible to avoid 404 on -latest
-            if "flash" in target_model and "-latest" not in target_model:
-                target_model = target_model.replace("gemini-1.5-flash", "gemini-1.5-flash-latest")
+            # Ensure we avoid -latest in v1beta unless absolutely necessary
+            if "-latest" in target_model:
+                target_model = target_model.replace("-latest", "")
         
-        # LiteLLM sometimes fails with -latest suffix for some versions
+        # LiteLLM cleanup
         if target_model.endswith("-latest") and "gemini" not in target_model.lower():
             return target_model.replace("-latest", "")
         return target_model

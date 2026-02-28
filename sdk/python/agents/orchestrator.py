@@ -157,13 +157,24 @@ class OrchestratorAgent:
             triples=pb_triples,
             namespace=target_namespace
         )
-        self.stub.IngestTriples(request)
+        try:
+            self.stub.IngestTriples(request)
+        except Exception as e:
+            if "CANCELLED" in str(e) or "RST_STREAM" in str(e):
+                print("🔄 gRPC connection Reset detected (Orchestrator Ingest). Reconnecting...")
+                self.connect_synapse()
+                try: 
+                    self.stub.IngestTriples(request)
+                except Exception: pass
+            else:
+                print(f"❌ Ingest failed: {e}")
 
     def query_graph(self, query: str, namespace: str = None) -> List[Dict]:
         """Execute SPARQL query against Synapse"""
         if not self.stub:
             print("❌ Not connected to Synapse")
-            return []
+            self.connect_synapse()
+            if not self.stub: return []
 
         target_namespace = namespace if namespace else self.namespace
 
@@ -175,6 +186,13 @@ class OrchestratorAgent:
             response = self.stub.QuerySparql(request)
             return json.loads(response.results_json)
         except Exception as e:
+            if "CANCELLED" in str(e) or "RST_STREAM" in str(e):
+                print("🔄 gRPC Connection Reset detected (Orchestrator Query). Reconnecting...")
+                self.connect_synapse()
+                try:
+                    response = self.stub.QuerySparql(request)
+                    return json.loads(response.results_json)
+                except Exception: pass
             print(f"❌ Graph query failed: {e}")
             return []
 
