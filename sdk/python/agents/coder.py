@@ -96,7 +96,7 @@ class CoderAgent:
         subject = f"{SWARM}artifact/code/{int(time.time())}_{os.path.basename(filename)}"
         triples = [
             {"subject": subject, "predicate": f"{SWARM}type", "object": f"{SWARM}ArtifactType"},
-            {"subject": subject, "predicate": f"{SWARM}description", "object": "Generated/Modified Code"},
+            {"subject": subject, "predicate": f"{SWARM}description", "object": f'"{content}"'},
             {"subject": subject, "predicate": f"{SWARM}hasProperty", "object": f"{SWARM}prop/path/{filename}"},
         ]
 
@@ -118,7 +118,7 @@ class CoderAgent:
         if not self.stub: return
 
         coder_uri = f"{SWARM}agent/Coder"
-        reviewer_uri = f"{SWARM}agent/Reviewer"
+        reviewer_uri = f"{SWARM}agent/{reviewer_agent.__class__.__name__}" if reviewer_agent else f"{SWARM}agent/Reviewer"
 
         triples = [
             {"subject": coder_uri, "predicate": f"{SWARM}negotiatedWith", "object": reviewer_uri},
@@ -256,7 +256,7 @@ class CoderAgent:
             try:
                 # Call LLM
                 try:
-                    completion_msg = self.llm.completion(
+                    message_response = self.llm.completion(
                         prompt="",
                         messages=messages,
                         tools=TOOLS_SCHEMA,
@@ -268,16 +268,16 @@ class CoderAgent:
                         json.dump(messages, dump_f, indent=2)
                     raise llm_e
 
-                if hasattr(message, "content") and message.content:
-                    report_thought(message.content, agent_id="Coder")
+                if hasattr(message_response, "content") and message_response.content:
+                    report_thought(message_response.content, agent_id="Coder")
 
                 # IMPORTANT: Keep the assistant message in LiteLLM's native Message object format 
                 # (or convert to dict but preserve the exact `tool_calls` objects) so it can translate 
                 # back to Gemini's `functionCall` properly when we make the next call.
-                messages.append(message.model_dump() if hasattr(message, "model_dump") else message)
+                messages.append(message_response.model_dump() if hasattr(message_response, "model_dump") else message_response)
 
-                if message.tool_calls:
-                    for tool_call in message.tool_calls:
+                if hasattr(message_response, "tool_calls") and message_response.tool_calls:
+                    for tool_call in message_response.tool_calls:
                         step += 1
                         func_name = tool_call.function.name
                         try:
@@ -308,7 +308,7 @@ class CoderAgent:
                             "content": json.dumps(result) if isinstance(result, (dict, list)) else str(result)
                         })
                 else:
-                    content = message.content
+                    content = message_response.content if hasattr(message_response, "content") else str(message_response)
                     print("🏁 [Coder] Finished.")
                     return {"status": "success", "result": content, "saved_files": self.modified_files}
 
@@ -390,9 +390,9 @@ class CoderAgent:
         result = self.generate_code_with_verification(task, context)
         
         if "error" not in result:
-             report_thought(f"MISSION_SUCCESS: Protocol completed. Results deployed.")
+             report_thought("MISSION_SUCCESS: Protocol completed. Results deployed.")
         else:
-             report_thought(f"NODE_ERROR: Protocol failed. Energy leakage detected.")
+             report_thought("NODE_ERROR: Protocol failed. Energy leakage detected.")
 
         return {
             "status": "success" if "error" not in result else "failure",

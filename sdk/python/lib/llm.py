@@ -151,7 +151,7 @@ class LLMService:
             if isinstance(total, str):
                 total = total.strip('"')
             return float(total) if total else 0.0
-        except:
+        except (ValueError, TypeError):
             return 0.0
 
     def send_telegram_alert(self, message: str):
@@ -168,7 +168,6 @@ class LLMService:
             }, timeout=2)
         except Exception as e:
             logger.debug(f"Failed to broadcast hardening event: {e}")
-            pass # Fail silently if gateway is down
 
         # 2. Telegram API
         token = os.getenv("TELEGRAM_BOT_TOKEN")

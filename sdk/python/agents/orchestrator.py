@@ -344,19 +344,14 @@ class OrchestratorAgent:
         return 0
 
     def set_next_turn(self, current_or_next: int):
-        # We use SPARQL UPDATE to ensure we overwrite the previous turn instead of appending multiples
-        query = f"""
-        PREFIX swarm: <{SWARM}>
-        DELETE {{ <{SWARM}swarm> swarm:currentTurn ?oldTurn }}
-        INSERT {{ <{SWARM}swarm> swarm:currentTurn "{current_or_next}" }}
-        WHERE  {{ OPTIONAL {{ <{SWARM}swarm> swarm:currentTurn ?oldTurn }} }}
-        """
+        # We use SPARQL DELETE/INSERT to ensure we overwrite the previous turn instead of appending multiples
         # Hack: Since SemanticEngine doesn't formally expose UpdateSparql in Python stub easily, 
         # we can just use the query interface if it supports updates, or fallback to ingest/delete.
         # Given the API, we can achieve overwrite by deleting all triples for the subject/predicate first.
         # For simplicity, if we don't have a direct delete, we might just query the old and delete, but let's try 
         # to send an update if possible, or just generate a unique session ID. 
         # Better approach: store turn in memory for the session if graph is append-only for this logic.
+        pass
         
         # Actually, let's keep it simple and just use an in-memory variable for the loop. 
         # The Graph is meant for persistence, but the "Turn" is highly ephemeral to this single run loop.
@@ -409,13 +404,51 @@ class OrchestratorAgent:
 
         return {"final_status": "success", "history": history}
 
+    def fast_classify_stack(self, task: str) -> Optional[str]:
+        """Use V5 Fractal Search (64d prefix) for zero-LLM fast routing classification."""
+        if not self.stub:
+            return None
+            
+        # We search the graph for tech stacks that match this task semantically
+        req = semantic_engine_pb2.HybridSearchRequest(
+            query=f"Tech stack for: {task}",
+            namespace="default",
+            vector_k=3,
+            graph_depth=0,
+            mode=semantic_engine_pb2.SearchMode.VECTOR_ONLY,
+            limit=3,
+            prefix_len=64  # V5 Coarse Search
+        )
+        try:
+            res = self.stub.HybridSearch(req)
+            if not res.results:
+                return None
+            # Check if any of the top results looks like a stack
+            for r in res.results:
+                uri = r.uri.lower()
+                for s in ["python", "rust", "typescript", "javascript", "godot"]:
+                    if s in uri or s in r.content.lower():
+                        print(f"⚡ V5 Fast Route: {s} (score: {r.score:.3f})")
+                        return s
+        except Exception as e:
+            print(f"⚠️ V5 Vector Routing failed: {e}")
+            
+        return None
+
     def decompose_task(self, task: str) -> List[Dict[str, str]]:
         """Decompose a complex task into stack-specific subtasks."""
-        print("🧩 Decomposing task via LLM...")
+        print("🧩 Decomposing task...")
+        
+        # Phase 3: Try Zero-LLM Fractal Routing First
+        fast_stack = self.fast_classify_stack(task)
+        if fast_stack:
+            return [{"description": task, "stack": fast_stack}]
+            
+        print("🧠 Falling back to LLM Semantic Decomposition...")
         system_prompt = """
         You are a Technical Project Manager.
         Decompose the user's request into distinct subtasks, each assigned to a specific tech stack.
-        Supported stacks: 'python', 'rust', 'typescript', 'javascript'.
+        Supported stacks: 'python', 'rust', 'typescript', 'javascript', 'godot'.
         Return a JSON object: {"subtasks": [{"description": "...", "stack": "..."}]}
         """
         try:
