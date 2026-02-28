@@ -228,7 +228,7 @@ impl App {
     
     fn handle_input(&mut self, input: String, command_tx: &mpsc::Sender<String>) {
         let normalized = input.trim().to_lowercase();
-        if normalized == "hello" || normalized == "hola" {
+        if normalized == "hello" || normalized == "hola" || normalized == "hi" {
             self.add_message("[SYSTEM] Neural link established. Hello, Operator.".to_string());
         } else if normalized == "status" {
             let status = if self.connected { "SECURE" } else { "SEVERED" };
@@ -272,7 +272,7 @@ async fn main() -> Result<()> {
             // Check for outgoing commands
             while let Ok(cmd) = command_rx.try_recv() {
                 if cmd == "LAUNCH MISSION" {
-                    let _ = client.post("http://127.0.0.1:18789/api/v1/mission/assign")
+                    let res = client.post("http://127.0.0.1:18789/api/v1/mission/assign")
                         .json(&serde_json::json!({
                             "agent_id": "http://swarm.os/agents/Coder",
                             "repo_id": "root",
@@ -280,9 +280,35 @@ async fn main() -> Result<()> {
                         }))
                         .send()
                         .await;
+                    match res {
+                        Ok(r) if r.status().is_success() => { let _ = tx.send("[SUCCESS] Mission 'Scan and analyze' dispatched.".to_string()).await; }
+                        _ => { let _ = tx.send("[ERROR] Failed to dispatch mission.".to_string()).await; }
+                    }
+                } else if cmd == "HALT SWARM" {
+                    let res = client.post("http://127.0.0.1:18789/api/v1/control/commands")
+                        .json(&serde_json::json!({
+                            "command_type": "Halt",
+                            "actor": "operator",
+                            "nist_policy_id": "NIST-800-53-REV5",
+                            "approved_by": "operator"
+                        }))
+                        .send()
+                        .await;
+                    match res {
+                        Ok(r) if r.status().is_success() => { let _ = tx.send("[SUCCESS] System HALTED command sent.".to_string()).await; }
+                        _ => { let _ = tx.send("[ERROR] HALT command failed. Check gateway connection.".to_string()).await; }
+                    }
+                } else if cmd == "RESET BRAIN" {
+                    let _ = tx.send("[SYSTEM] Brain reset not fully implemented in backend.".to_string()).await;
+                } else if cmd == "SCAN SECTOR" {
+                    let res = client.get("http://127.0.0.1:18789/api/v1/game-state").send().await;
+                    match res {
+                        Ok(r) if r.status().is_success() => { let _ = tx.send("[SUCCESS] Sector scanned. Neural sensors active.".to_string()).await; }
+                        _ => { let _ = tx.send("[ERROR] Scan failed. Ensure gateway is online.".to_string()).await; }
+                    }
                 } else {
                     // Regular command from TUI input
-                    let _ = client.post("http://127.0.0.1:18789/api/v1/mission/assign")
+                    let res = client.post("http://127.0.0.1:18789/api/v1/mission/assign")
                         .json(&serde_json::json!({
                             "agent_id": "http://swarm.os/agents/Coder",
                             "repo_id": "root",
@@ -290,6 +316,10 @@ async fn main() -> Result<()> {
                         }))
                         .send()
                         .await;
+                    match res {
+                        Ok(r) if r.status().is_success() => { let _ = tx.send(format!("[SUCCESS] Mission '{}' accepted by Orchestrator.", cmd)).await; }
+                        _ => { let _ = tx.send("[ERROR] Gateway rejected mission assignment.".to_string()).await; }
+                    }
                 }
             }
 
