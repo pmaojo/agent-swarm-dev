@@ -274,6 +274,24 @@ class LLMService:
             return result
         return None
 
+    def _resolve_target_model(self) -> str:
+        target_model = self.model
+        if "gemini" in target_model.lower() and not target_model.startswith("gemini/"):
+            return f"gemini/{target_model}"
+        return target_model
+
+    def _prepare_fallbacks(self) -> List[Dict]:
+        processed_fallbacks = []
+        for m in self.fallback_models:
+            fallback_dict = {"model": m}
+            if m.startswith("openrouter/"):
+                fallback_dict["api_key"] = os.getenv("OPENROUTER_API_KEY")
+            elif "/" not in m:
+                fallback_dict["model"] = f"openrouter/{m}"
+                fallback_dict["api_key"] = os.getenv("OPENROUTER_API_KEY")
+            processed_fallbacks.append(fallback_dict)
+        return processed_fallbacks
+
     @retry(
         wait=wait_random_exponential(min=1, max=60),
         stop=stop_after_attempt(6),
@@ -301,26 +319,10 @@ class LLMService:
             return cached_result
 
         try:
-            # Manual mapping for Gemini to ensure LiteLLM routes correctly to Google AI Studio
-            target_model = self.model
-            if "gemini" in target_model.lower():
-                # Google AI Studio expects 'gemini/gemini-1.5-flash' or similar
-                if not target_model.startswith("gemini/"):
-                    target_model = f"gemini/{target_model}"
-            
-            # Map fallback properly with explicit keys
-            processed_fallbacks = []
-            for m in self.fallback_models:
-                fallback_dict = {"model": m}
-                if m.startswith("openrouter/"):
-                    fallback_dict["api_key"] = os.getenv("OPENROUTER_API_KEY")
-                elif "/" not in m:
-                    fallback_dict["model"] = f"openrouter/{m}"
-                    fallback_dict["api_key"] = os.getenv("OPENROUTER_API_KEY")
-                processed_fallbacks.append(fallback_dict)
+            target_model = self._resolve_target_model()
+            processed_fallbacks = self._prepare_fallbacks()
+            response_format = {"type": "json_object"} if json_mode else None
 
-            # Use LiteLLM's completion with native fallback support
-            # We explicitly map the main model's API key, and give openrouter fallbacks their own keys via the dict.
             response = completion(
                 model=target_model,
                 messages=messages,
@@ -332,15 +334,12 @@ class LLMService:
                 fallbacks=processed_fallbacks
             )
 
-            # Track Usage
-            usage = response.usage
-            if usage:
-                self.log_spend(usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0))
+            if response.usage:
+                self.log_spend(response.usage.get("prompt_tokens", 0), response.usage.get("completion_tokens", 0))
 
-            if tools and response.choices[0].message.tool_calls:
-                result = response.choices[0].message
-            else:
-                result = response.choices[0].message.content
+            result = response.choices[0].message
+            if not (tools and result.tool_calls):
+                result = result.content
 
             # Store in cache
             self._cache[cache_key] = result

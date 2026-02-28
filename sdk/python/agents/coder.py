@@ -206,30 +206,43 @@ class CoderAgent:
             })
         return responses
 
+    def _execute_mission_step(self, messages) -> Any:
+        """Single step of the LLM interaction."""
+        response = self.llm.completion(prompt="", messages=messages, tools=TOOLS_SCHEMA, tool_choice="auto")
+        if hasattr(response, "content") and response.content:
+            report_thought(response.content, agent_id="Coder")
+        return response
+
+    def _handle_tool_responses(self, tool_calls, messages) -> bool:
+        """Execute tools and update messages. Returns True if execution should stop (HALTED)."""
+        tool_responses = self._process_tool_calls(tool_calls)
+        for resp in tool_responses:
+            if "SYSTEM_HALTED" in resp["content"]: return True
+            messages.append(resp)
+        return False
+
     def generate_code_with_verification(self, task: str, context: Optional[Dict] = None) -> Dict[str, Any]:
         """Main Agent Loop using Tool Calling."""
         task = self._check_skills(task)
         messages = self._prepare_mission_messages(task, context)
         print(f"🧠 [Coder] Starting Task: {task[:50]}...")
         report_event(EventType.MISSION_ASSIGNED, f"Coder starting task: {task[:50]}...", details={"task": task})
-        max_steps = 20
-        step = 0
+
+        max_steps, step = 20, 0
         while step < max_steps:
             try:
-                message_response = self.llm.completion(prompt="", messages=messages, tools=TOOLS_SCHEMA, tool_choice="auto")
-                if hasattr(message_response, "content") and message_response.content:
-                    report_thought(message_response.content, agent_id="Coder")
+                message_response = self._execute_mission_step(messages)
                 messages.append(message_response.model_dump() if hasattr(message_response, "model_dump") else message_response)
+
                 if hasattr(message_response, "tool_calls") and message_response.tool_calls:
-                    tool_responses = self._process_tool_calls(message_response.tool_calls)
-                    for resp in tool_responses:
-                        if "SYSTEM_HALTED" in resp["content"]: return {"status": "failure", "error": f"System Halted: {resp['content']}"}
-                        messages.append(resp)
-                        step += 1
+                    if self._handle_tool_responses(message_response.tool_calls, messages):
+                        return {"status": "failure", "error": "System Halted by tool output."}
+                    step += len(message_response.tool_calls)
                 else:
                     content = message_response.content if hasattr(message_response, "content") else str(message_response)
                     print("🏁 [Coder] Finished.")
                     return {"status": "success", "result": content, "saved_files": self.modified_files}
+                step += 1
             except Exception as e:
                 print(f"❌ [Coder] Error in loop: {e}")
                 return {"status": "failure", "error": str(e)}
