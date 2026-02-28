@@ -164,8 +164,10 @@ class CoderAgent:
 
     def execute_tool(self, func_name: str, args: Dict) -> Any:
         """Dispatcher for tool execution."""
-        print(f"🔨 [Coder] Executing tool: {func_name} with args: {args}")
+        msg = f"🔨 [Coder] Executing tool: {func_name} with args: {args}"
+        print(msg)
         report_tool(func_name, args, agent_id="Coder")
+        report_thought(f"Initiating {func_name} for mission objectives.", agent_id="Coder")
 
         try:
             if func_name == "read_file":
@@ -248,6 +250,7 @@ class CoderAgent:
             for h in context["history"]:
                 hist_msg += f"- {h.get('outcome')}: {json.dumps(h.get('result', {}))}\n"
             messages.append({"role": "user", "content": hist_msg})
+            report_thought("Analyzing previous mission attempts for context.", agent_id="Coder")
 
         max_steps = 20 # Limit tool steps
         step = 0
@@ -286,7 +289,9 @@ class CoderAgent:
                             args = {}
 
                         # Execute
+                        report_thought(f"Executing tool call: {func_name}", agent_id="Coder")
                         result = self.execute_tool(func_name, args)
+                        report_thought(f"Tool {func_name} returned status: {result.get('status') if isinstance(result, dict) else 'success'}", agent_id="Coder")
 
                         # Check for SYSTEM_HALTED (Kill Switch)
                         if isinstance(result, dict) and "SYSTEM_HALTED" in str(result.get("error", "")):

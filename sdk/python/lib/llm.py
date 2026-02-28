@@ -160,10 +160,11 @@ class LLMService:
 
         # 1. Broadcast to Godot (Hardening Event)
         try:
-            requests.post("http://localhost:18789/api/v1/events/hardening", json={
-                "type": "ALERT",
+            requests.post(f"http://localhost:{os.getenv('GATEWAY_PORT', '18789')}/api/v1/events", json={
+                "type": "HardeningEvent",
                 "message": message,
                 "severity": "WARNING",
+                "timestamp": datetime.now().isoformat(),
                 "details": {"source": "LLMService"}
             }, timeout=2)
         except Exception as e:
@@ -183,6 +184,22 @@ class LLMService:
             requests.post(url, json=payload, timeout=5)
         except Exception as e:
             logger.error(f"❌ Failed to send Telegram alert: {e}")
+
+    def broadcast_thought(self, agent_name: str, thought: str):
+        """Broadcast agent thoughts to the Neural Stream via Gateway."""
+        try:
+            gateway_port = os.getenv("GATEWAY_PORT", "18789")
+            payload = {
+                "type": "AgentThought",
+                "message": f"{agent_name}: {thought}",
+                "severity": "INFO",
+                "timestamp": datetime.now().isoformat(),
+                "details": {"agent": agent_name}
+            }
+            requests.post(f"http://localhost:{gateway_port}/api/v1/events", json=payload, timeout=2)
+            logger.info(f"💭 Thought broadcasted: {agent_name}: {thought}")
+        except Exception as e:
+            logger.debug(f"Failed to broadcast thought: {e}")
 
     def check_budget_warning(self, current_spend: float):
         """Check if 80% threshold exceeded and alert."""
