@@ -52,13 +52,10 @@ class LLMService:
         self.mock_mode = os.getenv("MOCK_LLM", "false").lower() == "true"
 
         self.api_key = os.getenv("GEMINI_API_KEY") or os.getenv("OPENAI_API_KEY")
-        self.model = os.getenv("LLM_MODEL", "gemini/gemini-flash-latest")
+        self.model = os.getenv("LLM_MODEL", "gemini/gemini-3-latest")
         # Configure Fallbacks (Ordered by preference)
         self.fallback_models = [
-            "openrouter/google/gemma-2-9b-it:free",
-            "openrouter/meta-llama/llama-3.1-8b-instruct:free",
-            "ollama/deepseek-r1:8b",
-            "ollama/qwen3:4b"  # Most stable local model
+            "gemini/gemini-flash-latest"
         ]
         if self.mock_mode:
             logger.info("🤖 LLMService initialized in MOCK MODE.")
@@ -118,7 +115,7 @@ class LLMService:
         try:
             self.stub.IngestTriples(request)
         except Exception as e:
-            logger.error(f"❌ Ingest failed: {e}")
+            logger.error(f"❌ Ingest failed (ignoring for resilience): {e}")
 
     def _query(self, query: str) -> List[Dict]:
         if not self.stub or not semantic_engine_pb2: return []
@@ -278,6 +275,9 @@ class LLMService:
         target_model = self.model
         if "gemini" in target_model.lower() and not target_model.startswith("gemini/"):
             return f"gemini/{target_model}"
+        # LiteLLM sometimes fails with -latest suffix for some versions
+        if target_model.endswith("-latest"):
+            return target_model.replace("-latest", "")
         return target_model
 
     def _prepare_fallbacks(self) -> List[Dict]:

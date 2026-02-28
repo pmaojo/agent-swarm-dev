@@ -106,7 +106,7 @@ pub async fn spawn_command_handler(tx_msg: mpsc::Sender<String>, mut rx_cmd: mps
 
 async fn handle_chat(chat: &str, client: &reqwest::Client, tx_msg: &mpsc::Sender<String>, command_tx: &mpsc::Sender<String>) {
     if let Ok(api_key) = std::env::var("GEMINI_API_KEY") {
-        let url = format!("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={}", api_key);
+        let url = format!("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={}", api_key);
         let sys_prompt = "You are the AI persona of Agent Swarm. Keep responses very short and technical. Use MISSION_CMD: <task>, SCAN_CMD, or KNOWLEDGE_CMD: <id> to trigger actions.";
         let payload = serde_json::json!({
             "contents": [{"parts": [{"text": format!("{} User: {}", sys_prompt, chat)}]}]

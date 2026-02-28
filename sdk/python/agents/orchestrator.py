@@ -728,6 +728,14 @@ class OrchestratorAgent:
         except Exception: pass
         return "OPERATIONAL"
 
+    async def run_async(self, task: str, stack: str = "python"):
+        self.ensure_stack_knowledge(stack)
+        mode = self.detect_mode(task)
+        if mode == "PARALLEL":
+            return await self.execute_parallel(task, stack)
+        else:
+            return await self.execute_sequence(task, stack)
+
     def run(self, task: str, stack: str = "python", session_id: str = "default") -> Dict[str, Any]:
         # Budget Check
         try:
@@ -739,12 +747,17 @@ class OrchestratorAgent:
         prev_ns = self.namespace
         self.namespace = session_id
         try:
-            self.ensure_stack_knowledge(stack)
-            mode = self.detect_mode(task)
-            if mode == "PARALLEL":
-                return asyncio.run(self.execute_parallel(task, stack))
-            else:
-                return asyncio.run(self.execute_sequence(task, stack))
+            try:
+                loop = asyncio.get_running_loop()
+                if loop.is_running():
+                    # If we are already in an event loop (e.g. within another async function)
+                    # Use a new thread or nested loop (not ideal, but let's try direct await first if possible)
+                    # But sync run() is called from main. 
+                    # If test_flow.py isn't async, this shouldn't happen.
+                    return asyncio.run_coroutine_threadsafe(self.run_async(task, stack), loop).result()
+            except RuntimeError:
+                # No running loop, safe to use asyncio.run
+                return asyncio.run(self.run_async(task, stack))
         finally:
             self.namespace = prev_ns
 
