@@ -100,10 +100,10 @@ impl App {
                             resolved
                         }
                     }
-                    Err(_) => vec![KnowledgeNode { id: "error".to_string(), name: "Failed to parse knowledge".to_string() }]
+                    Err(_) => vec![KnowledgeNode { id: "error".to_string(), name: "Failed to parse knowledge".to_string(), domain: "ERROR".to_string(), level: 0 }]
                 }
             }
-            Err(_) => vec![KnowledgeNode { id: "error".to_string(), name: "Connect to gateway for knowledge".to_string() }]
+            Err(_) => vec![KnowledgeNode { id: "error".to_string(), name: "Connect to gateway for knowledge".to_string(), domain: "NETWORK".to_string(), level: 0 }]
         }
     }
     
