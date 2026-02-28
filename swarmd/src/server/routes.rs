@@ -466,7 +466,7 @@ pub async fn get_knowledge_node_documentation(
         "#
     );
 
-    let documentation = state
+    let mut documentation = state
         .synapse
         .query(&query)
         .await
@@ -476,6 +476,13 @@ pub async fn get_knowledge_node_documentation(
         .and_then(|row| row.get("docs").or_else(|| row.get("?docs")).cloned())
         .and_then(|value| value.as_str().map(ToString::to_string))
         .unwrap_or_default();
+
+    // Fallback to local build_knowledge_tree if empty
+    if documentation.is_empty() {
+        if let Some(node) = build_knowledge_tree().into_iter().find(|n| n.id == node_id) {
+            documentation = node.documentation;
+        }
+    }
 
     Json(KnowledgeNodeDocumentationResponse {
         node_id,
@@ -643,22 +650,86 @@ fn build_countries(status: &SystemStatus) -> Vec<CountryState> {
 }
 
 fn build_knowledge_tree() -> Vec<KnowledgeNode> {
-    vec![KnowledgeNode {
-        id: "tdd-level-1".to_string(),
-        domain: "Calidad".to_string(),
-        name: "TDD Nivel 1".to_string(),
-        capability: "Pruebas por feature branch".to_string(),
-        level: 1,
-        prerequisites: vec![],
-        cost: KnowledgeNodeCost {
-            budget: 2.0,
-            time_hours: 3,
+    vec![
+        KnowledgeNode {
+            id: "tdd-level-1".to_string(),
+            domain: "Quality".to_string(),
+            name: "TDD Nivel 1".to_string(),
+            capability: "Unit testing for feature branches".to_string(),
+            level: 1,
+            prerequisites: vec![],
+            cost: KnowledgeNodeCost { budget: 2.0, time_hours: 3 },
+            unlocked: true,
+            source_type: "seed".to_string(),
+            source_ref: "seed://default".to_string(),
+            documentation: "# TDD Nivel 1: Fundamentals\n\n- Implementation of automated test cycles (Red-Green-Refactor).\n- Mandatory coverage for all core SDK logic.\n- CI/CD integration for pre-merge validation.".to_string(),
         },
-        unlocked: true,
-        source_type: "seed".to_string(),
-        source_ref: "seed://default".to_string(),
-        documentation: String::new(),
-    }]
+        KnowledgeNode {
+            id: "neural-swarm-coordination".to_string(),
+            domain: "Orchestration".to_string(),
+            name: "Neural Swarm Coordination".to_string(),
+            capability: "Multi-agent task distribution and conflict resolution".to_string(),
+            level: 2,
+            prerequisites: vec!["tdd-level-1".to_string()],
+            cost: KnowledgeNodeCost { budget: 15.0, time_hours: 12 },
+            unlocked: true,
+            source_type: "core".to_string(),
+            source_ref: "seed://sovereign".to_string(),
+            documentation: "# Neural Swarm Coordination\n\nEnables the Sovereign to manage a swarm of specialized agents (Coder, Auditor, Architect) with dynamic role assignment.\n\n### Key Features:\n- **Semantic Routing**: Missions are routed based on agent capability embeddings.\n- **Neural Feedback**: Agents share state via the Neural Stream for collective intelligence.\n- **Conflict Resolution**: Logic-based arbitration for code merge decisions.".to_string(),
+        },
+        KnowledgeNode {
+            id: "autonomous-deployment-v1".to_string(),
+            domain: "Operations".to_string(),
+            name: "Autonomous Deployment v1".to_string(),
+            capability: "Zero-touch deployment to edge sectors".to_string(),
+            level: 2,
+            prerequisites: vec!["tdd-level-1".to_string()],
+            cost: KnowledgeNodeCost { budget: 25.0, time_hours: 8 },
+            unlocked: true,
+            source_type: "core".to_string(),
+            source_ref: "seed://sovereign".to_string(),
+            documentation: "# Autonomous Deployment v1\n\nUnlocks the `DEPLOY` mission type for the Coder agent.\n\n- **Sector Scanning**: Automated health checks post-deployment.\n- **Guardrails**: Integration with NIST-800-53 policies for automated rollback on failure.\n- **Ghost Ingress**: Invisible traffic splitting for canary testing.".to_string(),
+        },
+        KnowledgeNode {
+            id: "code-intelligence-semantic".to_string(),
+            domain: "Intelligence".to_string(),
+            name: "Semantic Code Intelligence".to_string(),
+            capability: "Deep graph-based analysis of monorepo structure".to_string(),
+            level: 3,
+            prerequisites: vec!["neural-swarm-coordination".to_string()],
+            cost: KnowledgeNodeCost { budget: 50.0, time_hours: 24 },
+            unlocked: true,
+            source_type: "core".to_string(),
+            source_ref: "seed://sovereign".to_string(),
+            documentation: "# Semantic Code Intelligence\n\nIntegrates **GitHub Semantic** into the Synapse Knowledge Graph.\n\n- **Symbol Mapping**: Visualizes classes, methods, and relationships in the TUI.\n- **Call Graph Analysis**: Predicts the blast radius of code changes.\n- **Semantic Search**: Natural language querying of the codebase structure.".to_string(),
+        },
+        KnowledgeNode {
+            id: "global-telemetry-visualizer".to_string(),
+            domain: "Intelligence".to_string(),
+            name: "Global Sector Telemetry".to_string(),
+            capability: "Real-time visualization of all swarm sectors".to_string(),
+            level: 3,
+            prerequisites: vec!["neural-swarm-coordination".to_string()],
+            cost: KnowledgeNodeCost { budget: 30.0, time_hours: 12 },
+            unlocked: true,
+            source_type: "core".to_string(),
+            source_ref: "seed://sovereign".to_string(),
+            documentation: "# Global Sector Telemetry\n\nConnects the Godot-based visualizer to the live Synapse event stream.\n\n- **Live Node States**: Watch agents move through the graph in real-time.\n- **Heatmaps**: Identify sectors with high failure rates or resource consumption.\n- **Neural Playback**: Record and re-watch mission executions for post-mortem analysis.".to_string(),
+        },
+        KnowledgeNode {
+            id: "swarm-self-repair-v1".to_string(),
+            domain: "Resilience".to_string(),
+            name: "Swarm Self-Repair v1".to_string(),
+            capability: "Automated healing of severed neural links".to_string(),
+            level: 4,
+            prerequisites: vec!["autonomous-deployment-v1".to_string()],
+            cost: KnowledgeNodeCost { budget: 100.0, time_hours: 48 },
+            unlocked: false,
+            source_type: "experimental".to_string(),
+            source_ref: "seed://sovereign".to_string(),
+            documentation: "# Swarm Self-Repair v1 (LOCKED)\n\nA highly advanced protocol that allows the Swarm to redeploy itself when the Sovereign connection is severed.\n\n### Protocols:\n- **Ghost Rebirth**: Autonomous spin-up of backup Gateway instances.\n- **Data Mirroring**: Real-time replication of Synapse triples across edge nodes.\n- **AI Sovereignty**: Agents can continue pre-authorized missions without a live connection.".to_string(),
+        },
+    ]
 }
 
 fn map_ingest_request_to_node(payload: &KnowledgeNodeIngestRequest) -> KnowledgeNode {

@@ -57,10 +57,12 @@ impl App {
             knowledge_state,
             active_node_detail: String::new(),
             actions: vec![
-                "LAUNCH MISSION".to_string(),
-                "HALT SWARM".to_string(),
-                "RESET BRAIN".to_string(),
                 "SCAN SECTOR".to_string(),
+                "LAUNCH MISSION".to_string(),
+                "CANARY DEPLOY".to_string(),
+                "NEURAL RESET".to_string(),
+                "HALT SWARM".to_string(),
+                "PURGE RECENT BRAIN".to_string(),
             ],
             action_index: 0,
         }

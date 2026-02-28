@@ -83,7 +83,7 @@ pub async fn spawn_command_handler(tx_msg: mpsc::Sender<String>, mut rx_cmd: mps
                 }
                 c if c.starts_with("KNOWLEDGE:") => {
                     let id = &c[10..];
-                    let url = format!("http://127.0.0.1:18789/api/v1/knowledge/{}/docs", id);
+                    let url = format!("http://127.0.0.1:18789/api/v1/knowledge-tree/{}/docs", id);
                     match client.get(&url).send().await {
                         Ok(r) if r.status().is_success() => {
                             if let Ok(json) = r.json::<serde_json::Value>().await {

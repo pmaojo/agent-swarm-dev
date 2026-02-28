@@ -86,8 +86,10 @@ fn draw_knowledge(f: &mut Frame, app: &mut App, area: Rect) {
     let style = if app.active_panel == ActivePanel::Knowledge { Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::DarkGray) };
     let knowledge_items: Vec<ListItem> = app.knowledge_nodes.iter().map(|k| {
         ListItem::new(Line::from(vec![
-            Span::styled("● ", Style::default().fg(Color::Cyan)),
+            Span::styled("● ", Style::default().fg(if k.id.contains("LOCKED") { Color::Red } else { Color::Cyan })),
+            Span::styled(format!("{:<15} ", format!("[{}]", k.domain)), Style::default().fg(Color::DarkGray)),
             Span::styled(&k.name, Style::default().fg(Color::Gray)),
+            Span::styled(format!(" L{}", k.level), Style::default().fg(Color::Rgb(100, 100, 100))),
         ]))
     }).collect();
     
