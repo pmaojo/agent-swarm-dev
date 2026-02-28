@@ -265,19 +265,19 @@ class CoderAgent:
 
                 message = completion_msg
                 
-                # LiteLLM returns an object, we need to append it as a dict to avoid TypeErrors on subsequent calls
-                msg_dict = {"role": message.role, "content": message.content}
+                # Standardize the assistant's tool call message into strictly OpenAI spec for LiteLLM
+                msg_dict = {"role": "assistant", "content": message.content or ""}
                 if hasattr(message, "tool_calls") and message.tool_calls:
-                    msg_dict["tool_calls"] = [
-                        {
+                    msg_dict["tool_calls"] = []
+                    for t in message.tool_calls:
+                        msg_dict["tool_calls"].append({
                             "id": t.id,
                             "type": "function",
                             "function": {
                                 "name": t.function.name,
                                 "arguments": t.function.arguments
                             }
-                        } for t in message.tool_calls
-                    ]
+                        })
                 messages.append(msg_dict)
 
                 if message.tool_calls:
@@ -303,11 +303,13 @@ class CoderAgent:
                             result = self.wait_for_approval(uuid_val, command=args.get('command'))
 
                         # Feed back result
+                        # Gemini requires the tool response to be a valid JSON object.
+                        safe_result = {"result": result} if not isinstance(result, dict) else result
                         messages.append({
                             "role": "tool",
                             "tool_call_id": tool_call.id,
                             "name": func_name,
-                            "content": json.dumps(result) if isinstance(result, (dict, list)) else str(result)
+                            "content": json.dumps(safe_result)
                         })
                 else:
                     content = message.content

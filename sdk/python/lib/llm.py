@@ -11,6 +11,8 @@ from collections import OrderedDict
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 from litellm import completion
+import litellm
+litellm.set_verbose = True
 from dotenv import load_dotenv
 from tenacity import retry, stop_after_attempt, wait_random_exponential, retry_if_not_exception_type
 
