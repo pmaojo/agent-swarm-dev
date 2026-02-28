@@ -303,13 +303,14 @@ class CoderAgent:
                             result = self.wait_for_approval(uuid_val, command=args.get('command'))
 
                         # Feed back result
-                        # Gemini requires the tool response to be a valid JSON object.
-                        safe_result = {"result": result} if not isinstance(result, dict) else result
+                        # Gemini requires the tool response to be a valid JSON object string. 
+                        # LiteLLM wants "content" to be a string that parses as JSON.
+                        safe_result_dict = {"result": result} if not isinstance(result, (dict, list)) else result
                         messages.append({
                             "role": "tool",
                             "tool_call_id": tool_call.id,
                             "name": func_name,
-                            "content": json.dumps(safe_result)
+                            "content": json.dumps(safe_result_dict)
                         })
                 else:
                     content = message.content
