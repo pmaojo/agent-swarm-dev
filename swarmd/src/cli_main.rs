@@ -220,6 +220,7 @@ async fn main() -> Result<()> {
     println!("\x1bc");        // Reset terminal
 
     if let Err(err) = res {
+        cleanup_terminal();
         println!("{:?}", err)
     }
 
