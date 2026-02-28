@@ -316,6 +316,8 @@ pub enum EventType {
     ChaosAnomaly,
     ControlCommand,
     GameStateUpdate,
+    AgentThought,
+    ToolExecution,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
