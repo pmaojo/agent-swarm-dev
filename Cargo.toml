@@ -1,7 +1,8 @@
 [workspace]
 members = [
     "swarmd",
-    "synapse-engine/crates/*"
+    "synapse-engine/crates/*",
+    "apicentric_repo"
 ]
 resolver = "2"
 

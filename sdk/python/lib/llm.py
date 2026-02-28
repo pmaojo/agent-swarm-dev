@@ -57,7 +57,7 @@ class LLMService:
         self.fallback_models = [
             "openrouter/google/gemma-2-9b-it:free",
             "openrouter/meta-llama/llama-3.1-8b-instruct:free",
-            "ollama/deepseek-r1:4b",
+            "ollama/deepseek-r1:8b",
             "ollama/qwen3:4b"  # Most stable local model
         ]
         if self.mock_mode:

@@ -4,6 +4,14 @@ version = "0.1.0"
 edition.workspace = true
 authors.workspace = true
 
+[[bin]]
+name = "swarmd"
+path = "src/main.rs"
+
+[[bin]]
+name = "swarm-cli"
+path = "src/cli_main.rs"
+
 [dependencies]
 tokio.workspace = true
 serde.workspace = true
@@ -22,6 +30,10 @@ chrono = { version = "0.4.43", features = ["serde"] }
 uuid = { version = "1.21.0", features = ["v4"] }
 rand = "0.8"
 tower-http = { version = "0.5", features = ["fs"] }
+ratatui = "0.26"
+crossterm = { version = "0.27", features = ["event-stream"] }
+tokio-tungstenite = "0.21"
+futures-util = "0.3"
 
 [build-dependencies]
 tonic-build = "0.11"
