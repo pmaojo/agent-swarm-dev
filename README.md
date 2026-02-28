@@ -129,7 +129,33 @@ wscat -c ws://localhost:18789/api/v1/events/combat/stream
 
 ## 🎮 Dual Modes
 
-### Mode 1: Turn-Based (Godot Visualizer)
+### Mode 1: TUI (Rust Terminal UI)
+
+Cyberpunk-style terminal interface built with Ratatui:
+
+```bash
+# Run the TUI
+cargo run -p swarmd --bin swarm-cli
+```
+
+**Features:**
+
+- 4 panels: Input, Knowledge, Stream, Actions
+- WebSocket connection to combat events
+- Mission assignment via API
+- Keyboard navigation (Tab, Arrow keys, Enter)
+
+**Controls:**
+| Key | Action |
+|-----|--------|
+| Tab | Cycle panels |
+| ↑/↓ | Navigate list |
+| Enter | Execute command |
+| ^L | Clear messages |
+| ^A | Launch mission |
+| q | Quit |
+
+### Mode 2: Turn-Based (Godot Visualizer)
 
 Interactive game-like UI - send commands manually:
 
@@ -140,7 +166,7 @@ Interactive game-like UI - send commands manually:
 
 Open `visualizer/project.godot` in Godot 4.x to play.
 
-### Mode 2: Autonomous (Trello + OpenSpec)
+### Mode 3: Autonomous (Trello + OpenSpec)
 
 Fully automated - agents process Trello cards:
 
