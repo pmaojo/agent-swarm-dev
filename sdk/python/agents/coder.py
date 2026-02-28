@@ -279,14 +279,33 @@ class CoderAgent:
                 # back to Gemini's `functionCall` properly when we make the next call.
                 messages.append(message_response.model_dump() if hasattr(message_response, "model_dump") else message_response)
 
-                if hasattr(message_response, "tool_calls") and message_response.tool_calls:
-                    for tool_call in message_response.tool_calls:
-                        step += 1
-                        func_name = tool_call.function.name
-                        try:
-                            args = json.loads(tool_call.function.arguments)
-                        except json.JSONDecodeError:
-                            args = {}
+    def _process_tool_calls(self, tool_calls) -> List[Dict]:
+        """Execute a list of tool calls and return responses."""
+        responses = []
+        for tool_call in tool_calls:
+            func_name = tool_call.function.name
+            try:
+                args = json.loads(tool_call.function.arguments)
+            except json.JSONDecodeError:
+                args = {}
+
+            report_thought(f"Executing tool call: {func_name}", agent_id="Coder")
+            result = self.execute_tool(func_name, args)
+            report_thought(f"Tool {func_name} returned status: {result.get('status') if isinstance(result, dict) else 'success'}", agent_id="Coder")
+            
+            responses.append({
+                "tool_call_id": tool_call.id,
+                "role": "tool",
+                "name": func_name,
+                "content": json.dumps(result) if not isinstance(result, str) else result
+            })
+        return responses
+
+    def _should_halt(self, responses: List[Dict]) -> Optional[Dict]:
+        for resp in responses:
+            if "SYSTEM_HALTED" in resp["content"]:
+                return {"status": "failure", "error": f"System Halted: {resp['content']}"}
+        return None
 
                         # Execute
                         report_thought(f"Executing tool call: {func_name}", agent_id="Coder")

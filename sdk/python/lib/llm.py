@@ -187,19 +187,8 @@ class LLMService:
 
     def broadcast_thought(self, agent_name: str, thought: str):
         """Broadcast agent thoughts to the Neural Stream via Gateway."""
-        try:
-            gateway_port = os.getenv("GATEWAY_PORT", "18789")
-            payload = {
-                "type": "AgentThought",
-                "message": f"{agent_name}: {thought}",
-                "severity": "INFO",
-                "timestamp": datetime.now().isoformat(),
-                "details": {"agent": agent_name}
-            }
-            requests.post(f"http://localhost:{gateway_port}/api/v1/events", json=payload, timeout=2)
-            logger.info(f"💭 Thought broadcasted: {agent_name}: {thought}")
-        except Exception as e:
-            logger.debug(f"Failed to broadcast thought: {e}")
+        from lib.telemetry import report_thought
+        report_thought(thought, agent_id=agent_name)
 
     def check_budget_warning(self, current_spend: float):
         """Check if 80% threshold exceeded and alert."""
@@ -267,35 +256,7 @@ class LLMService:
         self._ingest(triples)
         # print(f"💰 Cost logged: ${cost:.6f}")
 
-    @retry(
-        wait=wait_random_exponential(min=1, max=60),
-        stop=stop_after_attempt(6),
-        retry=retry_if_not_exception_type(BudgetExceededException)
-    )
-    def completion(self, prompt: str, system_prompt: str = "You are a helpful assistant.", json_mode: bool = False, tools: Optional[List[Dict]] = None, tool_choice: Any = None, messages: Optional[List[Dict]] = None) -> Any:
-        """
-        Generate a completion using the configured LLM, with Budget Enforcement.
-        Returns content string if no tools used, otherwise returns the message object.
-        If `messages` is provided, it overrides prompt/system_prompt construction.
-        """
-        if self.mock_mode:
-            logger.info(f"🤖 [MOCK LLM] Prompt: {prompt[:50]}...")
-            if json_mode:
-                return '{"status": "success", "mock": true, "principles": ["Mock Principle"]}'
-            return "Mock LLM Response: Task Completed."
-
-        self.check_budget()
-
-        if messages is None:
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": prompt}
-            ]
-
-        # LiteLLM uses 'response_format' similar to OpenAI
-        response_format = {"type": "json_object"} if json_mode else None
-
-        # Compute cache key after messages are populated
+    def _get_cache_key(self, messages, json_mode, tools, tool_choice) -> str:
         cache_key_data = {
             "messages": messages,
             "json_mode": json_mode,
@@ -304,13 +265,40 @@ class LLMService:
             "model": self.model,
             "temperature": 0.7
         }
-        cache_key = hashlib.md5(json.dumps(cache_key_data, sort_keys=True).encode('utf-8')).hexdigest()
+        return hashlib.md5(json.dumps(cache_key_data, sort_keys=True).encode('utf-8')).hexdigest()
 
+    def _check_cache(self, cache_key: str) -> Optional[Any]:
         if cache_key in self._cache:
-            # Move to end to mark as recently used
             result = self._cache.pop(cache_key)
             self._cache[cache_key] = result
             return result
+        return None
+
+    @retry(
+        wait=wait_random_exponential(min=1, max=60),
+        stop=stop_after_attempt(6),
+        retry=retry_if_not_exception_type(BudgetExceededException)
+    )
+    def completion(self, prompt: str, system_prompt: str = "You are a helpful assistant.", json_mode: bool = False, tools: Optional[List[Dict]] = None, tool_choice: Any = None, messages: Optional[List[Dict]] = None) -> Any:
+        """
+        Generate a completion using the configured LLM, with Budget Enforcement.
+        """
+        if self.mock_mode:
+            logger.info(f"🤖 [MOCK LLM] Prompt: {prompt[:50]}...")
+            return '{"status": "success", "mock": true}' if json_mode else "Mock LLM Response: Task Completed."
+
+        self.check_budget()
+
+        if messages is None:
+            messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}]
+
+        # LiteLLM uses 'response_format' similar to OpenAI
+        response_format = {"type": "json_object"} if json_mode else None
+        
+        cache_key = self._get_cache_key(messages, json_mode, tools, tool_choice)
+        cached_result = self._check_cache(cache_key)
+        if cached_result:
+            return cached_result
 
         try:
             # Manual mapping for Gemini to ensure LiteLLM routes correctly to Google AI Studio
