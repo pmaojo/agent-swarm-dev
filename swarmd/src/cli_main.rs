@@ -242,6 +242,17 @@ async fn run_app<B: Backend>(
                             let _ = command_tx.try_send(action);
                         }
                     },
+                    KeyCode::Char('l') if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
+                        app.clear_messages();
+                    },
+                    KeyCode::Char('a') if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
+                        if !app.input.is_empty() {
+                            let input = app.input.clone();
+                            app.add_message(format!("[USER] {}", input));
+                            app.handle_input(input, &command_tx);
+                            app.input.clear();
+                        }
+                    },
                     KeyCode::Up => {
                         match app.active_panel {
                             ActivePanel::Knowledge => {
@@ -345,6 +356,11 @@ fn ui(f: &mut Frame, app: &mut App) {
             .title(Span::styled(format!(" SYSTEM CORE [{}] ", status_text), Style::default().fg(status_color).add_modifier(Modifier::BOLD))));
     f.render_widget(logo, main_layout[0]);
 
+    let k_style = if app.active_panel == ActivePanel::Knowledge { Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::DarkGray) };
+    let s_style = if app.active_panel == ActivePanel::Stream { Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::DarkGray) };
+    let a_style = if app.active_panel == ActivePanel::Actions { Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::DarkGray) };
+    let i_style = if app.active_panel == ActivePanel::Input { Style::default().fg(Color::Green).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::DarkGray) };
+
     // 2. Sidebar: Knowledge Explorer
     let knowledge_items: Vec<ListItem> = app.knowledge_nodes.iter().map(|k| {
         ListItem::new(Line::from(vec![
@@ -353,9 +369,9 @@ fn ui(f: &mut Frame, app: &mut App) {
         ]))
     }).collect();
     
-    let k_title = if app.active_panel == ActivePanel::Knowledge { " [ SELECTED: KNOWLEDGE ] " } else { " KNOWLEDGE " };
+    let k_title = if app.active_panel == ActivePanel::Knowledge { " [ SELECTED: KNOWLEDGE (Up/Down to scroll) ] " } else { " KNOWLEDGE " };
     let knowledge = List::new(knowledge_items)
-        .block(Block::default().borders(Borders::ALL).title(k_title).border_style(k_border_style))
+        .block(Block::default().borders(Borders::ALL).title(k_title).border_style(k_style))
         .highlight_style(Style::default().bg(Color::Rgb(30, 30, 50)).add_modifier(Modifier::BOLD))
         .highlight_symbol(">> ");
     f.render_stateful_widget(knowledge, panel_layout[0], &mut app.knowledge_state);
@@ -376,7 +392,7 @@ fn ui(f: &mut Frame, app: &mut App) {
 
     let s_title = if app.active_panel == ActivePanel::Stream { " [ SELECTED: NEURAL STREAM ] " } else { " NEURAL STREAM " };
     let stream = List::new(messages)
-        .block(Block::default().borders(Borders::ALL).title(s_title).border_style(s_border_style));
+        .block(Block::default().borders(Borders::ALL).title(s_title).border_style(s_style));
     f.render_stateful_widget(stream, panel_layout[1], &mut app.list_state);
 
     // 4. Right: Action Matrix
@@ -389,22 +405,22 @@ fn ui(f: &mut Frame, app: &mut App) {
         ListItem::new(Line::from(vec![Span::styled(format!(" [{}] ", a), style)]))
     }).collect();
 
-    let a_title = if app.active_panel == ActivePanel::Actions { " [ SELECTED: ACTIONS ] " } else { " ACTIONS " };
+    let a_title = if app.active_panel == ActivePanel::Actions { " [ SELECTED: ACTIONS (Up/Down to select) ] " } else { " ACTIONS " };
     let actions_list = List::new(actions)
-        .block(Block::default().borders(Borders::ALL).title(a_title).border_style(a_border_style));
+        .block(Block::default().borders(Borders::ALL).title(a_title).border_style(a_style));
     f.render_widget(actions_list, panel_layout[2]);
 
     // 5. Bottom: Input Command
-    let i_title = if app.active_panel == ActivePanel::Input { " [ SELECTED: COMMAND MATRIX ] " } else { " COMMAND MATRIX " };
+    let i_title = if app.active_panel == ActivePanel::Input { " [ SELECTED: COMMAND MATRIX (Type here) ] " } else { " COMMAND MATRIX " };
     let input_text = format!("> {}", app.input);
     let input = Paragraph::new(input_text)
         .style(Style::default().fg(Color::Green))
-        .block(Block::default().borders(Borders::ALL).title(i_title).border_style(i_border_style));
+        .block(Block::default().borders(Borders::ALL).title(i_title).border_style(i_style));
     f.render_widget(input, main_layout[2]);
     
     // Help hint
-    let help_hint = Paragraph::new(" [TAB] Switch | [ENTER] Run | [^L] Clear | [^R] Sync | [^A] Launch Mission ")
-        .style(Style::default().fg(Color::Rgb(100, 100, 100)))
+    let help_hint = Paragraph::new(" [TAB] Cycle Panels | [ENTER] Execute | [^L] Clear | [^A] Launch mission from Matrix ")
+        .style(Style::default().fg(Color::Rgb(120, 120, 120)))
         .alignment(ratatui::layout::Alignment::Right);
     
     f.render_widget(help_hint, main_layout[2]);
