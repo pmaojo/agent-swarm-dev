@@ -258,7 +258,21 @@ class CoderAgent:
                 )
 
                 message = completion_msg
-                messages.append(message)
+                
+                # LiteLLM returns an object, we need to append it as a dict to avoid TypeErrors on subsequent calls
+                msg_dict = {"role": message.role, "content": message.content}
+                if hasattr(message, "tool_calls") and message.tool_calls:
+                    msg_dict["tool_calls"] = [
+                        {
+                            "id": t.id,
+                            "type": "function",
+                            "function": {
+                                "name": t.function.name,
+                                "arguments": t.function.arguments
+                            }
+                        } for t in message.tool_calls
+                    ]
+                messages.append(msg_dict)
 
                 if message.tool_calls:
                     for tool_call in message.tool_calls:
@@ -286,6 +300,7 @@ class CoderAgent:
                         messages.append({
                             "role": "tool",
                             "tool_call_id": tool_call.id,
+                            "name": func_name,
                             "content": json.dumps(result) if isinstance(result, (dict, list)) else str(result)
                         })
                 else:
