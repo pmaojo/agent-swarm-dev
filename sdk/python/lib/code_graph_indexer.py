@@ -4,7 +4,7 @@ import grpc
 import json
 import logging
 import fnmatch
-from typing import List, Dict, Set, Any, Tuple
+from typing import List, Dict, Set, Any, Tuple, Optional
 
 # Ensure proto modules can import each other
 proto_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'agents', 'proto'))
@@ -69,6 +69,8 @@ class CodeGraphIndexer:
         logger.info(f"Starting CodeGraph Indexing for {self.root_path}...")
         ignore_patterns = self._load_gitignore()
 
+        files_to_process = []
+
         for root, dirs, files in os.walk(self.root_path):
             # 1. Filter Directories
             # Remove hidden dirs and explicit excludes
@@ -87,10 +89,25 @@ class CodeGraphIndexer:
 
                 ext = os.path.splitext(file)[1]
                 if ext in self.parser.languages:
-                    try:
-                        self._process_file(filepath, rel_path)
-                    except Exception as e:
-                        logger.error(f"Error processing {rel_path}: {e}")
+                    files_to_process.append((filepath, rel_path))
+
+        # Process in batches
+        BATCH_SIZE = 50
+        for i in range(0, len(files_to_process), BATCH_SIZE):
+            batch = files_to_process[i:i + BATCH_SIZE]
+            file_uris = [f"http://swarm.os/file/{rel_path}" for _, rel_path in batch]
+
+            # Batch fetch hashes
+            batch_hashes = self._get_existing_hashes_batch(file_uris)
+
+            for filepath, rel_path in batch:
+                file_uri = f"http://swarm.os/file/{rel_path}"
+                pre_fetched_hashes = batch_hashes.get(file_uri) if batch_hashes else None
+
+                try:
+                    self._process_file(filepath, rel_path, pre_fetched_hashes)
+                except Exception as e:
+                    logger.error(f"Error processing {rel_path}: {e}")
 
         logger.info("CodeGraph Indexing complete.")
 
@@ -117,7 +134,7 @@ class CodeGraphIndexer:
                  return True
         return False
 
-    def _process_file(self, filepath: str, rel_path: str):
+    def _process_file(self, filepath: str, rel_path: str, pre_fetched_hashes: Optional[Dict[str, str]] = None):
         # 1. Parse File
         result = self.parser.parse_file(filepath)
         if not result or not result.get('symbols'):
@@ -129,7 +146,7 @@ class CodeGraphIndexer:
 
         # 2. Fetch existing state from Synapse
         file_uri = f"http://swarm.os/file/{rel_path}"
-        existing_hashes = self._get_existing_hashes(file_uri)
+        existing_hashes = pre_fetched_hashes if pre_fetched_hashes is not None else self._get_existing_hashes(file_uri)
 
         # 3. Determine diff
         triples_to_add = []
@@ -203,6 +220,44 @@ class CodeGraphIndexer:
             stack.append(sym)
 
         return sorted_syms
+
+    def _get_existing_hashes_batch(self, file_uris: List[str]) -> Optional[Dict[str, Dict[str, str]]]:
+        """
+        @synapse:rule Implement batch-fetching with SPARQL VALUES clauses to reduce gRPC overhead and optimize incremental indexing speed, with per-file fallback for robustness.
+        Returns {file_uri: {symbol_uri: hash}} for multiple files.
+        """
+        if not self.stub or not file_uris:
+            return None
+
+        # Build VALUES block
+        values_block = " ".join([f"<{uri}>" for uri in file_uris])
+
+        query = f"""
+        PREFIX swarm: <{SWARM}>
+        SELECT ?file ?symbol ?hash WHERE {{
+            VALUES ?file {{ {values_block} }}
+            ?file swarm:hasSymbol ?symbol .
+            ?symbol swarm:nodeHash ?hash .
+        }}
+        """
+        try:
+            request = semantic_engine_pb2.SparqlRequest(query=query, namespace="default")
+            response = self.stub.QuerySparql(request)
+            results = json.loads(response.results_json)
+
+            hashes_batch = {uri: {} for uri in file_uris}
+            for r in results:
+                f = r.get("file", {}).get("value")
+                s = r.get("symbol", {}).get("value")
+                h = r.get("hash", {}).get("value")
+                if f and s and h:
+                    if f not in hashes_batch:
+                        hashes_batch[f] = {}
+                    hashes_batch[f][s] = h
+            return hashes_batch
+        except Exception as e:
+            logger.error(f"SPARQL Batch Error: {e}")
+            return None
 
     def _get_existing_hashes(self, file_uri: str) -> Dict[str, str]:
         """Returns {symbol_uri: hash}."""
