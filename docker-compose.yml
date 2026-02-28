@@ -47,14 +47,7 @@ services:
       - fastembed
     restart: unless-stopped
 
-  # The Semantic Analysis Engine (GitHub Semantic) - TEMPORARILY DISABLED (IMAGE DENIED)
-  # semantic:
-  #   image: ghcr.io/github/semantic:latest
-  #   volumes:
-  #     - .:/repo
-  #   working_dir: /repo
-  #   entrypoint: ["semantic"]
-  #   restart: "no"
+  # The Semantic Analysis Engine (GitHub Semantic) - DISABLED
 
 networks:
   default:
