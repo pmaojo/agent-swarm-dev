@@ -32,6 +32,8 @@ from agents.tools.logs import read_logs
 from agents.tools.shell import execute_command, run_shell_raw, CommandGuard
 from agents.tools.context import ContextParser
 from agents.tools.browser import BrowserTool
+from lib.telemetry import report_thought, report_tool, report_event
+from lib.contracts import EventType
 
 # Namespaces
 SWARM = "http://swarm.os/ontology/"
@@ -162,6 +164,7 @@ class CoderAgent:
     def execute_tool(self, func_name: str, args: Dict) -> Any:
         """Dispatcher for tool execution."""
         print(f"🔨 [Coder] Executing tool: {func_name} with args: {args}")
+        report_tool(func_name, args, agent_id="Coder")
 
         try:
             if func_name == "read_file":
@@ -211,6 +214,7 @@ class CoderAgent:
         task_with_context = self.context_parser.expand_context(task)
 
         print(f"🧠 [Coder] Starting Task: {task[:50]}...")
+        report_event(EventType.MISSION_ASSIGNED, f"Coder starting task: {task[:50]}...", details={"task": task})
 
         system_prompt = """
         You are a Tactical Software Engineer Agent (CoderAgent).
@@ -263,8 +267,9 @@ class CoderAgent:
                         json.dump(messages, dump_f, indent=2)
                     raise llm_e
 
-                message = completion_msg
-                
+                if hasattr(message, "content") and message.content:
+                    report_thought(message.content, agent_id="Coder")
+
                 # IMPORTANT: Keep the assistant message in LiteLLM's native Message object format 
                 # (or convert to dict but preserve the exact `tool_calls` objects) so it can translate 
                 # back to Gemini's `functionCall` properly when we make the next call.

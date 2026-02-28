@@ -271,7 +271,12 @@ pub async fn post_control_command(
     })
 }
 
-pub async fn post_event(Json(event): Json<GatewayEvent>) -> Json<EventAck> {
+pub async fn post_event(
+    State(state): State<AppState>,
+    Json(event): Json<GatewayEvent>,
+) -> Json<EventAck> {
+    let _ = state.event_tx.send(event.clone());
+
     Json(EventAck {
         status: "broadcasted".to_string(),
         event,

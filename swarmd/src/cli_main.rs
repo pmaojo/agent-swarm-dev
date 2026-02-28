@@ -6,10 +6,10 @@ use crossterm::{
 };
 use ratatui::{
     backend::{Backend, CrosstermBackend},
-    layout::{Constraint, Direction, Layout},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Span, Line},
-    widgets::{Block, Borders, Paragraph, List, ListItem},
+    widgets::{Block, Borders, Paragraph, List, ListItem, ListState, Clear},
     Frame, Terminal,
 };
 use std::{io, time::{Duration, Instant}};
@@ -18,18 +18,55 @@ use futures_util::StreamExt;
 use tokio_tungstenite::connect_async;
 use serde_json::Value;
 
+#[derive(PartialEq, Eq, Clone, Copy)]
+enum ActivePanel {
+    Input,
+    Knowledge,
+    Actions,
+    Stream,
+}
+
 struct App {
     frame_count: u64,
     messages: Vec<String>,
-    scroll: u16,
+    input: String,
+    connected: bool,
+    list_state: ListState,
+    active_panel: ActivePanel,
+    knowledge_nodes: Vec<String>,
+    knowledge_state: ListState,
+    actions: Vec<String>,
+    action_index: usize,
 }
 
 impl App {
     fn new() -> App {
+        let mut list_state = ListState::default();
+        list_state.select(Some(0));
+        let mut knowledge_state = ListState::default();
+        knowledge_state.select(Some(0));
         App { 
             frame_count: 0,
             messages: vec!["Initializing neural links...".to_string()],
-            scroll: 0,
+            input: String::new(),
+            connected: false,
+            list_state,
+            active_panel: ActivePanel::Input,
+            knowledge_nodes: vec![
+                "Neural Link v1".to_string(),
+                "Cyber-Psychosis Guard".to_string(),
+                "Quantum Compiler".to_string(),
+                "Swarm Mind v2".to_string(),
+                "NIST Authorization".to_string(),
+            ],
+            knowledge_state,
+            actions: vec![
+                "LAUNCH MISSION".to_string(),
+                "HALT SWARM".to_string(),
+                "RESET BRAIN".to_string(),
+                "SCAN SECTOR".to_string(),
+            ],
+            action_index: 0,
         }
     }
 
@@ -39,9 +76,19 @@ impl App {
 
     fn add_message(&mut self, msg: String) {
         self.messages.push(msg);
-        if self.messages.len() > 100 {
+        if self.messages.len() > 500 {
             self.messages.remove(0);
         }
+        self.list_state.select(Some(self.messages.len().saturating_sub(1)));
+    }
+
+    fn next_panel(&mut self) {
+        self.active_panel = match self.active_panel {
+            ActivePanel::Input => ActivePanel::Knowledge,
+            ActivePanel::Knowledge => ActivePanel::Stream,
+            ActivePanel::Stream => ActivePanel::Actions,
+            ActivePanel::Actions => ActivePanel::Input,
+        };
     }
 }
 
@@ -56,28 +103,42 @@ async fn main() -> Result<()> {
 
     // Setup WebSocket communication
     let (tx, mut rx) = mpsc::channel(100);
+    let (status_tx, mut status_rx) = mpsc::channel(1);
+
     tokio::spawn(async move {
-        let url = "ws://127.0.0.1:18789/ws";
-        if let Ok((mut ws_stream, _)) = connect_async(url).await {
-            while let Some(msg) = ws_stream.next().await {
-                if let Ok(msg) = msg {
-                    if let Ok(text) = msg.to_text() {
-                        if let Ok(v) = serde_json::from_str::<Value>(text) {
-                            let type_str = v["type"].as_str().unwrap_or("UNKNOWN");
-                            let msg_str = v["payload"]["message"].as_str().unwrap_or("");
-                            let formatted = format!("[{}] {}", type_str, msg_str);
-                            let _ = tx.send(formatted).await;
+        let url = "ws://127.0.0.1:18792/api/v1/events/combat/stream";
+        loop {
+            match connect_async(url).await {
+                Ok((mut ws_stream, _)) => {
+                    let _ = status_tx.send(true).await;
+                    while let Some(msg) = ws_stream.next().await {
+                        if let Ok(msg) = msg {
+                            if let Ok(text) = msg.to_text() {
+                                if let Ok(v) = serde_json::from_str::<Value>(text) {
+                                    let type_str = v["type"].as_str().unwrap_or("UNKNOWN");
+                                    let msg_str = v["payload"]["message"].as_str().unwrap_or("");
+                                    let formatted = format!("[{}] {}", type_str, msg_str);
+                                    let _ = tx.send(formatted).await;
+                                }
+                            }
+                        } else {
+                            break;
                         }
                     }
+                    let _ = status_tx.send(false).await;
+                }
+                Err(_) => {
+                    let _ = status_tx.send(false).await;
                 }
             }
+            tokio::time::sleep(Duration::from_secs(2)).await;
         }
     });
 
     // create app and run it
     let tick_rate = Duration::from_millis(50);
     let mut app = App::new();
-    let res = run_app(&mut terminal, &mut app, tick_rate, &mut rx).await;
+    let res = run_app(&mut terminal, &mut app, tick_rate, &mut rx, &mut status_rx).await;
 
     // restore terminal
     disable_raw_mode()?;
@@ -100,6 +161,7 @@ async fn run_app<B: Backend>(
     app: &mut App,
     tick_rate: Duration,
     rx: &mut mpsc::Receiver<String>,
+    status_rx: &mut mpsc::Receiver<bool>,
 ) -> io::Result<()> {
     let mut last_tick = Instant::now();
     loop {
@@ -111,15 +173,67 @@ async fn run_app<B: Backend>(
         
         if crossterm::event::poll(timeout)? {
             if let Event::Key(key) = event::read()? {
-                if let KeyCode::Char('q') = key.code {
-                    return Ok(());
+                match key.code {
+                    KeyCode::Char('q') if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => return Ok(()),
+                    KeyCode::Tab => app.next_panel(),
+                    KeyCode::Char(c) if app.active_panel == ActivePanel::Input => app.input.push(c),
+                    KeyCode::Backspace if app.active_panel == ActivePanel::Input => { app.input.pop(); },
+                    KeyCode::Enter => {
+                        if app.active_panel == ActivePanel::Input && !app.input.is_empty() {
+                            app.add_message(format!("[USER] {}", app.input));
+                            app.input.clear();
+                        } else if app.active_panel == ActivePanel::Actions {
+                            let action = app.actions[app.action_index].clone();
+                            app.add_message(format!("[SYSTEM] Executing: {}", action));
+                        }
+                    },
+                    KeyCode::Up => {
+                        match app.active_panel {
+                            ActivePanel::Knowledge => {
+                                let i = match app.knowledge_state.selected() {
+                                    Some(i) => if i == 0 { app.knowledge_nodes.len() - 1 } else { i - 1 },
+                                    None => 0,
+                                };
+                                app.knowledge_state.select(Some(i));
+                            }
+                            ActivePanel::Actions => {
+                                app.action_index = if app.action_index == 0 { app.actions.len() - 1 } else { app.action_index - 1 };
+                            }
+                            _ => {}
+                        }
+                    }
+                    KeyCode::Down => {
+                        match app.active_panel {
+                            ActivePanel::Knowledge => {
+                                let i = match app.knowledge_state.selected() {
+                                    Some(i) => if i >= app.knowledge_nodes.len() - 1 { 0 } else { i + 1 },
+                                    None => 0,
+                                };
+                                app.knowledge_state.select(Some(i));
+                            }
+                            ActivePanel::Actions => {
+                                app.action_index = if app.action_index >= app.actions.len() - 1 { 0 } else { app.action_index + 1 };
+                            }
+                            _ => {}
+                        }
+                    }
+                    KeyCode::Esc => return Ok(()),
+                    _ => {}
                 }
             }
         }
 
-        // Process incoming WebSocket messages
         while let Ok(msg) = rx.try_recv() {
             app.add_message(msg);
+        }
+
+        while let Ok(connected) = status_rx.try_recv() {
+            app.connected = connected;
+            if connected {
+                app.add_message("System link established.".to_string());
+            } else {
+                app.add_message("System link severed. Retrying...".to_string());
+            }
         }
 
         if last_tick.elapsed() >= tick_rate {
@@ -129,68 +243,120 @@ async fn run_app<B: Backend>(
     }
 }
 
-fn ui(f: &mut Frame, app: &App) {
-    let chunks = Layout::default()
+fn ui(f: &mut Frame, app: &mut App) {
+    let size = f.size();
+    
+    // Scanline effect (subtle animation via background colors)
+    if app.frame_count % 20 == 0 {
+        // We could render something subtle here, but let's focus on layout first
+    }
+
+    let main_layout = Layout::default()
         .direction(Direction::Vertical)
-        .margin(1)
-        .constraints(
-            [
-                Constraint::Length(10),
-                Constraint::Min(0),
-                Constraint::Length(3),
-            ]
-            .as_ref(),
-        )
-        .split(f.size());
+        .constraints([
+            Constraint::Length(7), // Logo
+            Constraint::Min(0),    // Panels
+            Constraint::Length(3), // Input
+        ])
+        .split(size);
 
-    // Animated Banner
+    let panel_layout = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(25), // Sidebar Knowledge
+            Constraint::Percentage(60), // Thought Stream
+            Constraint::Percentage(15), // Actions
+        ])
+        .split(main_layout[1]);
+
+    // 1. Logo Panel
     let colors = [
-        Color::Red,
-        Color::Yellow,
-        Color::Green,
-        Color::Cyan,
-        Color::Blue,
-        Color::Magenta,
+        Color::Red, Color::Yellow, Color::Green, Color::Cyan, Color::Blue, Color::Magenta,
     ];
-    let color = colors[(app.frame_count / 2 % 6) as usize];
-
+    let color = colors[(app.frame_count / 4 % 6) as usize];
     let banner_text = "
-   _____  __      __  ___   ____    __  __ 
-  / ____| \\ \\    / / / _ \\ |  _ \\  |  \\/  |
- | (___    \\ \\  / / | |_| || |_) | | \\  / |
-  \\___ \\    \\ \\/ /  |  _  ||  _ <  | |\\/| |
-  ____) |    \\  /   | | | || | | | | |  | |
- |_____/      \\/    |_| |_||_| |_| |_|  |_|
-                                           
-        >>> SWARM DISPATCH ACTIVE <<<
+             __                               
+ .----.-----|  .-----.-----.-----.--.--.-----.
+ |  __|  _  |  |  _  |__ --|__ --|  |  |__ --|
+ |____|_____|__|_____|_____|_____|_____|_____|
 ";
-    let banner = Paragraph::new(banner_text)
+    let status_color = if app.connected { Color::Green } else { Color::Red };
+    let status_text = if app.connected { "ONLINE" } else { "OFFLINE" };
+
+    let logo = Paragraph::new(banner_text)
         .style(Style::default().fg(color).add_modifier(Modifier::BOLD))
         .alignment(ratatui::layout::Alignment::Center)
-        .block(Block::default().borders(Borders::ALL).title(" SYSTEM CORE "));
-    
-    f.render_widget(banner, chunks[0]);
+        .block(Block::default()
+            .borders(Borders::ALL)
+            .title(Span::styled(format!(" SYSTEM CORE [{}] ", status_text), Style::default().fg(status_color).add_modifier(Modifier::BOLD))));
+    f.render_widget(logo, main_layout[0]);
 
-    // Messages List
-    let items: Vec<ListItem> = app.messages.iter().map(|m| {
+    // 2. Sidebar: Knowledge Explorer
+    let knowledge_items: Vec<ListItem> = app.knowledge_nodes.iter().map(|k| {
+        ListItem::new(Line::from(vec![
+            Span::styled("● ", Style::default().fg(Color::Cyan)),
+            Span::styled(k, Style::default().fg(Color::Gray)),
+        ]))
+    }).collect();
+    
+    let k_border_style = if app.active_panel == ActivePanel::Knowledge { Style::default().fg(Color::Yellow) } else { Style::default().fg(Color::DarkGray) };
+    let knowledge = List::new(knowledge_items)
+        .block(Block::default().borders(Borders::ALL).title(" KNOWLEDGE ").border_style(k_border_style))
+        .highlight_style(Style::default().bg(Color::Rgb(30, 30, 50)).add_modifier(Modifier::BOLD))
+        .highlight_symbol(">> ");
+    f.render_stateful_widget(knowledge, panel_layout[0], &mut app.knowledge_state);
+
+    // 3. Main: Thought Stream
+    let messages: Vec<ListItem> = app.messages.iter().map(|m| {
         let style = if m.contains("THOUGHT") {
             Style::default().fg(Color::Cyan).add_modifier(Modifier::ITALIC)
         } else if m.contains("TOOL") {
             Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+        } else if m.contains("USER") {
+            Style::default().fg(Color::Green)
         } else {
             Style::default().fg(Color::Gray)
         };
         ListItem::new(Line::from(vec![Span::styled(m, style)]))
     }).collect();
 
-    let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title(" EVENT STREAM "));
-    
-    f.render_widget(list, chunks[1]);
+    let s_border_style = if app.active_panel == ActivePanel::Stream { Style::default().fg(Color::Yellow) } else { Style::default().fg(Color::DarkGray) };
+    let stream = List::new(messages)
+        .block(Block::default().borders(Borders::ALL).title(" NEURAL STREAM ").border_style(s_border_style));
+    f.render_stateful_widget(stream, panel_layout[1], &mut app.list_state);
 
-    // Input Bar
-    let input = Paragraph::new("> Init system sequence...")
+    // 4. Right: Action Matrix
+    let actions: Vec<ListItem> = app.actions.iter().enumerate().map(|(i, a)| {
+        let style = if i == app.action_index && app.active_panel == ActivePanel::Actions {
+            Style::default().fg(Color::Black).bg(Color::Green).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
+        };
+        ListItem::new(Line::from(vec![Span::styled(format!(" [{}] ", a), style)]))
+    }).collect();
+
+    let a_border_style = if app.active_panel == ActivePanel::Actions { Style::default().fg(Color::Yellow) } else { Style::default().fg(Color::DarkGray) };
+    let actions_list = List::new(actions)
+        .block(Block::default().borders(Borders::ALL).title(" ACTIONS ").border_style(a_border_style));
+    f.render_widget(actions_list, panel_layout[2]);
+
+    // 5. Bottom: Input Command
+    let i_border_style = if app.active_panel == ActivePanel::Input { Style::default().fg(Color::Yellow) } else { Style::default().fg(Color::DarkGray) };
+    let input_text = format!("> {}", app.input);
+    let input = Paragraph::new(input_text)
         .style(Style::default().fg(Color::Green))
-        .block(Block::default().borders(Borders::ALL).title(" COMMAND MATRIX "));
-    f.render_widget(input, chunks[2]);
+        .block(Block::default().borders(Borders::ALL).title(" COMMAND MATRIX ").border_style(i_border_style));
+    f.render_widget(input, main_layout[2]);
+    
+    // Help hint
+    let help_hint = Paragraph::new(" [TAB] Switch Panel | [ESC/Q] Quit | [ENTER] Execute ")
+        .style(Style::default().fg(Color::DarkGray))
+        .alignment(ratatui::layout::Alignment::Right);
+    let help_area = Rect {
+        x: main_layout[2].x + 1,
+        y: main_layout[2].y + 2,
+        width: main_layout[2].width - 2,
+        height: 1,
+    };
+    // f.render_widget(help_hint, help_area);
 }
