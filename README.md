@@ -1,16 +1,21 @@
-<img width="1024" height="434" alt="image_81ec17d1-87c9-4df0-abb7-d7a474b1aef6" src="https://github.com/user-attachments/assets/644269fd-bfe9-43ac-b909-4c3308ec96e3" />
+<img width="1024" height="434" alt="agent-swarm-banner" src="https://github.com/user-attachments/assets/644269fd-bfe9-43ac-b909-4c3308ec96e3" />
 
 # Agent Swarm Development System
 
-A neuro-symbolic agent swarm with graph-driven orchestration using Synapse knowledge graphs.
+A neuro-symbolic agent swarm with graph-driven orchestration using Synapse knowledge graphs. Features dual-mode operation: turn-based (game-like) or autonomous parallel execution.
 
 ## ✨ Key Features
 
-- **Fog of War:** Agent visibility is limited by "fog", which is revealed by exploring the graph or generating new knowledge.
-- **Economic Constraints:** LLM usage is tracked against a daily budget. Overspending triggers a "HALT" state.
-- **Temporal Shadowing:** Agents can only act if the "Time Crystal" (global clock) permits.
-- **CodeGraph Intelligence:** Advanced code parsing and graph-based analysis for optimized context retrieval.
-- **API Sandbox (Apicentric):** Native integration with `apicentric` for contract-driven development. Architect agents spin up live mock APIs from OpenAPI specs, and Reviewers validate code against these sandboxes.
+| Feature                        | Description                                          |
+| ------------------------------ | ---------------------------------------------------- |
+| **Graph-Driven Orchestration** | State machine driven by Synapse RDF queries          |
+| **Dual Modes**                 | Turn-based (Godot Visualizer) or Autonomous (Trello) |
+| **MCP Integration**            | Native Model Context Protocol for all components     |
+| **NIST Guardrails**            | Security compliance built into agent execution       |
+| **Fog of War**                 | Agent visibility limited by explored knowledge       |
+| **Economic Constraints**       | Daily budget tracking with HALT on overspend         |
+| **CodeGraph Intelligence**     | Rust-based code parsing and graph analysis           |
+| **API Sandbox**                | Apicentric integration for contract testing          |
 
 ## 🧠 Architecture
 
@@ -21,195 +26,202 @@ A neuro-symbolic agent swarm with graph-driven orchestration using Synapse knowl
                            │
                            ▼
 ┌─────────────────────────────────────────────────────────────┐
-│              Orchestrator Agent (Graph-Driven State Machine)    │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │  1. Load Schema (YAML) → Synapse (RDF Triples)          │  │
-│  │ 2. Query Graph → Determine Initial Task Type            │  │
-│  │ 3. Find Handler Agent for Task                         │  │
-│  │ 4. Execute Agent → Collect Result                     │  │
-│  │ 5. Query Graph → Determine Next Task (on_success/failure) │  │
-│  │ 6. Repeat until terminal state                         │  │
-│  └──────────────────────────────────────────────────────────┘  │
+│         Rust Gateway (swarmd) - Port 18789                   │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │  POST /api/v1/control/commands                      │   │
+│  │  GET  /api/v1/game-state                           │   │
+│  │  WS   /api/v1/events/combat/stream                │   │
+│  └─────────────────────────────────────────────────────┘   │
 └──────────────────────────┬──────────────────────────────────┘
                            │
                            ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                    Synapse Knowledge Graph                     │
-│  • RDF Triples (Subject, Predicate, Object)               │
-│  • SPARQL Queries for reasoning                          │
-│  • Persistent memory across sessions                      │
+│              Orchestrator Agent (Graph-Driven)                 │
+│  ┌────────────────────────────────────────────────────────┐ │
+│  │ 1. Query Synapse → Determine task type                │ │
+│  │ 2. Find handler agent                                 │ │
+│  │ 3. Execute agent → Collect result                     │ │
+│  │ 4. Query graph → Determine next task                  │ │
+│  │ 5. Repeat until terminal state                       │ │
+│  └────────────────────────────────────────────────────────┘ │
+└──────────────────────────┬──────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    Synapse Knowledge Graph                   │
+│  • RDF Triples (Subject, Predicate, Object)                │
+│  • SPARQL Queries for reasoning                            │
+│  • Vector embeddings for semantic search                    │
 └─────────────────────────────────────────────────────────────┘
                            │
                            ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                    Agent Swarm                               │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  │
-│  │ Orchestrator│→│   Coder   │→│ Reviewer │→│ Deployer │  │
-│  └──────────┘  └──────────┘  └──────────┘  └──────────┘  │
+│                      Agent Swarm                             │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐      │
+│  │ProductMgr│ →Architect│ →  Coder  │ → Reviewer│ →Deployer│
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘      │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ## 🚀 Quick Start
 
-### 1. Install Dependencies
+### Prerequisites
 
 ```bash
-# Python dependencies
-pip install fastembed flask grpcio-tools synapse-sdk pyyaml openai pylint flake8 bandit tenacity tree-sitter tree-sitter-python tree-sitter-rust tree-sitter-javascript tree-sitter-cpp
-
-# Synapse binary (light mode)
-# Download from https://github.com/synapse-engine/synapse/releases
-
-# Apicentric (API Simulator)
-# Built from source via cargo or downloaded
-# ./apicentric_repo/target/release/apicentric
+# Python 3.10+
+# Rust (for building swarmd)
+# Docker (optional)
 ```
 
-### 2. Start Services
+### 1. Start All Services
 
 ```bash
-# Terminal 1: Start Synapse (light mode - RAM + remote embeddings)
-./synapse
+# The easiest way - starts Synapse, FastEmbed, and Gateway
+./scripts/start_all.sh
+```
 
-# Terminal 2: Start FastEmbed server (optional, for embeddings)
+Or manually:
+
+```bash
+# Terminal 1: Synapse (graph DB)
+./synapse --mcp
+
+# Terminal 2: FastEmbed (embeddings)
 python scripts/embeddings_server.py --port 11434
+
+# Terminal 3: Gateway (HTTP API)
+cargo run -p swarmd
 ```
 
-### 3. Run Swarm
+### 2. Run the Swarm
+
+**Option A: Direct Task**
 
 ```bash
-# Run the full graph-driven swarm flow
 python3 scripts/swarm_flow.py "Create a REST API"
-
-# Run with verbose output
-python3 scripts/swarm_flow.py "Implement user authentication" --verbose
 ```
 
-## 🐳 Gateway Container: Build/Run Reproducible Flow
-
-Use the following exact commands to build and validate the gateway container end-to-end:
+**Option B: Autonomous (Trello)**
 
 ```bash
-# 1) Build image
-docker build -t agent-swarm-gateway:local .
-
-# 2) Run container
-docker run --rm -p 18789:18789 --name agent-swarm-gateway agent-swarm-gateway:local
-
-# 3) Health and smoke checks (run in another terminal)
-curl --fail http://127.0.0.1:18789/status
-curl --fail http://127.0.0.1:18789/api/v1/game-state
+python3 scripts/run_trello_bridge.py
 ```
 
-Notes:
+**Option C: Via MCP**
 
-- The image copies runtime sources from `sdk/python/lib` and `sdk/python/agents`.
-- `PYTHONPATH` is configured to resolve package imports from `sdk/python`.
-
-## 🤖 Autonomous GSD Workflow (Trello + OpenSpec)
-
-This system implements a fully autonomous "Get Shit Done" (GSD) workflow driven by Trello state transitions and OpenSpec documents.
-
-### The "Ping-Pong" Workflow
-
-The swarm operates through a continuous feedback loop between three specialized agents, using Trello lists as the state machine and the file system (OpenSpec) as the source of truth.
-
-| Stage            | Agent                    | Action                                                                                                  | Transition              |
-| ---------------- | ------------------------ | ------------------------------------------------------------------------------------------------------- | ----------------------- |
-| **INBOX**        | 🧠 **Product Manager**   | Reads user idea, generates `openspec/specs/.../spec.md`, and links it to the card.                      | Moves to `REQUIREMENTS` |
-| **REQUIREMENTS** | 📐 **Architect**         | Reads `spec.md`, generates Technical Design (`openspec/changes/.../design.md`), and updates card.       | Moves to `DESIGN`       |
-| **DESIGN**       | 🛑 **Human-in-the-Loop** | **WAITING FOR APPROVAL**. A human must review the Design and apply the `[APPROVED]` label.              | Manual Move to `TODO`   |
-| **TODO**         | 🏗️ **Orchestrator**      | Detects `[APPROVED]` label, executes the implementation (Coder -> Reviewer), and verifies against Spec. | Moves to `DONE`         |
-
-### 🛡️ NIST Guardrails
-
-To ensure safety and alignment, the **Orchestrator** enforces a strict policy:
-
-- It will **ONLY** execute tasks from the `TODO` list if the Trello card has the **`[APPROVED]`** label.
-- This acts as a mandatory "Human-in-the-Loop" checkpoint, preventing the swarm from writing code without explicit authorization of the design.
-
-### State Diagram
-
-```mermaid
-graph LR
-    A[INBOX] -->|Product Manager| B[REQUIREMENTS]
-    B -->|Architect| C[DESIGN]
-    C -->|Human Review| D{Approved?}
-    D -- Yes --> E[TODO]
-    D -- No --> B
-    E -->|Orchestrator| F[IN PROGRESS]
-    F -->|Coder + Reviewer| G[DONE]
+```bash
+# Configure in .mcp/config.json for Claude Code/Copilot
+echo '{"method": "run_swarm", "params": {"task": "hello"}, "id": 1}' | python scripts/swarm_mcp.py
 ```
 
-## 📋 Schema Definition
+### 3. Access the Gateway
 
-The swarm behavior is defined in `swarm_schema.yaml`:
+```bash
+# Game state
+curl http://localhost:18789/api/v1/game-state
 
-```yaml
-agents:
-  Orchestrator: "Coordinates task flow and manages state."
-  Coder: "Implements features and writes code."
-  Reviewer: "Reviews code for quality and spec adherence."
-  Deployer: "Deploys the application."
+# Knowledge graph
+curl http://localhost:18789/api/v1/graph-nodes
 
-tasks:
-  FeatureImplementationTask:
-    handler: Coder
-    description: "Implement a feature based on a specification."
-  CodeReviewTask:
-    handler: Reasoner
-    description: "Review the implemented code."
-  DeploymentTask:
-    handler: Deployer
-    description: "Deploy the verified code."
-
-transitions:
-  FeatureImplementationTask:
-    on_success: CodeReviewTask
-    on_failure: FeatureImplementationTask
-  CodeReviewTask:
-    on_success: DeploymentTask
-    on_failure: FeatureImplementationTask
-  DeploymentTask:
-    on_success: null
-    on_failure: DeploymentTask
+# WebSocket combat stream
+wscat -c ws://localhost:18789/api/v1/events/combat/stream
 ```
 
-## 🔄 Graph-Driven Orchestration
+## 🎮 Dual Modes
 
-The Orchestrator uses a **state machine** based on the knowledge graph:
+### Mode 1: Turn-Based (Godot Visualizer)
 
-1. **Load Schema**: YAML → Synapse (RDF triples)
-2. **Query Graph**: SPARQL → Find initial task type
-3. **Find Handler**: Query → Get responsible agent
-4. **Execute Agent**: Run agent → Collect result
-5. **Determine Next**: Query → Get next task (on_success/on_failure)
-6. **Repeat**: Until terminal state
+Interactive game-like UI - send commands manually:
 
-### Example Flow
+- `ASSIGN_MISSION` - Assign task to agent
+- `PAUSE_AGENT` / `RESUME_AGENT` - Control agent state
+- `PATCH_SERVICE` / `ROLLBACK_SERVICE` / `RESTART_SERVICE` - Service ops
+- `ISOLATE_SERVICE` - Security isolation
 
+Open `visualizer/project.godot` in Godot 4.x to play.
+
+### Mode 2: Autonomous (Trello + OpenSpec)
+
+Fully automated - agents process Trello cards:
+
+| List         | Agent          | Action                      |
+| ------------ | -------------- | --------------------------- |
+| INBOX        | ProductManager | Ideas → OpenSpec            |
+| REQUIREMENTS | Architect      | Spec → Design               |
+| DESIGN       | Human          | Review & Approve            |
+| TODO         | Orchestrator   | Coder → Reviewer → Deployer |
+
+## 🤖 Agents
+
+| Agent              | File                        | Capabilities                  |
+| ------------------ | --------------------------- | ----------------------------- |
+| **Orchestrator**   | `agents/orchestrator.py`    | Graph reasoning, task routing |
+| **ProductManager** | `agents/product_manager.py` | OpenSpec generation           |
+| **Architect**      | `agents/architect.py`       | Technical design              |
+| **Coder**          | `agents/coder.py`           | Code gen with tools           |
+| **Reviewer**       | `agents/reviewer.py`        | Linting, contract testing     |
+| **Deployer**       | `agents/deployer.py`        | Vercel/Docker deployment      |
+| **Memory**         | `agents/memory.py`          | Synapse memory ops            |
+| **Analyst**        | `agents/analyst.py`         | Pattern analysis              |
+
+### Coder Tools
+
+```python
+read_file, write_file, patch_file, list_dir
+read_logs, execute_command (NIST-guarded)
+search_documentation, read_url
 ```
-User: "Create a REST API"
-  ↓
-Orchestrator: Query graph → Initial: FeatureImplementationTask
-  ↓
-Handler: Coder
-  ↓
-Result: success → Query graph → Next: CodeReviewTask
-  ↓
-Handler: Reviewer
-  ↓
-Result: success → Query graph → Next: DeploymentTask
-  ↓
-Handler: Deployer
-  ↓
-Result: success → Terminal state
+
+## 🔌 MCP Integration
+
+Configured in [`.mcp/config.json`](.mcp/config.json):
+
+```json
+{
+  "mcpServers": {
+    "synapse": { "command": "synapse", "args": ["--mcp"] },
+    "swarm": { "command": "python3", "args": ["scripts/swarm_mcp.py"] },
+    "apicentric": {
+      "command": "./apicentric_repo/target/release/apicentric",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+### Available MCP Tools
+
+- `run_swarm(task)` - Execute full workflow
+- `run_agent(agent, task)` - Run single agent
+- `query_memory(sparql)` - Query Synapse
+- `create_service`, `start_service`, `stop_service` - Apicentric
+
+## 🐳 Docker Deployment
+
+```bash
+# Build
+docker build -t agent-swarm-gateway:local -f Dockerfile.rust-gateway .
+
+# Run
+docker run --rm -p 18789:18789 \
+  -e SYNAPSE_GRPC_HOST=synapse \
+  -e OPENAI_API_KEY=$OPENAI_API_KEY \
+  agent-swarm-gateway:local
+
+# Health check
+curl http://localhost:18789/api/v1/game-state
+```
+
+Or use docker-compose:
+
+```bash
+docker-compose up -d
 ```
 
 ## 🧪 Testing
 
 ```bash
-# Test the graph reasoning flow
+# Test graph reasoning
 python3 scripts/test_flow.py
 
 # Test embeddings
@@ -217,105 +229,111 @@ python3 scripts/test_embeddings.py
 
 # Test Synapse connection
 python3 scripts/simple_synapse_client.py
+
+# Run MCP server
+python3 scripts/swarm_mcp.py
 ```
 
-## 🔧 Configuration
+## ⚙️ Configuration
 
 ### Environment Variables
 
-| Variable             | Default                                 | Description                |
-| -------------------- | --------------------------------------- | -------------------------- |
-| `LLM_MODEL`          | `gpt-4`                                 | Model for agent execution  |
-| `OPENAI_API_KEY`     | -                                       | OpenAI API key             |
-| `SYNAPSE_GRPC_HOST`  | `localhost`                             | Synapse gRPC host          |
-| `SYNAPSE_GRPC_PORT`  | `50051`                                 | Synapse gRPC port          |
-| `EMBEDDING_PROVIDER` | `local`                                 | Use `remote` for FastEmbed |
-| `EMBEDDING_API_URL`  | `http://localhost:11434/api/embeddings` | Embeddings endpoint        |
+| Variable             | Default     | Description         |
+| -------------------- | ----------- | ------------------- |
+| `LLM_MODEL`          | `gpt-4`     | Model for agents    |
+| `OPENAI_API_KEY`     | -           | OpenAI API key      |
+| `SYNAPSE_GRPC_HOST`  | `localhost` | Synapse host        |
+| `SYNAPSE_GRPC_PORT`  | `50051`     | Synapse port        |
+| `GATEWAY_PORT`       | `18789`     | HTTP gateway port   |
+| `EMBEDDING_PROVIDER` | `local`     | `local` or `remote` |
 
-### Synapse (Light Mode)
+### Trello Integration
 
 ```bash
-# Initialize submodule
-git submodule update --init --recursive
+export TRELLO_API_KEY=xxx
+export TRELLO_TOKEN=xxx
+export TRELLO_BOARD_ID=xxx
+```
 
-# Build light mode (inside synapse-engine directory)
-cd synapse-engine
-cargo build --release --no-default-features -p synapse-core
-cd ..
+### Telegram Alerts
 
-# Run with remote embeddings
-EMBEDDING_PROVIDER=remote ./synapse-engine/target/release/synapse
+```bash
+export TELEGRAM_BOT_TOKEN=xxx
+export TELEGRAM_CHAT_ID=xxx
 ```
 
 ## 📦 Components
 
-| Component                | Description                |
-| ------------------------ | -------------------------- |
-| `synapse`                | Graph DB (RDF triples)     |
-| `embeddings_server.py`   | FastEmbed HTTP API         |
-| `agents/orchestrator.py` | Graph-driven orchestration |
-| `scripts/swarm_flow.py`  | End-to-end swarm execution |
-| `swarm_schema.yaml`      | Swarm behavior definition  |
-| `scripts/test_flow.py`   | Graph reasoning tests      |
+| Component      | Location               | Description         |
+| -------------- | ---------------------- | ------------------- |
+| **swarmd**     | `swarmd/src/`          | Rust gateway (Axum) |
+| **Synapse**    | `./synapse`            | Graph DB binary     |
+| **Apicentric** | `apicentric_repo/`     | API simulator       |
+| **Visualizer** | `visualizer/`          | Godot game          |
+| **Dashboard**  | `commander-dashboard/` | React web UI        |
 
-## 🧠 Neuro-Symbolic Memory
+## 🔧 Development
 
-The swarm combines:
+### Adding New Agents
 
-- **Symbolic**: RDF triples, SPARQL queries, ontologies
-- **Neural**: Vector embeddings for semantic search
-- **Graph**: Knowledge graph for reasoning and state management
-
-## 📝 Adding New Agents
-
-1. Add agent to `swarm_schema.yaml`:
+1. Add to `swarm_schema.yaml`:
 
 ```yaml
 agents:
   YourAgent:
-    description: "Your agent description."
+    description: "Your agent"
+    seat_index: 5
 
 tasks:
   YourTask:
     handler: YourAgent
-    description: "Your task description."
-
-transitions:
-  YourTask:
-    on_success: NextTask
-    on_failure: YourTask
 ```
 
-2. Implement agent in `agents/your_agent.py`:
+2. Implement in `agents/your_agent.py`:
 
 ```python
-from orchestrator import OrchestratorAgent
-
 class YourAgent:
-    def execute(self, task: str, context: Dict) -> Dict:
-        # Your agent logic here
-        return {"status": "success", "result": "..."}
+    def run(self, task: str, context: dict) -> dict:
+        return {"status": "success"}
+```
+
+### Building from Source
+
+```bash
+# Rust gateway
+cd swarmd && cargo build --release
+
+# Synapse (light mode)
+cd synapse-engine
+cargo build --release --no-default-features -p synapse-core
+
+# Start
+./target/release/synapse --mcp
 ```
 
 ## 📊 Monitoring
 
-The Orchestrator logs each step:
+### Logs
 
+```bash
+# Gateway logs
+tail -f swarmd.log
+
+# Synapse logs
+tail -f synapse.log
 ```
-🚀 Orchestrator starting task: Create a REST API
-📍 Step: FeatureImplementationTask → Handler: Coder
-🤖 Agent 'Coder' executing: Create a REST API
-✅ Reviewer approved the code.
-🔄 Transition: FeatureImplementationTask (success) → CodeReviewTask
-🏁 Workflow Complete
-```
+
+### Web UI
+
+- Gateway: http://localhost:18789
+- Dashboard: http://localhost:3000 (if running)
 
 ## 🤝 Contributing
 
 1. Fork the repository
 2. Create a feature branch
-3. Update `swarm_schema.yaml` for new agents/tasks
-4. Add tests in `scripts/test_*.py`
+3. Add tests in `tests/`
+4. Update `swarm_schema.yaml` for new agents
 5. Submit a pull request
 
 ## 📄 License
@@ -324,16 +342,12 @@ MIT
 
 ## 🙏 Acknowledgments
 
-- **Synapse**: Neuro-symbolic knowledge graph engine
-- **FastEmbed**: Lightweight vector embeddings
-- **Anthropic**: Swarm orchestration patterns
+- [Synapse](https://github.com/synapse-engine) - Neuro-symbolic knowledge graph
+- [FastEmbed](https://github.com/AnswerDotAI/fastembed) - Vector embeddings
+- [Ratatui](https://github.com/ratatui-org/ratatui) - Rust TUI
+- [Apicentric](https://github.com/pmaojo/apicentric) - API contract testing
 
-## Godot Web Export
+---
 
-To update the Godot game in the dashboard:
-
-1.  Open `visualizer/project.godot` in Godot Editor (4.x).
-2.  Go to **Project -> Export**.
-3.  Select **Web** preset.
-4.  Export project to `commander-dashboard/public/godot/index.html`.
-5.  Commit the generated files (`index.html`, `index.js`, `index.wasm`, `index.pck`).
+**Last Updated:** 2026-02-28
+**Version:** 1.4
