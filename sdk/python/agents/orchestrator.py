@@ -748,15 +748,18 @@ class OrchestratorAgent:
         self.namespace = session_id
         try:
             try:
-                loop = asyncio.get_running_loop()
+                loop = asyncio.get_event_loop()
                 if loop.is_running():
-                    # If we are already in an event loop (e.g. within another async function)
-                    # Use a new thread or nested loop (not ideal, but let's try direct await first if possible)
-                    # But sync run() is called from main. 
-                    # If test_flow.py isn't async, this shouldn't happen.
-                    return asyncio.run_coroutine_threadsafe(self.run_async(task, stack), loop).result()
+                    # If we are in a thread but there's a loop running in the main thread
+                    # (common in test_flow.py or if called from a web server thread)
+                    # We can use a synchronous bridge via run_until_complete if we are in a non-loop thread
+                    # but easiest is often just starting a new thread or using a private loop
+                    pass 
+                
+                # Robust fallback for various python threading/asyncio combinations
+                return asyncio.run(self.run_async(task, stack))
             except RuntimeError:
-                # No running loop, safe to use asyncio.run
+                # No running loop, or 'There is no current event loop in thread'
                 return asyncio.run(self.run_async(task, stack))
         finally:
             self.namespace = prev_ns

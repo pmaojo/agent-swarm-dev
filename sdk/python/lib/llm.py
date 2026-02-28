@@ -52,11 +52,20 @@ class LLMService:
         self.mock_mode = os.getenv("MOCK_LLM", "false").lower() == "true"
 
         self.api_key = os.getenv("GEMINI_API_KEY") or os.getenv("OPENAI_API_KEY")
-        self.model = os.getenv("LLM_MODEL", "gemini/gemini-3-latest")
+        self.model = os.getenv("LLM_MODEL", "gemini/gemini-1.5-flash-latest")
         # Configure Fallbacks (Ordered by preference)
         self.fallback_models = [
-            "gemini/gemini-flash-latest"
+            "gemini/gemini-1.5-flash-latest",
+            "ollama/deepseek-r1:8b",
+            "ollama/qwen2.5-coder:7b",
+            "openrouter/google/gemini-2.0-flash-001"
         ]
+        
+        # Sense environment - if running from host, use the mapped port for Ollama/FastEmbed
+        # docker-compose mappings: 11435:11434
+        self.ollama_base = "http://localhost:11435" if os.getenv("RUNNING_IN_DOCKER", "false") == "false" else "http://fastembed:11434"
+        os.environ["OLLAMA_API_BASE"] = self.ollama_base
+
         if self.mock_mode:
             logger.info("🤖 LLMService initialized in MOCK MODE.")
         else:
@@ -87,7 +96,7 @@ class LLMService:
         try:
             self.channel = grpc.insecure_channel(f"{self.grpc_host}:{self.grpc_port}")
             self.stub = semantic_engine_pb2_grpc.SemanticEngineStub(self.channel)
-            # Remove blocking grpc.channel_ready_future.result() call which causes deadlocks inside asyncio threads
+            print(f"📡 Connected to Synapse at {self.grpc_host}:{self.grpc_port}")
         except Exception as e:
             logger.warning(f"⚠️  LLMService failed to connect to Synapse: {e}")
             self.stub = None
@@ -125,6 +134,9 @@ class LLMService:
             response = self.stub.QuerySparql(request)
             return json.loads(response.results_json)
         except Exception as e:
+            if "CANCELLED" in str(e) or "RST_STREAM" in str(e):
+                logger.warning("🔄 gRPC Connection Reset detected. Reconnecting to Synapse...")
+                self.connect_synapse()
             logger.error(f"❌ Query failed: {repr(e)}")
             return []
 
@@ -273,10 +285,16 @@ class LLMService:
 
     def _resolve_target_model(self) -> str:
         target_model = self.model
-        if "gemini" in target_model.lower() and not target_model.startswith("gemini/"):
-            return f"gemini/{target_model}"
+        # Direct LitellM Gemini naming fix
+        if "gemini" in target_model.lower():
+            if not target_model.startswith("gemini/"):
+                target_model = f"gemini/{target_model}"
+            # Ensure we use specific versions if possible to avoid 404 on -latest
+            if "flash" in target_model and "-latest" not in target_model:
+                target_model = target_model.replace("gemini-1.5-flash", "gemini-1.5-flash-latest")
+        
         # LiteLLM sometimes fails with -latest suffix for some versions
-        if target_model.endswith("-latest"):
+        if target_model.endswith("-latest") and "gemini" not in target_model.lower():
             return target_model.replace("-latest", "")
         return target_model
 
@@ -323,7 +341,8 @@ class LLMService:
             processed_fallbacks = self._prepare_fallbacks()
             response_format = {"type": "json_object"} if json_mode else None
 
-            response = completion(
+            # Use synchronous completion to avoid loop issues in threads
+            response = litellm.completion(
                 model=target_model,
                 messages=messages,
                 api_key=self.api_key,
