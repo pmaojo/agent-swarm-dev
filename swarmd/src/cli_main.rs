@@ -31,6 +31,7 @@ use serde_json::Value;
 enum ActivePanel {
     Input,
     Knowledge,
+    KnowledgeDetail,
     Actions,
     Stream,
 }
@@ -44,6 +45,7 @@ struct App {
     active_panel: ActivePanel,
     knowledge_nodes: Vec<String>,
     knowledge_state: ListState,
+    active_node_detail: String,
     actions: Vec<String>,
     action_index: usize,
 }
@@ -74,6 +76,7 @@ impl App {
             active_panel: ActivePanel::Input,
             knowledge_nodes,
             knowledge_state,
+            active_node_detail: String::new(),
             actions: vec![
                 "LAUNCH MISSION".to_string(),
                 "HALT SWARM".to_string(),
@@ -168,6 +171,7 @@ impl App {
             ActivePanel::Knowledge => ActivePanel::Stream,
             ActivePanel::Stream => ActivePanel::Actions,
             ActivePanel::Actions => ActivePanel::Input,
+            ActivePanel::KnowledgeDetail => ActivePanel::KnowledgeDetail,
         };
     }
 
@@ -228,25 +232,27 @@ impl App {
     
     fn handle_input(&mut self, input: String, command_tx: &mpsc::Sender<String>) {
         let normalized = input.trim().to_lowercase();
-        if normalized == "hello" || normalized == "hola" || normalized == "hi" {
-            self.add_message("[SYSTEM] Neural link established. Hello, Operator.".to_string());
-        } else if normalized == "status" {
+        if normalized == "status" {
             let status = if self.connected { "SECURE" } else { "SEVERED" };
             self.add_message(format!("[SYSTEM] Core telemetry: {}", status));
-        } else if normalized == "mission" || normalized == "launch" {
-            self.add_message("[SYSTEM] Mission protocols identified. Use ACTION matrix to execute.".to_string());
         } else if normalized == "help" {
-            self.add_message("[SYSTEM] Available: hello, status, mission, help, or any command to assign a mission".to_string());
+            self.add_message("[SYSTEM] Available: status, help, /run <task>. Standard input talks to AI.".to_string());
+        } else if input.starts_with("/run ") || input.starts_with("/mission ") {
+            let task = input.replacen("/run ", "", 1).replacen("/mission ", "", 1);
+            self.add_message(format!("[SYSTEM] Assigning mission: {}", task));
+            let _ = command_tx.try_send(format!("MISSION:{}", task));
         } else {
-            // Send as a real mission
-            self.add_message(format!("[SYSTEM] Assigning mission: {}", input));
-            let _ = command_tx.try_send(input);
+            // Conversational mode via Gemini
+            let _ = command_tx.try_send(format!("CHAT:{}", input));
         }
     }
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Load environment variables from .env if present
+    let _ = dotenv::dotenv();
+
     // Register panic handler to restore terminal on crash
     std::panic::set_hook(Box::new(|_| {
         cleanup_terminal();
@@ -261,68 +267,136 @@ async fn main() -> Result<()> {
 
     // Setup WebSocket communication
     let (tx, mut rx) = mpsc::channel(100);
-    let (command_tx, mut command_rx) = mpsc::channel(10);
+    let (command_tx, mut command_rx) = mpsc::channel::<String>(10);
     let (status_tx, mut status_rx) = mpsc::channel(1);
 
+    let tx_cmd = tx.clone();
     tokio::spawn(async move {
-        let url = "ws://127.0.0.1:18789/api/v1/events/combat/stream";
         let client = reqwest::Client::new();
-        
-        loop {
-            // Check for outgoing commands
-            while let Ok(cmd) = command_rx.try_recv() {
-                if cmd == "LAUNCH MISSION" {
-                    let res = client.post("http://127.0.0.1:18789/api/v1/mission/assign")
-                        .json(&serde_json::json!({
-                            "agent_id": "http://swarm.os/agents/Coder",
-                            "repo_id": "root",
-                            "task": "Scan and analyze neural nodes"
-                        }))
-                        .send()
-                        .await;
-                    match res {
-                        Ok(r) if r.status().is_success() => { let _ = tx.send("[SUCCESS] Mission 'Scan and analyze' dispatched.".to_string()).await; }
-                        _ => { let _ = tx.send("[ERROR] Failed to dispatch mission.".to_string()).await; }
+        while let Some(cmd) = command_rx.recv().await {
+            if cmd == "LAUNCH MISSION" {
+                let res = client.post("http://127.0.0.1:18789/api/v1/mission/assign")
+                    .json(&serde_json::json!({
+                        "agent_id": "http://swarm.os/agents/Coder",
+                        "repo_id": "root",
+                        "task": "Scan and analyze neural nodes"
+                    }))
+                    .send()
+                    .await;
+                match res {
+                    Ok(r) if r.status().is_success() => { let _ = tx_cmd.send("[SUCCESS] Mission 'Scan and analyze' dispatched.".to_string()).await; }
+                    _ => { let _ = tx_cmd.send("[ERROR] Failed to dispatch mission.".to_string()).await; }
+                }
+            } else if cmd == "HALT SWARM" {
+                let res = client.post("http://127.0.0.1:18789/api/v1/control/commands")
+                    .json(&serde_json::json!({
+                        "command_type": "Halt",
+                        "actor": "operator",
+                        "nist_policy_id": "NIST-800-53-REV5",
+                        "approved_by": "operator"
+                    }))
+                    .send()
+                    .await;
+                match res {
+                    Ok(r) if r.status().is_success() => { let _ = tx_cmd.send("[SUCCESS] System HALTED command sent.".to_string()).await; }
+                    _ => { let _ = tx_cmd.send("[ERROR] HALT command failed. Check gateway connection.".to_string()).await; }
+                }
+            } else if cmd == "RESET BRAIN" {
+                let _ = tx_cmd.send("[SYSTEM] Brain reset not fully implemented in backend.".to_string()).await;
+            } else if cmd == "SCAN SECTOR" {
+                let res = client.get("http://127.0.0.1:18789/api/v1/game-state").send().await;
+                match res {
+                    Ok(r) if r.status().is_success() => { let _ = tx_cmd.send("[SUCCESS] Sector scanned. Neural sensors active.".to_string()).await; }
+                    _ => { let _ = tx_cmd.send("[ERROR] Scan failed. Ensure gateway is online.".to_string()).await; }
+                }
+            } else if let Some(task) = cmd.strip_prefix("MISSION:") {
+                let res = client.post("http://127.0.0.1:18789/api/v1/mission/assign")
+                    .json(&serde_json::json!({
+                        "agent_id": "http://swarm.os/agents/Coder",
+                        "repo_id": "root",
+                        "task": task
+                    }))
+                    .send()
+                    .await;
+                match res {
+                    Ok(r) if r.status().is_success() => { let _ = tx_cmd.send(format!("[SUCCESS] Mission '{}' accepted by Orchestrator.", task)).await; }
+                    _ => { let _ = tx_cmd.send("[ERROR] Gateway rejected mission assignment.".to_string()).await; }
+                }
+            } else if let Some(node_id) = cmd.strip_prefix("KNOWLEDGE:") {
+                let url = format!("http://127.0.0.1:18789/api/v1/knowledge/{}/docs", node_id);
+                match client.get(&url).send().await {
+                    Ok(r) if r.status().is_success() => {
+                        if let Ok(json) = r.json::<serde_json::Value>().await {
+                            if let Some(docs) = json.get("documentation").and_then(|d| d.as_str()) {
+                                let docs_clean = if docs.is_empty() { "No documentation available." } else { docs };
+                                // Instead of just logging, we send a special detail message back to the UI thread
+                                let _ = tx_cmd.send(format!("DETAIL_VIEW:{}", docs_clean)).await;
+                            } else {
+                                let _ = tx_cmd.send("DETAIL_VIEW:No documentation found.".to_string()).await;
+                            }
+                        }
                     }
-                } else if cmd == "HALT SWARM" {
-                    let res = client.post("http://127.0.0.1:18789/api/v1/control/commands")
-                        .json(&serde_json::json!({
-                            "command_type": "Halt",
-                            "actor": "operator",
-                            "nist_policy_id": "NIST-800-53-REV5",
-                            "approved_by": "operator"
-                        }))
-                        .send()
-                        .await;
-                    match res {
-                        Ok(r) if r.status().is_success() => { let _ = tx.send("[SUCCESS] System HALTED command sent.".to_string()).await; }
-                        _ => { let _ = tx.send("[ERROR] HALT command failed. Check gateway connection.".to_string()).await; }
-                    }
-                } else if cmd == "RESET BRAIN" {
-                    let _ = tx.send("[SYSTEM] Brain reset not fully implemented in backend.".to_string()).await;
-                } else if cmd == "SCAN SECTOR" {
-                    let res = client.get("http://127.0.0.1:18789/api/v1/game-state").send().await;
-                    match res {
-                        Ok(r) if r.status().is_success() => { let _ = tx.send("[SUCCESS] Sector scanned. Neural sensors active.".to_string()).await; }
-                        _ => { let _ = tx.send("[ERROR] Scan failed. Ensure gateway is online.".to_string()).await; }
+                    _ => { let _ = tx_cmd.send(format!("DETAIL_VIEW:[ERROR] Failed to access knowledge core for {}.", node_id)).await; }
+                }
+            } else if let Some(chat) = cmd.strip_prefix("CHAT:") {
+                // Call Gemini for conversational fallback and "tool" routing
+                if let Ok(api_key) = std::env::var("GEMINI_API_KEY") {
+                    let url = format!("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={}", api_key);
+                    
+                    let sys_prompt = "You are the AI persona of Agent Swarm, a sovereign AI cluster defending a cybernetic empire. Keep responses very short, technical, and slightly ruthless. You control the TUI interface. If the user asks you to do a task, code something, or launch a mission, output exact string: 'MISSION_CMD: <task>'. If the user asks you to scan the sector/network, output exact string: 'SCAN_CMD'. If the user asks to read a specific knowledge node by ID, output exact string: 'KNOWLEDGE_CMD: <node_id>'. If you use a command, do NOT output anything else.";
+                    
+                    let payload = serde_json::json!({
+                        "contents": [{
+                            "parts": [{"text": format!("{} The user says: {}", sys_prompt, chat)}]
+                        }]
+                    });
+                    
+                    match client.post(&url).json(&payload).send().await {
+                        Ok(resp) => {
+                            if let Ok(json) = resp.json::<serde_json::Value>().await {
+                                if let Some(text) = json.pointer("/candidates/0/content/parts/0/text").and_then(|t| t.as_str()) {
+                                    let content = text.trim();
+                                    if content.contains("MISSION_CMD:") {
+                                        let parts: Vec<&str> = content.split("MISSION_CMD:").collect();
+                                        if parts.len() > 1 {
+                                            let task = parts[1].trim();
+                                            let _ = tx_cmd.send(format!("[AI] Initializing mission: {}", task)).await;
+                                            let _ = tx_cmd.send(format!("MISSION:{}", task)).await;
+                                        }
+                                    } else if content.contains("SCAN_CMD") {
+                                        let _ = tx_cmd.send("[AI] Executing sector scan...".to_string()).await;
+                                        let _ = tx_cmd.send("SCAN SECTOR".to_string()).await;
+                                    } else if content.contains("KNOWLEDGE_CMD:") {
+                                        let parts: Vec<&str> = content.split("KNOWLEDGE_CMD:").collect();
+                                        if parts.len() > 1 {
+                                            let node_id = parts[1].trim();
+                                            let _ = tx_cmd.send(format!("[AI] Fetching knowledge databanks for node: {}", node_id)).await;
+                                            let _ = tx_cmd.send(format!("KNOWLEDGE:{}", node_id)).await;
+                                        }
+                                    } else {
+                                        let _ = tx_cmd.send(format!("[AI] {}", content.replace('\n', " "))).await;
+                                    }
+                                } else {
+                                    let _ = tx_cmd.send("[ERROR] AI response format invalid.".to_string()).await;
+                                }
+                            }
+                        }
+                        Err(_) => { let _ = tx_cmd.send("[ERROR] Connection to AI Core failed.".to_string()).await; }
                     }
                 } else {
-                    // Regular command from TUI input
-                    let res = client.post("http://127.0.0.1:18789/api/v1/mission/assign")
-                        .json(&serde_json::json!({
-                            "agent_id": "http://swarm.os/agents/Coder",
-                            "repo_id": "root",
-                            "task": cmd
-                        }))
-                        .send()
-                        .await;
-                    match res {
-                        Ok(r) if r.status().is_success() => { let _ = tx.send(format!("[SUCCESS] Mission '{}' accepted by Orchestrator.", cmd)).await; }
-                        _ => { let _ = tx.send("[ERROR] Gateway rejected mission assignment.".to_string()).await; }
-                    }
+                    let _ = tx_cmd.send("[SYSTEM] GEMINI_API_KEY not found. Neural speech disabled.".to_string()).await;
                 }
+            } else {
+                // Should not happen with prefixes, but handled
+                let _ = tx_cmd.send(format!("[SYSTEM] Unrecognized command format: {}", cmd)).await;
             }
+        }
+    });
 
+    let tx_ws = tx.clone();
+    tokio::spawn(async move {
+        let url = "ws://127.0.0.1:18789/api/v1/events/combat/stream";
+        loop {
             match connect_async(url).await {
                 Ok((mut ws_stream, _)) => {
                     let _ = status_tx.send(true).await;
@@ -333,7 +407,7 @@ async fn main() -> Result<()> {
                                     let type_str = v["type"].as_str().unwrap_or("UNKNOWN");
                                     let msg_str = v["payload"]["message"].as_str().unwrap_or("");
                                     let formatted = format!("[{}] {}", type_str, msg_str);
-                                    let _ = tx.send(formatted).await;
+                                    let _ = tx_ws.send(formatted).await;
                                 }
                             }
                         } else {
@@ -396,7 +470,11 @@ async fn run_app<B: Backend>(
             if let Event::Key(key) = event::read()? {
                 match key.code {
                     KeyCode::Char('q') if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => return Ok(()),
-                    KeyCode::Tab => app.next_panel(),
+                    KeyCode::Tab => {
+                        if app.active_panel != ActivePanel::KnowledgeDetail {
+                            app.next_panel();
+                        }
+                    },
                     KeyCode::Char(c) if app.active_panel == ActivePanel::Input => app.input.push(c),
                     KeyCode::Backspace if app.active_panel == ActivePanel::Input => { app.input.pop(); },
                     KeyCode::Enter => {
@@ -409,6 +487,13 @@ async fn run_app<B: Backend>(
                             let action = app.actions[app.action_index].clone();
                             app.add_message(format!("[SYSTEM] Executing: {}", action));
                             let _ = command_tx.try_send(action);
+                        } else if app.active_panel == ActivePanel::Knowledge {
+                            if let Some(idx) = app.knowledge_state.selected() {
+                                if let Some(node) = app.knowledge_nodes.get(idx).cloned() {
+                                    app.add_message(format!("[SYSTEM] Accessing knowledge core: {}", node));
+                                    let _ = command_tx.try_send(format!("KNOWLEDGE:{}", node));
+                                }
+                            }
                         }
                     },
                     KeyCode::Char('l') if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
@@ -452,14 +537,25 @@ async fn run_app<B: Backend>(
                             _ => {}
                         }
                     }
-                    KeyCode::Esc => return Ok(()),
+                    KeyCode::Esc => {
+                        if app.active_panel == ActivePanel::KnowledgeDetail {
+                            app.active_panel = ActivePanel::Knowledge;
+                        } else {
+                            return Ok(())
+                        }
+                    },
                     _ => {}
                 }
             }
         }
 
         while let Ok(msg) = rx.try_recv() {
-            app.add_message(msg);
+            if let Some(detail) = msg.strip_prefix("DETAIL_VIEW:") {
+                app.active_node_detail = detail.to_string();
+                app.active_panel = ActivePanel::KnowledgeDetail;
+            } else {
+                app.add_message(msg);
+            }
         }
 
         while let Ok(connected) = status_rx.try_recv() {
@@ -481,9 +577,28 @@ async fn run_app<B: Backend>(
 fn ui(f: &mut Frame, app: &mut App) {
     let size = f.size();
     
-    // Scanline effect (subtle animation via background colors)
-    if app.frame_count % 20 == 0 {
-        // We could render something subtle here, but let's focus on layout first
+    // Check for KnowledgeDetail view (Full Screen)
+    if app.active_panel == ActivePanel::KnowledgeDetail {
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .title(Span::styled(" KNOWLEDGE CORE: DEEP INSPECTION ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)))
+            .border_style(Style::default().fg(Color::Cyan));
+        
+        let detail_text = Paragraph::new(app.active_node_detail.as_str())
+            .block(block)
+            .wrap(ratatui::widgets::Wrap { trim: true })
+            .scroll((0, 0)); // Could add scrolling state later if needed
+            
+        f.render_widget(detail_text, size);
+        
+        // Help hint for detail view
+        let help_rect = ratatui::layout::Rect::new(size.x + size.width - 25, size.y + size.height - 2, 24, 1);
+        let help_hint = Paragraph::new(" [ESC] Return to Swarm ")
+            .style(Style::default().fg(Color::Rgb(120, 120, 120)))
+            .alignment(ratatui::layout::Alignment::Right);
+        f.render_widget(help_hint, help_rect);
+        
+        return;
     }
 
     let main_layout = Layout::default()
@@ -510,9 +625,12 @@ fn ui(f: &mut Frame, app: &mut App) {
     ];
     let color = colors[(app.frame_count / 4 % 6) as usize];
     let banner_text = "
-   __ _ _ _ ___ ___ _____ 
-  | _ | | | | _ | _ |     |
-  |___|__|_||_|_| _| _| _|_|
+ ██████╗ ██████╗ ██╗      ██████╗ ███████╗███████╗██╗   ██╗███████╗
+██╔════╝██╔═══██╗██║     ██╔═══██╗██╔════╝██╔════╝██║   ██║██╔════╝
+██║     ██║   ██║██║     ██║   ██║███████╗███████╗██║   ██║███████╗
+██║     ██║   ██║██║     ██║   ██║╚════██║╚════██║██║   ██║╚════██║
+╚██████╗╚██████╔╝███████╗╚██████╔╝███████║███████║╚██████╔╝███████║
+ ╚═════╝ ╚═════╝ ╚══════╝ ╚═════╝ ╚══════╝╚══════╝ ╚═════╝ ╚══════╝
 ";
     let status_color = if app.connected { Color::Green } else { Color::Red };
     let status_text = if app.connected { "ONLINE" } else { "OFFLINE" };
@@ -553,6 +671,8 @@ fn ui(f: &mut Frame, app: &mut App) {
             Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
         } else if m.contains("USER") {
             Style::default().fg(Color::Green)
+        } else if m.contains("[AI]") {
+             Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(Color::Gray)
         };
