@@ -15,14 +15,14 @@ from tree_sitter import Language, Parser, Query
 class CodeParser:
     def __init__(self):
         self.languages = {
-            ".py": Language(tree_sitter_python.language(), "python"),
-            ".rs": Language(tree_sitter_rust.language(), "rust"),
-            ".js": Language(tree_sitter_javascript.language(), "javascript"),
-            ".ts": Language(tree_sitter_javascript.language(), "javascript"), # JS parser often works for TS basics
-            ".cpp": Language(tree_sitter_cpp.language(), "cpp"),
-            ".c": Language(tree_sitter_cpp.language(), "cpp"), # C++ parser often handles C
-            ".h": Language(tree_sitter_cpp.language(), "cpp"),
-            ".hpp": Language(tree_sitter_cpp.language(), "cpp"),
+            ".py": Language(tree_sitter_python.language()),
+            ".rs": Language(tree_sitter_rust.language()),
+            ".js": Language(tree_sitter_javascript.language()),
+            ".ts": Language(tree_sitter_javascript.language()), # JS parser often works for TS basics
+            ".cpp": Language(tree_sitter_cpp.language()),
+            ".c": Language(tree_sitter_cpp.language()), # C++ parser often handles C
+            ".h": Language(tree_sitter_cpp.language()),
+            ".hpp": Language(tree_sitter_cpp.language()),
         }
         self.parsers = {}
         for ext, lang in self.languages.items():
