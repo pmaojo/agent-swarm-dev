@@ -205,10 +205,24 @@ class GitService:
         return pr_uri
 
     def get_diff(self, branch_name: str, base_branch: str = "main") -> str:
-        """Get the diff between branches."""
+        """Get the diff between branches, with robust base detection."""
         try:
-            return self._run_git(["diff", base_branch + "..." + branch_name])
-        except:
+            current_branch = self.get_current_branch()
+            # If we are already on the branch, diff against relative base
+            if current_branch == branch_name:
+                # Try to find a base branch that actually exists
+                for base in ["main", "master", "develop"]:
+                    try:
+                        self._run_git(["rev-parse", "--verify", base])
+                        return self._run_git(["diff", f"{base}...{branch_name}"])
+                    except:
+                        continue
+                # Final fallback: diff against HEAD^
+                return self._run_git(["diff", "HEAD^...HEAD"])
+            
+            return self._run_git(["diff", f"{base_branch}...{branch_name}"])
+        except Exception as e:
+            print(f"⚠️ Diff extraction failed: {e}")
             return ""
 
 if __name__ == "__main__":

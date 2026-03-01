@@ -288,34 +288,35 @@ class LLMService:
             return result
         return None
 
-    def _resolve_target_model(self) -> str:
-        target_model = self.model
-        # Direct LitellM Gemini naming fix
-        if "gemini" in target_model.lower():
-            if not target_model.startswith("gemini/"):
-                target_model = f"gemini/{target_model}"
-            # Ensure we avoid -latest in v1beta unless absolutely necessary
-            if "-latest" in target_model:
-                target_model = target_model.replace("-latest", "")
-            
-            # Use specific stable version for flash to avoid 404
-            if "flash" in target_model and "-001" not in target_model:
-                target_model = target_model.replace("gemini-1.5-flash", "gemini-1.5-flash-001")
+    def _resolve_model_name(self, m: str) -> str:
+        """Helper to standardize model names for LiteLLM."""
+        if m.startswith("openrouter/"):
+            return m
         
-        # LiteLLM cleanup
-        if target_model.endswith("-latest") and "gemini" not in target_model.lower():
-            return target_model.replace("-latest", "")
-        return target_model
+        # Standardize Gemini
+        if "gemini" in m.lower():
+            res_m = m if "/" in m else f"gemini/{m}"
+            if "-latest" in res_m:
+                 res_m = res_m.replace("-latest", "")
+            
+            # Use 2.0 or 2.5 if specified or default to flash
+            if "flash" in res_m and "-8b" not in res_m:
+                 # Prefer newer models if they contain 2.0 or 2.5
+                 if "2.0" in res_m: res_m = "gemini/gemini-2.0-flash"
+                 elif "2.5" in res_m: res_m = "gemini/gemini-2.5-flash"
+                 else: res_m = "gemini/gemini-2.0-flash" # Upgrade default
+            return res_m
+        return m
 
     def _prepare_fallbacks(self) -> List[Dict]:
         processed_fallbacks = []
         for m in self.fallback_models:
-            fallback_dict = {"model": m}
-            if m.startswith("openrouter/"):
+            res_m = self._resolve_model_name(m)
+            fallback_dict = {"model": res_m}
+            
+            if res_m.startswith("openrouter/"):
                 fallback_dict["api_key"] = os.getenv("OPENROUTER_API_KEY")
-            elif "/" not in m:
-                fallback_dict["model"] = f"openrouter/{m}"
-                fallback_dict["api_key"] = os.getenv("OPENROUTER_API_KEY")
+            
             processed_fallbacks.append(fallback_dict)
         return processed_fallbacks
 
@@ -346,7 +347,7 @@ class LLMService:
             return cached_result
 
         try:
-            target_model = self._resolve_target_model()
+            target_model = self._resolve_model_name(self.model)
             processed_fallbacks = self._prepare_fallbacks()
             response_format = {"type": "json_object"} if json_mode else None
 
@@ -357,8 +358,8 @@ class LLMService:
                 api_key=self.api_key,
                 response_format=response_format,
                 tools=tools,
-                tool_choice=tool_choice,
                 temperature=0.7,
+                max_tokens=2000,
                 fallbacks=processed_fallbacks
             )
 
