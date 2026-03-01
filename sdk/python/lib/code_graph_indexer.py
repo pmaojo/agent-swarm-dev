@@ -4,7 +4,7 @@ import grpc
 import json
 import logging
 import fnmatch
-from typing import List, Dict, Set, Any, Tuple
+from typing import List, Dict, Set, Any, Tuple, Optional
 
 # Ensure proto modules can import each other
 proto_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'agents', 'proto'))
@@ -167,7 +167,7 @@ class CodeGraphIndexer:
 
         return batch_hashes
 
-    def _process_file(self, filepath: str, rel_path: str, preloaded_hashes: Dict[str, str] = None):
+    def _process_file(self, filepath: str, rel_path: str, preloaded_hashes: Optional[Dict[str, str]] = None):
         # 1. Parse File
         result = self.parser.parse_file(filepath)
         if not result or not result.get('symbols'):
