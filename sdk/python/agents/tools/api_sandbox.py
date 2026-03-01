@@ -33,7 +33,7 @@ SANDBOX_DIR = os.path.join(ROOT_DIR, "openspec", "sandboxes")
 APICENTRIC_BIN_LINK = os.path.join(ROOT_DIR, "lib", "bin", "apicentric")
 APICENTRIC_BIN_BUILD = os.path.join(ROOT_DIR, "apicentric_repo", "target", "release", "apicentric")
 
-SIMULATOR_PORT = 9002
+SIMULATOR_PORT = 9002  # Default port, but will be overridden by service definition
 SWARM = "http://swarm.os/ontology/"
 NIST = "http://nist.gov/caisi/"
 RDF = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
@@ -42,6 +42,7 @@ class ApiSandboxTool:
     def __init__(self):
         os.makedirs(SANDBOX_DIR, exist_ok=True)
         self.simulator_process = None
+        self.simulator_port = SIMULATOR_PORT  # Track actual simulator port
         self.binary_path = self._find_binary()
 
         # Synapse Connection
@@ -101,18 +102,27 @@ class ApiSandboxTool:
 
     def start_simulator_if_needed(self):
         """Checks if simulator is running, if not starts it."""
-        try:
-            # Check if port is open
-            response = requests.get(f"http://localhost:{SIMULATOR_PORT}/health", timeout=1)
-            if response.status_code == 200:
-                logger.info("✅ Apicentric Simulator is already running.")
-                return
-        except requests.ConnectionError:
-            pass
-        except Exception as e:
-            logger.warning(f"⚠️ Failed to connect to simulator: {e}")
-
-        logger.info(f"🚀 Starting Apicentric Simulator on port {SIMULATOR_PORT}...")
+        # Check multiple possible ports for the simulator admin server
+        possible_ports = [9002, 8000, 8080]
+        simulator_running = False
+        
+        for port in possible_ports:
+            try:
+                response = requests.get(f"http://localhost:{port}/health", timeout=1)
+                if response.status_code == 200:
+                    logger.info(f"✅ Apicentric Simulator is already running on port {port}.")
+                    self.simulator_port = port  # Store the actual port
+                    simulator_running = True
+                    break
+            except requests.ConnectionError:
+                continue
+            except Exception as e:
+                logger.debug(f"Port {port} check: {e}")
+        
+        if simulator_running:
+            return
+        
+        logger.info(f"🚀 Starting Apicentric Simulator on default port {SIMULATOR_PORT}...")
 
         # Start in background
         cmd = [
@@ -192,17 +202,21 @@ class ApiSandboxTool:
              self.ingest_lesson("missing_binary", msg)
              return "Error: Apicentric binary missing."
 
-        # 3. Get Base Path from generated YAML
+        # 3. Get Base Path AND Port from generated YAML
         base_path = "/api"
+        service_port = SIMULATOR_PORT  # Default to SIMULATOR_PORT
         try:
             with open(service_path, "r") as f:
                 service_def = yaml.safe_load(f)
                 base_path = service_def.get("server", {}).get("base_path", "/api")
+                # Get the port from the service definition
+                # apicentric assigns random ports in 8000-9000 range
+                service_port = service_def.get("server", {}).get("port", SIMULATOR_PORT)
         except Exception as e:
-            logger.warning(f"⚠️ Could not parse base path, defaulting to /api: {e}")
+            logger.warning(f"⚠️ Could not parse service definition, defaulting to port {SIMULATOR_PORT}: {e}")
 
-        # Return mock URL
-        mock_url = f"http://localhost:{SIMULATOR_PORT}{base_path}"
+        # Return mock URL using the actual service port
+        mock_url = f"http://localhost:{service_port}{base_path}"
         logger.info(f"🌐 Mock available at {mock_url}")
         return mock_url
 
