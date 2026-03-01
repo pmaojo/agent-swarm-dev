@@ -73,6 +73,7 @@ class CodeGraphIndexer:
         logger.info(f"Starting CodeGraph Indexing for {self.root_path}...")
         ignore_patterns = self._load_gitignore()
 
+        files_to_process = []
         for root, dirs, files in os.walk(self.root_path):
             # 1. Filter Directories
             # Remove hidden dirs and explicit excludes
@@ -91,10 +92,19 @@ class CodeGraphIndexer:
 
                 ext = os.path.splitext(file)[1]
                 if self.parser and ext in self.parser.languages:
-                    try:
-                        self._process_file(filepath, rel_path)
-                    except Exception as e:
-                        logger.error(f"Error processing {rel_path}: {e}")
+                    files_to_process.append((filepath, rel_path))
+
+        # @synapse:rule: Use SPARQL VALUES clauses for batch-fetching symbol hashes during indexing to minimize gRPC overhead.
+        file_uris = [f"http://swarm.os/file/{rel_path}" for _, rel_path in files_to_process]
+        batch_hashes = self._get_batch_existing_hashes(file_uris)
+
+        for filepath, rel_path in files_to_process:
+            try:
+                file_uri = f"http://swarm.os/file/{rel_path}"
+                preloaded = batch_hashes.get(file_uri) if batch_hashes is not None else None
+                self._process_file(filepath, rel_path, preloaded_hashes=preloaded)
+            except Exception as e:
+                logger.error(f"Error processing {rel_path}: {e}")
 
         logger.info("CodeGraph Indexing complete.")
 
@@ -121,7 +131,43 @@ class CodeGraphIndexer:
                  return True
         return False
 
-    def _process_file(self, filepath: str, rel_path: str):
+    def _get_batch_existing_hashes(self, file_uris: List[str], chunk_size: int = 200) -> Dict[str, Dict[str, str]]:
+        if not self.stub or not file_uris:
+            return {}
+
+        batch_hashes = {uri: {} for uri in file_uris}
+
+        for i in range(0, len(file_uris), chunk_size):
+            chunk = file_uris[i:i + chunk_size]
+
+            # @synapse:rule: Use SPARQL VALUES clauses for batch-fetching symbol hashes during indexing to minimize gRPC overhead.
+            values_clause = " ".join([f"<{uri}>" for uri in chunk])
+            query = f"""
+            PREFIX swarm: <{SWARM}>
+            SELECT ?file ?symbol ?hash WHERE {{
+                VALUES ?file {{ {values_clause} }}
+                ?file swarm:hasSymbol ?symbol .
+                ?symbol swarm:nodeHash ?hash .
+            }}
+            """
+            try:
+                request = semantic_engine_pb2.SparqlRequest(query=query, namespace="default")
+                response = self.stub.QuerySparql(request)
+                results = json.loads(response.results_json)
+
+                for r in results:
+                    f_uri = r.get("file", {}).get("value")
+                    s_uri = r.get("symbol", {}).get("value")
+                    h_val = r.get("hash", {}).get("value")
+                    if f_uri and s_uri and h_val and f_uri in batch_hashes:
+                        batch_hashes[f_uri][s_uri] = h_val
+            except Exception as e:
+                logger.error(f"SPARQL Batch Error: {e}")
+                return None
+
+        return batch_hashes
+
+    def _process_file(self, filepath: str, rel_path: str, preloaded_hashes: Dict[str, str] = None):
         # 1. Parse File
         result = self.parser.parse_file(filepath)
         if not result or not result.get('symbols'):
@@ -133,7 +179,10 @@ class CodeGraphIndexer:
 
         # 2. Fetch existing state from Synapse
         file_uri = f"http://swarm.os/file/{rel_path}"
-        existing_hashes = self._get_existing_hashes(file_uri)
+        if preloaded_hashes is not None:
+            existing_hashes = preloaded_hashes
+        else:
+            existing_hashes = self._get_existing_hashes(file_uri)
 
         # 3. Determine diff
         triples_to_add = []
