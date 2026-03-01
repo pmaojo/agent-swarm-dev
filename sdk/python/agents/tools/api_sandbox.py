@@ -211,7 +211,14 @@ class ApiSandboxTool:
                 base_path = service_def.get("server", {}).get("base_path", "/api")
                 # Get the port from the service definition
                 # apicentric assigns random ports in 8000-9000 range
-                service_port = service_def.get("server", {}).get("port", SIMULATOR_PORT)
+                raw_port = service_def.get("server", {}).get("port", SIMULATOR_PORT)
+                # Explicit type conversion to handle both int and string from YAML
+                if raw_port is not None:
+                    try:
+                        service_port = int(raw_port)
+                    except (ValueError, TypeError):
+                        logger.warning(f"⚠️ Invalid port value '{raw_port}', using default {SIMULATOR_PORT}")
+                        service_port = SIMULATOR_PORT
         except Exception as e:
             logger.warning(f"⚠️ Could not parse service definition, defaulting to port {SIMULATOR_PORT}: {e}")
 
