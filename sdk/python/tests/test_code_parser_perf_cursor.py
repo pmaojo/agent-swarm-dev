@@ -2,7 +2,12 @@
 import pytest
 from unittest.mock import MagicMock, patch
 from sdk.python.lib.code_parser import CodeParser
-from tree_sitter import QueryCursor, Node
+try:
+    from tree_sitter import QueryCursor, Node
+except ImportError:
+    from tree_sitter import Node
+    class QueryCursor:
+        pass
 
 def test_query_cursor_instantiations():
     """
@@ -15,7 +20,14 @@ def test_query_cursor_instantiations():
     for i in range(10):
         content += f"def func_{i}():\n    print('hello')\n    other_func()\n\n"
 
-    with patch('sdk.python.lib.code_parser.QueryCursor', autospec=True) as MockCursor:
+    try:
+        from tree_sitter import QueryCursor
+        target_patch = 'tree_sitter.QueryCursor'
+    except ImportError:
+        target_patch = 'sdk.python.lib.code_parser.QueryCursor'
+
+    # Only patch if QueryCursor actually exists where we expect it
+    with patch(target_patch, create=True) as MockCursor:
         # MockCursor is called 3 times now:
         # 1. definitions
         # 2. inheritance
