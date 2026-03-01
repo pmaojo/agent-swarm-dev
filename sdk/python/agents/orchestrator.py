@@ -759,6 +759,35 @@ class OrchestratorAgent:
         else:
             return await self.execute_sequence(task, stack)
 
+    def process_trello_todo(self, card: dict):
+        """Callback for Trello 'TODO' list to trigger full swarm execution."""
+        card_id = card['id']
+        name = card['name']
+        desc = card['desc'] or name
+
+        print(f"🚀 [Orchestrator] Trello Trigger: '{name}'")
+        
+        # 1. Update Trello
+        self.bridge.add_comment(card_id, "🛸 **Mission Accepted!** Swarm is initializing neural pathways. 🏗️")
+        self.bridge.move_card(card_id, "IN PROGRESS")
+
+        try:
+            # 2. Execute the Swarm Flow
+            # The 'run' method handles its own internal asyncio loop.
+            result = self.run(desc, session_id=f"trello-{card_id[:8]}")
+            
+            # 3. Handle Result
+            if result.get("final_status") == "success" or result.get("status") == "success":
+                self.bridge.add_comment(card_id, "✅ **Mission Accomplished!** Changes integrated and verified. 🏁")
+                self.bridge.move_card(card_id, "Terminado")
+            else:
+                error_msg = result.get("error") or "Check logs for details."
+                self.bridge.add_comment(card_id, f"❌ **Mission Interrupted:** {error_msg}")
+                
+        except Exception as e:
+            print(f"❌ [Orchestrator] Error processing Trello card: {e}")
+            self.bridge.add_comment(card_id, f"⚠️ **Swarm Panic:** Internal error during execution: {str(e)}")
+
     def run(self, task: str, stack: str = "python", session_id: str = "default") -> Dict[str, Any]:
         # Budget Check
         try:
