@@ -51,15 +51,18 @@ class BudgetExceededException(Exception):
 
 class LLMService:
     def __init__(self):
-        # Load environment variables from .env
-        load_dotenv(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".env")))
+        # Load environment variables from .env using absolute path
+        dotenv_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".env"))
+        load_dotenv(dotenv_path)
         self.mock_mode = os.getenv("MOCK_LLM", "false").lower() == "true"
 
         self.api_key = os.getenv("GEMINI_API_KEY") or os.getenv("OPENAI_API_KEY")
-        self.model = os.getenv("LLM_MODEL", "gemini/gemini-1.5-flash")
+        # Use LLM_MODEL from env, which should be gemini/gemini-3-flash-preview
+        self.model = os.getenv("LLM_MODEL", "gemini/gemini-3-flash-preview")
         # Configure Fallbacks (Ordered by preference)
         self.fallback_models = [
-            "gemini/gemini-1.5-flash",
+            "gemini/gemini-1.5-flash-latest",
+            "gemini/gemini-2.0-flash",
             "openrouter/google/gemini-2.0-flash-001"
         ]
         
