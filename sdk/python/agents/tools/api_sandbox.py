@@ -118,7 +118,7 @@ class ApiSandboxTool:
         cmd = [
             self.binary_path, "simulator", "start",
             "--services-dir", SANDBOX_DIR,
-            "--port", str(SIMULATOR_PORT),
+            # Port is now handled via apicentric.toml or default port range
             # "--watch" # Assume watch is supported or restart needed. Check help if needed.
         ]
 
