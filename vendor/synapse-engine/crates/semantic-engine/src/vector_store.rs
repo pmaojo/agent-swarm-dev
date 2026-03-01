@@ -32,7 +32,8 @@ impl space::Metric<Vec<f32>> for Euclidian {
     }
 }
 
-/// Computes the cosine similarity of two vectors using only a prefix slice (e.g. 64d)
+/// Computes cosine similarity of two vectors using only a prefix slice (e.g. 64d)
+/// Used for Stage 1 coarse filtering in two-stage search
 pub fn fractal_similarity(a: &[f32], b: &[f32], prefix_len: usize) -> f32 {
     let len = a.len().min(b.len()).min(prefix_len);
     if len == 0 {
@@ -44,6 +45,30 @@ pub fn fractal_similarity(a: &[f32], b: &[f32], prefix_len: usize) -> f32 {
     let mut norm_b = 0.0;
     
     for i in 0..len {
+        dot_product += a[i] * b[i];
+        norm_a += a[i] * a[i];
+        norm_b += b[i] * b[i];
+    }
+    
+    if norm_a == 0.0 || norm_b == 0.0 {
+        return 0.0;
+    }
+    
+    dot_product / (norm_a.sqrt() * norm_b.sqrt())
+}
+
+/// Computes full cosine similarity between two vectors (all dimensions)
+/// Used for Stage 2 fine re-ranking in two-stage search
+pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
+    if a.is_empty() || b.is_empty() {
+        return 0.0;
+    }
+    
+    let mut dot_product = 0.0;
+    let mut norm_a = 0.0;
+    let mut norm_b = 0.0;
+    
+    for i in 0..a.len().min(b.len()) {
         dot_product += a[i] * b[i];
         norm_a += a[i] * a[i];
         norm_b += b[i] * b[i];
@@ -561,12 +586,12 @@ impl VectorStore {
         let top_candidates = &candidates[0..filter_size];
         
         // Stage 2: Fine Re-ranking (Full dimensions)
-        // Instead of HNSW, we do exact match on the filtered subset for maximum precision
+        // Use exact cosine similarity for maximum precision on filtered candidates
         let mut final_results: Vec<(usize, f32)> = top_candidates.iter()
             .map(|(idx, _coarse_sim)| {
                 let entry = &embeddings[*idx];
-                // Full cosine similarity
-                let fine_sim = fractal_similarity(&query_embedding, &entry.embedding, entry.embedding.len());
+                // Full cosine similarity for precise re-ranking
+                let fine_sim = cosine_similarity(&query_embedding, &entry.embedding);
                 (*idx, fine_sim)
             })
             .collect();
