@@ -37,7 +37,11 @@ logger = logging.getLogger("CodeGraphIndexer")
 class CodeGraphIndexer:
     def __init__(self, root_path: str = "."):
         self.root_path = os.path.abspath(root_path)
-        self.parser = CodeParser()
+        try:
+            self.parser = CodeParser()
+        except Exception as e:
+            logger.warning(f"Could not initialize CodeParser: {e}. Indexing will be limited.")
+            self.parser = None
         self.grpc_host = os.getenv("SYNAPSE_GRPC_HOST", "localhost")
         self.grpc_port = int(os.getenv("SYNAPSE_GRPC_PORT", "50051"))
         self.channel = None
@@ -86,7 +90,7 @@ class CodeGraphIndexer:
                     continue
 
                 ext = os.path.splitext(file)[1]
-                if ext in self.parser.languages:
+                if self.parser and ext in self.parser.languages:
                     try:
                         self._process_file(filepath, rel_path)
                     except Exception as e:

@@ -10,7 +10,7 @@ import tree_sitter_python
 import tree_sitter_rust
 import tree_sitter_javascript
 import tree_sitter_cpp
-from tree_sitter import Language, Parser, Query, QueryCursor
+from tree_sitter import Language, Parser, Query
 
 class CodeParser:
     def __init__(self):
@@ -30,9 +30,6 @@ class CodeParser:
 
         # Cache for compiled queries: (ext, query_type) -> Query
         self.query_cache: Dict[Tuple[str, str], Optional[Query]] = {}
-
-        # Cache for query cursors: (ext, query_type) -> QueryCursor
-        self.cursor_cache: Dict[Tuple[str, str], QueryCursor] = {}
 
     def _get_compiled_query(self, lang: Language, lang_ext: str, query_type: str) -> Optional[Query]:
         """
@@ -57,26 +54,11 @@ class CodeParser:
             self.query_cache[cache_key] = None
             return None
 
-    def _get_cursor(self, lang: Language, lang_ext: str, query_type: str) -> Optional[QueryCursor]:
+    def _get_query_obj(self, lang: Language, lang_ext: str, query_type: str) -> Optional[Query]:
         """
-        Returns a QueryCursor for the given query type, using cache if available.
-        @synapse:rule Reuse QueryCursor instances to avoid O(N) object creation overhead in parsing loops.
+        Returns a compiled Query object, using cache if available.
         """
-        cache_key = (lang_ext, query_type)
-        if cache_key in self.cursor_cache:
-            return self.cursor_cache[cache_key]
-
-        query = self._get_compiled_query(lang, lang_ext, query_type)
-        if not query:
-            return None
-
-        try:
-            cursor = QueryCursor(query)
-            self.cursor_cache[cache_key] = cursor
-            return cursor
-        except Exception as e:
-            print(f"Error creating cursor for {lang_ext} {query_type}: {e}")
-            return None
+        return self._get_compiled_query(lang, lang_ext, query_type)
 
     def _get_query(self, lang_ext: str, query_type: str) -> Optional[str]:
         # Define queries for each language
@@ -196,13 +178,13 @@ class CodeParser:
         symbols = []
 
         # 1. Extract Definitions (Classes, Functions)
-        cursor = self._get_cursor(lang, ext, "definitions")
-        if cursor:
+        query = self._get_query_obj(lang, ext, "definitions")
+        if query:
             try:
-                matches = cursor.matches(root)
+                matches = query.matches(root)
 
                 for match in matches:
-                    captures = match[1]
+                    captures = match.captures
 
                     node_type = "unknown"
                     name_node = None
@@ -272,14 +254,14 @@ class CodeParser:
 
     def _extract_calls(self, node, lang, ext, content) -> Set[str]:
         calls = set()
-        cursor = self._get_cursor(lang, ext, "calls")
-        if not cursor:
+        query = self._get_query_obj(lang, ext, "calls")
+        if not query:
             return calls
 
         try:
-            matches = cursor.matches(node)
+            matches = query.matches(node)
             for match in matches:
-                captures = match[1]
+                captures = match.captures
                 if 'func_name' in captures:
                     for n in captures['func_name']:
                         func_name = content[n.start_byte:n.end_byte].decode('utf-8')
@@ -292,15 +274,15 @@ class CodeParser:
     def _extract_inheritance(self, node, lang, ext, content) -> Dict[str, List[str]]:
         # Map class_name -> list of superclasses
         inheritance = {}
-        cursor = self._get_cursor(lang, ext, "inheritance")
-        if not cursor:
+        query = self._get_query_obj(lang, ext, "inheritance")
+        if not query:
             return inheritance
 
         try:
-            matches = cursor.matches(node)
+            matches = query.matches(node)
 
             for match in matches:
-                captures = match[1]
+                captures = match.captures
                 if 'classname' in captures and 'superclass' in captures:
                     class_name_node = captures['classname'][0]
                     class_name = content[class_name_node.start_byte:class_name_node.end_byte].decode('utf-8')
