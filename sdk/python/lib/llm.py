@@ -299,12 +299,13 @@ class LLMService:
             if "-latest" in res_m:
                  res_m = res_m.replace("-latest", "")
             
-            # Use 2.0 or 2.5 if specified or default to flash
+            # Use 3.0, 2.5 or 2.0 if specified or default to 3
             if "flash" in res_m and "-8b" not in res_m:
-                 # Prefer newer models if they contain 2.0 or 2.5
-                 if "2.0" in res_m: res_m = "gemini/gemini-2.0-flash"
+                 # Prioritize latest versions per user request
+                 if "3" in res_m: res_m = "gemini/gemini-3-flash-preview"
                  elif "2.5" in res_m: res_m = "gemini/gemini-2.5-flash"
-                 else: res_m = "gemini/gemini-2.0-flash" # Upgrade default
+                 elif "2.0" in res_m: res_m = "gemini/gemini-2.0-flash"
+                 else: res_m = "gemini/gemini-3-flash-preview" # Upgrade default to Gemini 3
             return res_m
         return m
 
