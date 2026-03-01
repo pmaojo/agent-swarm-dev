@@ -360,7 +360,7 @@ class LLMService:
                 response_format=response_format,
                 tools=tools,
                 temperature=0.7,
-                max_tokens=2000,
+                max_tokens=500,
                 fallbacks=processed_fallbacks
             )
 
