@@ -66,3 +66,17 @@ def test_parser_performance_and_correctness(complex_python_file):
     # Check calls
     derived_method_sym = next(s for s in symbols if s['name'] == 'derived_method')
     assert 'base_method' in derived_method_sym.get('calls', [])
+
+def test_query_cursor_caching_performance(complex_python_file):
+    parser = CodeParser()
+
+    # We test that executing parsing with O(1) query cursor instantiations
+    # doesn't regress in performance significantly
+    start_time = time.time()
+    iterations = 50
+    for _ in range(iterations):
+        parser.parse_file(complex_python_file)
+    duration = time.time() - start_time
+
+    # It should be quite fast, e.g., < 1.0 second for 50 iterations on a small file
+    assert duration < 2.0, f"Performance regression: took {duration}s for {iterations} iterations"
