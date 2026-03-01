@@ -65,7 +65,16 @@ else
     echo "✅ Swarm Gateway already running"
 fi
 
-# 5. Start Swarm CLI (TUI)
+# 5. Start Trello Bridge
+if ! pgrep -f "run_trello_bridge.py" > /dev/null; then
+    echo "▶️  Starting Trello Bridge (Brain)..."
+    nohup python3 scripts/run_trello_bridge.py > trello_bridge.log 2>&1 &
+    sleep 2
+else
+    echo "✅ Trello Bridge already running"
+fi
+
+# 6. Start Swarm CLI (TUI)
 if ! pgrep -f "swarm-cli" > /dev/null; then
     echo "▶️  Starting Swarm CLI (TUI)..."
     # Build CLI if needed
@@ -81,4 +90,8 @@ echo "🎉 All services ready!"
 echo "   - FastEmbed: http://localhost:11434"
 echo "   - Synapse: localhost:$SYNAPSE_PORT (Data: ./synapse-data)"
 echo "   - Swarm Gateway: http://localhost:18789"
-echo "   - Swarm CLI: Run ./target/debug/swarm-cli"
+echo "   - Trello Bridge: Active (Logs: trello_bridge.log)"
+echo "   - Swarm CLI: Active (Neural Stream: swarm-cli.log)"
+echo ""
+echo "👉 You can now go to Trello and create a card in 'INBOX'!"
+echo "👉 To see the agents thinking, run: tail -f swarm-cli.log"

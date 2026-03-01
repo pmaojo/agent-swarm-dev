@@ -8,6 +8,11 @@ import os
 import sys
 import time
 import logging
+from dotenv import load_dotenv
+
+# Load .env from project root
+DOTENV_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.env'))
+load_dotenv(DOTENV_PATH)
 
 # Add path to lib and agents
 SDK_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'sdk', 'python'))
