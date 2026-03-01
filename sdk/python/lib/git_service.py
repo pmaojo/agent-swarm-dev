@@ -25,6 +25,7 @@ PROV = "http://www.w3.org/ns/prov#"
 class GitService:
     def __init__(self, repo_path: str = "."):
         self.repo_path = os.path.abspath(repo_path)
+        self.base_branch = self._detect_base_branch()
         self.grpc_host = os.getenv("SYNAPSE_GRPC_HOST", "localhost")
         self.grpc_port = int(os.getenv("SYNAPSE_GRPC_PORT", "50051"))
         self.channel = None
@@ -55,6 +56,13 @@ class GitService:
         except Exception as e:
             print(f"❌ GitService Ingest failed: {e}")
 
+    def _detect_base_branch(self) -> str:
+        capturer = subprocess.run(["git", "rev-parse", "--verify", "main"], cwd=self.repo_path, capture_output=True)
+        if capturer.returncode == 0: return "main"
+        capturer = subprocess.run(["git", "rev-parse", "--verify", "master"], cwd=self.repo_path, capture_output=True)
+        if capturer.returncode == 0: return "master"
+        return "main" # Default fallback
+
     def _run_git(self, args: List[str]) -> str:
         """Run a git command in the repo."""
         try:
@@ -73,10 +81,12 @@ class GitService:
     def get_current_branch(self) -> str:
         return self._run_git(["rev-parse", "--abbrev-ref", "HEAD"])
 
-    def create_branch(self, task_id: str, agent_name: str, base_branch: str = "main") -> str:
+    def create_branch(self, task_id: str, agent_name: str, base_branch: Optional[str] = None) -> str:
         """
         Creates a sovereign branch for the task and ingests traceability triples.
         """
+        if base_branch is None:
+            base_branch = self.base_branch
         # Sanitize task_id for branch name
         safe_task_id = "".join([c if c.isalnum() else "-" for c in task_id]).strip("-")
         branch_name = f"feature/{safe_task_id}"
@@ -171,7 +181,7 @@ class GitService:
                 subprocess.run(["gh", "--version"], check=True, capture_output=True)
 
                 print(f"gh CLI found. Creating real PR: {title}")
-                cmd = ["gh", "pr", "create", "--title", title, "--body", body, "--head", branch_name, "--base", "main"]
+                cmd = ["gh", "pr", "create", "--title", title, "--body", body, "--head", branch_name, "--base", self.base_branch]
                 result = subprocess.run(cmd, capture_output=True, text=True, cwd=self.repo_path)
 
                 if result.returncode == 0:
@@ -204,8 +214,10 @@ class GitService:
         self._ingest(triples)
         return pr_uri
 
-    def get_diff(self, branch_name: str, base_branch: str = "main") -> str:
+    def get_diff(self, branch_name: str, base_branch: Optional[str] = None) -> str:
         """Get the diff between branches, with robust base detection."""
+        if base_branch is None:
+            base_branch = self.base_branch
         try:
             current_branch = self.get_current_branch()
             # If we are already on the branch, diff against relative base

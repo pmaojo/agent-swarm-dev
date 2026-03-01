@@ -52,11 +52,13 @@ class BudgetExceededException(Exception):
 class LLMService:
     def __init__(self):
         # Load environment variables from .env using absolute path
-        dotenv_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".env"))
+        base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+        dotenv_path = os.path.join(base_dir, ".env")
         load_dotenv(dotenv_path)
         self.mock_mode = os.getenv("MOCK_LLM", "false").lower() == "true"
 
         self.api_key = os.getenv("GEMINI_API_KEY") or os.getenv("OPENAI_API_KEY")
+        self.kilo_key = os.getenv("KILO_GATEWAY_API_KEY")
         # Use LLM_MODEL from env, which should be gemini/gemini-3-flash-preview
         self.model = os.getenv("LLM_MODEL", "gemini/gemini-3-flash-preview")
         # Configure Fallbacks (Ordered by preference)
@@ -296,6 +298,12 @@ class LLMService:
         if m.startswith("openrouter/"):
             return m
         
+        if m.startswith("kilo/"):
+            # Kilo models use OpenAI-compatible gateway
+            # If the user specifies kilo/model:free, we strip kilo/ but keep :free
+            res = m.replace("kilo/", "openai/", 1)
+            return res
+        
         # Standardize Gemini
         if "gemini" in m.lower():
             res_m = m if "/" in m else f"gemini/{m}"
@@ -352,6 +360,14 @@ class LLMService:
 
         try:
             target_model = self._resolve_model_name(self.model)
+            api_key = self.api_key
+            api_base = None
+
+            # Handle Kilo Gateway specifics
+            if self.model.startswith("kilo/"):
+                api_key = self.kilo_key
+                api_base = "https://api.kilo.ai/api/gateway"
+
             processed_fallbacks = self._prepare_fallbacks()
             response_format = {"type": "json_object"} if json_mode else None
 
@@ -359,7 +375,8 @@ class LLMService:
             response = litellm.completion(
                 model=target_model,
                 messages=messages,
-                api_key=self.api_key,
+                api_key=api_key,
+                api_base=api_base,
                 response_format=response_format,
                 tools=tools,
                 temperature=0.7,
@@ -371,8 +388,16 @@ class LLMService:
                 self.log_spend(response.usage.get("prompt_tokens", 0), response.usage.get("completion_tokens", 0))
 
             result = response.choices[0].message
-            if not (tools and result.tool_calls):
-                result = result.content
+            
+            # Handle "thinking" models (like MiniMax M2.5) that return thoughts in 'reasoning'
+            final_content = result.content or ""
+            if not final_content and hasattr(result, "reasoning") and result.reasoning:
+                final_content = result.reasoning
+            elif not final_content and isinstance(result, dict) and result.get("reasoning"):
+                final_content = result.get("reasoning")
+
+            if not (tools and getattr(result, "tool_calls", None)):
+                result = final_content
 
             # Store in cache
             self._cache[cache_key] = result
