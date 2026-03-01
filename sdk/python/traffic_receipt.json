@@ -1,0 +1,86 @@
+[
+  {
+    "timestamp": 1772401328.481909,
+    "method": "GET",
+    "url": "https://api.trello.com/1/boards/60869347d97f9c351dc44593/lists",
+    "outcome": "success",
+    "status": 200
+  },
+  {
+    "timestamp": 1772401328.8571289,
+    "method": "GET",
+    "url": "https://api.trello.com/1/boards/60869347d97f9c351dc44593/lists",
+    "outcome": "success",
+    "status": 200
+  },
+  {
+    "timestamp": 1772401329.184177,
+    "method": "GET",
+    "url": "https://api.trello.com/1/boards/60869347d97f9c351dc44593/lists",
+    "outcome": "success",
+    "status": 200
+  },
+  {
+    "timestamp": 1772401329.567086,
+    "method": "GET",
+    "url": "https://api.trello.com/1/boards/60869347d97f9c351dc44593/lists",
+    "outcome": "success",
+    "status": 200
+  },
+  {
+    "timestamp": 1772401329.961142,
+    "method": "GET",
+    "url": "https://api.trello.com/1/boards/60869347d97f9c351dc44593/lists",
+    "outcome": "success",
+    "status": 200
+  },
+  {
+    "timestamp": 1772401330.2867808,
+    "method": "GET",
+    "url": "https://api.trello.com/1/boards/60869347d97f9c351dc44593/lists",
+    "outcome": "success",
+    "status": 200
+  },
+  {
+    "timestamp": 1772401330.691963,
+    "method": "GET",
+    "url": "https://api.trello.com/1/boards/60869347d97f9c351dc44593/lists",
+    "outcome": "success",
+    "status": 200
+  },
+  {
+    "timestamp": 1772401331.089403,
+    "method": "GET",
+    "url": "https://api.trello.com/1/boards/60869347d97f9c351dc44593/lists",
+    "outcome": "success",
+    "status": 200
+  },
+  {
+    "timestamp": 1772401331.44496,
+    "method": "GET",
+    "url": "https://api.trello.com/1/boards/60869347d97f9c351dc44593/lists",
+    "outcome": "success",
+    "status": 200
+  },
+  {
+    "timestamp": 1772401333.8492951,
+    "method": "GET",
+    "url": "https://api.trello.com/1/boards/60869347d97f9c351dc44593/lists",
+    "outcome": "success",
+    "status": 200
+  },
+  {
+    "timestamp": 1772401334.2214909,
+    "method": "GET",
+    "url": "https://api.trello.com/1/boards/60869347d97f9c351dc44593/lists",
+    "outcome": "success",
+    "status": 200
+  },
+  {
+    "timestamp": 1772401339.570369,
+    "method": "GET",
+    "url": "https://api.trello.com/1/boards/60869347d97f9c351dc44593/lists",
+    "outcome": "success",
+    "status": 200
+  }
+]
