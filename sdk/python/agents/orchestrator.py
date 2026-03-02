@@ -450,13 +450,20 @@ class OrchestratorAgent:
             res = self.stub.HybridSearch(req)
             if not res.results:
                 return None
-            # Check if any of the top results looks like a stack
+
+            # Check if any of the top results looks like a stack and meets the critical threshold
+            critical_threshold = 0.8  # Critical threshold for direct assignment
+
             for r in res.results:
-                uri = r.uri.lower()
-                for s in ["python", "rust", "typescript", "javascript", "godot"]:
-                    if s in uri or s in r.content.lower():
-                        print(f"⚡ V5 Fast Route: {s} (score: {r.score:.3f})")
-                        return s
+                if r.score >= critical_threshold:
+                    uri = r.uri.lower()
+                    for s in ["python", "rust", "typescript", "javascript", "godot"]:
+                        if s in uri or s in r.content.lower():
+                            print(f"⚡ V5 Fast Route Zero-LLM direct assignment: {s} (score: {r.score:.3f} >= {critical_threshold})")
+                            return s
+                else:
+                    print(f"⚠️ V5 Vector Routing score {r.score:.3f} below threshold {critical_threshold}")
+
         except Exception as e:
             print(f"⚠️ V5 Vector Routing failed: {e}")
             
