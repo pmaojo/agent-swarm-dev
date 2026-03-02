@@ -9,11 +9,10 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..',
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'sdk', 'python', 'lib')))
 
 # Make sure the generated protobuf module is importable
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'sdk', 'python', 'agents', 'synapse_proto')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'sdk', 'python', 'agents')))
 
 try:
-    import semantic_engine_pb2
-    import semantic_engine_pb2_grpc
+    from synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
 except ImportError as e:
     print(f"Failed to import Synapse protobufs: {e}. Did you run `python -m grpc_tools.protoc ...`?")
     sys.exit(1)
@@ -64,7 +63,11 @@ def run_migration():
         content = f"{t.subject} {t.predicate} {t.object}"
 
         # Generate embedding
-        vector = embedder.embed([content])[0]
+        vectors = embedder.embed([content])
+        if not vectors:
+            print(f"⚠️ Warning: No embedding generated for {t.subject}")
+            continue
+        vector = vectors[0]
 
         # Create new triple with embedding attached
         # Note: We must construct a semantic_engine_pb2.Triple

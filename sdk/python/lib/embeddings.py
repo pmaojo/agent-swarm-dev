@@ -2,6 +2,7 @@ import os
 import json
 import torch
 import torch.nn as nn
+import numpy as np
 from fastembed import TextEmbedding
 
 class FractalProjectionHead(nn.Module):
@@ -27,7 +28,7 @@ class FastEmbedFractal:
         self.embedding_model = TextEmbedding(model_name=model_name)
         self.projection_head = FractalProjectionHead()
         if model_path and os.path.exists(model_path):
-            self.projection_head.load_state_dict(torch.load(model_path))
+            self.projection_head.load_state_dict(torch.load(model_path, weights_only=True))
         self.projection_head.eval()
 
     def embed(self, texts):
@@ -36,7 +37,6 @@ class FastEmbedFractal:
         if not base_embeddings:
             return []
 
-        import numpy as np
         base_tensor = torch.tensor(np.array(base_embeddings), dtype=torch.float32)
 
         with torch.no_grad():
