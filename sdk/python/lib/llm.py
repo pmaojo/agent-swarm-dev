@@ -94,6 +94,9 @@ class LLMService:
         self._cache = OrderedDict()
         self._cache_max_size = 100
 
+        self._daily_spend_cache = None
+        self._daily_spend_cache_time = 0
+
         self.connect_synapse()
         self.ensure_finance_node()
 
@@ -152,6 +155,11 @@ class LLMService:
 
     def get_daily_spend(self) -> float:
         """Calculate total spend for today using Append-Only Log."""
+        # @synapse:rule Cache high-frequency aggregate SPARQL queries (like daily spend) in-memory with a short TTL (60s) to reduce gRPC network latency and Synapse load.
+        current_time = time.time()
+        if self._daily_spend_cache is not None and (current_time - self._daily_spend_cache_time) < 60:
+            return self._daily_spend_cache
+
         today = datetime.now().strftime("%Y-%m-%d")
         query = f"""
         PREFIX swarm: <{SWARM}>
@@ -169,9 +177,13 @@ class LLMService:
         try:
             if isinstance(total, str):
                 total = total.strip('"')
-            return float(total) if total else 0.0
+            total_val = float(total) if total else 0.0
         except (ValueError, TypeError):
-            return 0.0
+            total_val = 0.0
+
+        self._daily_spend_cache = total_val
+        self._daily_spend_cache_time = current_time
+        return total_val
 
     def send_telegram_alert(self, message: str):
         """Send alert via Telegram API and Hardening Stream."""
@@ -266,11 +278,15 @@ class LLMService:
         today = datetime.now().strftime("%Y-%m-%d")
         event_id = f"{SWARM}event/spend/{uuid.uuid4()}"
 
+        new_spend = self.get_daily_spend() + cost
+        if self._daily_spend_cache is not None:
+            self._daily_spend_cache = new_spend
+
         triples = [
             {"subject": event_id, "predicate": f"{RDF}type", "object": f"{SWARM}SpendEvent"},
             {"subject": event_id, "predicate": f"{SWARM}date", "object": f'"{today}"'},
             {"subject": event_id, "predicate": f"{SWARM}amount", "object": f'"{cost:.6f}"'}, # High precision
-            {"subject": f"{SWARM}Finance", "predicate": f"{SWARM}dailySpent", "object": f'"{self.get_daily_spend() + cost:.6f}"'} # Cache (approx)
+            {"subject": f"{SWARM}Finance", "predicate": f"{SWARM}dailySpent", "object": f'"{new_spend:.6f}"'} # Cache (approx)
         ]
         self._ingest(triples)
         # print(f"💰 Cost logged: ${cost:.6f}")
