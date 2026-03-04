@@ -12,6 +12,13 @@ import tree_sitter_javascript
 import tree_sitter_cpp
 from tree_sitter import Language, Parser, Query
 
+try:
+    from tree_sitter import QueryCursor
+    HAS_QUERY_CURSOR = True
+except ImportError:
+    HAS_QUERY_CURSOR = False
+    QueryCursor = None
+
 class CodeParser:
     def __init__(self):
         self.languages = {
@@ -177,14 +184,29 @@ class CodeParser:
 
         symbols = []
 
+        # @synapse:rule Cache QueryCursor locally per parse_file to avoid O(N) instantiation overhead while maintaining thread-safety.
+        cursors = {}
+
         # 1. Extract Definitions (Classes, Functions)
         query = self._get_query_obj(lang, ext, "definitions")
         if query:
             try:
-                matches = query.matches(root)
+                if HAS_QUERY_CURSOR:
+                    if "definitions" not in cursors:
+                        try:
+                            cursors["definitions"] = QueryCursor(query)
+                        except TypeError:
+                            cursors["definitions"] = QueryCursor()
+
+                    try:
+                        matches = cursors["definitions"].matches(root)
+                    except TypeError:
+                        matches = cursors["definitions"].matches(query, root)
+                else:
+                    matches = query.matches(root)
 
                 for match in matches:
-                    captures = match.captures
+                    captures = match[1] if isinstance(match, tuple) else match.captures
 
                     node_type = "unknown"
                     name_node = None
@@ -225,7 +247,7 @@ class CodeParser:
                         # Analyze body for calls
                         calls = set()
                         if body_node:
-                            calls = self._extract_calls(body_node, lang, ext, content)
+                            calls = self._extract_calls(body_node, lang, ext, content, cursors)
 
                         symbols.append({
                             "name": name,
@@ -240,7 +262,7 @@ class CodeParser:
                 print(f"Error parsing definitions in {filepath}: {e}")
 
         # 2. Extract Inheritance
-        inheritance_map = self._extract_inheritance(root, lang, ext, content)
+        inheritance_map = self._extract_inheritance(root, lang, ext, content, cursors)
         # Merge into symbols
         for sym in symbols:
             if sym['name'] in inheritance_map:
@@ -252,16 +274,28 @@ class CodeParser:
             "symbols": symbols
         }
 
-    def _extract_calls(self, node, lang, ext, content) -> Set[str]:
+    def _extract_calls(self, node, lang, ext, content, cursors: Dict[str, Any]) -> Set[str]:
         calls = set()
         query = self._get_query_obj(lang, ext, "calls")
         if not query:
             return calls
 
         try:
-            matches = query.matches(node)
+            if HAS_QUERY_CURSOR:
+                if "calls" not in cursors:
+                    try:
+                        cursors["calls"] = QueryCursor(query)
+                    except TypeError:
+                        cursors["calls"] = QueryCursor()
+                try:
+                    matches = cursors["calls"].matches(node)
+                except TypeError:
+                    matches = cursors["calls"].matches(query, node)
+            else:
+                matches = query.matches(node)
+
             for match in matches:
-                captures = match.captures
+                captures = match[1] if isinstance(match, tuple) else match.captures
                 if 'func_name' in captures:
                     for n in captures['func_name']:
                         func_name = content[n.start_byte:n.end_byte].decode('utf-8')
@@ -271,7 +305,7 @@ class CodeParser:
             pass
         return calls
 
-    def _extract_inheritance(self, node, lang, ext, content) -> Dict[str, List[str]]:
+    def _extract_inheritance(self, node, lang, ext, content, cursors: Dict[str, Any]) -> Dict[str, List[str]]:
         # Map class_name -> list of superclasses
         inheritance = {}
         query = self._get_query_obj(lang, ext, "inheritance")
@@ -279,10 +313,21 @@ class CodeParser:
             return inheritance
 
         try:
-            matches = query.matches(node)
+            if HAS_QUERY_CURSOR:
+                if "inheritance" not in cursors:
+                    try:
+                        cursors["inheritance"] = QueryCursor(query)
+                    except TypeError:
+                        cursors["inheritance"] = QueryCursor()
+                try:
+                    matches = cursors["inheritance"].matches(node)
+                except TypeError:
+                    matches = cursors["inheritance"].matches(query, node)
+            else:
+                matches = query.matches(node)
 
             for match in matches:
-                captures = match.captures
+                captures = match[1] if isinstance(match, tuple) else match.captures
                 if 'classname' in captures and 'superclass' in captures:
                     class_name_node = captures['classname'][0]
                     class_name = content[class_name_node.start_byte:class_name_node.end_byte].decode('utf-8')
