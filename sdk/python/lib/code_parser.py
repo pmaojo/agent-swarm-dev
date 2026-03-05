@@ -12,6 +12,12 @@ import tree_sitter_javascript
 import tree_sitter_cpp
 from tree_sitter import Language, Parser, Query
 
+try:
+    from tree_sitter import QueryCursor, Node
+except ImportError:
+    QueryCursor = None
+    Node = None
+
 class CodeParser:
     def __init__(self):
         self.languages = {
@@ -158,7 +164,10 @@ class CodeParser:
         return None
 
     def parse_file(self, filepath: str) -> Dict[str, Any]:
-        """Parses a file and returns extracted symbols and relationships."""
+        """
+        Parses a file and returns extracted symbols and relationships.
+        @synapse:rule Cache QueryCursor locally per `parse_file` execution to ensure thread-safety and maintain O(1) instantiation overhead for repetitive queries like 'calls'.
+        """
         ext = os.path.splitext(filepath)[1]
         if ext not in self.languages:
             return {}
@@ -177,14 +186,57 @@ class CodeParser:
 
         symbols = []
 
+        # Local cache for cursors to ensure O(1) instantiation and thread-safety
+        local_cursors = {}
+
+        def _get_local_cursor(query_type: str, query_obj) -> Any:
+            if query_type not in local_cursors:
+                if QueryCursor is not None:
+                    try:
+                        # Try without query arg first (older/different bindings might not require or might error)
+                        local_cursors[query_type] = QueryCursor()
+                    except TypeError:
+                        # Fallback for when query is required
+                        local_cursors[query_type] = QueryCursor(query_obj)
+                else:
+                    local_cursors[query_type] = None
+            return local_cursors[query_type]
+
+        # Cache the execution function per query type to avoid try-except overhead in hot loops
+        execution_strategies = {}
+
+        def _execute_query(query_type, query_obj, node, cursor):
+            if not cursor:
+                return query_obj.matches(node)
+
+            if query_type in execution_strategies:
+                return execution_strategies[query_type](query_obj, node, cursor)
+
+            # Determine strategy once per query type
+            try:
+                # Some tree-sitter Python bindings use (query_obj, node)
+                matches = cursor.matches(query_obj, node)
+                execution_strategies[query_type] = lambda q, n, c: c.matches(q, n)
+                return matches
+            except TypeError:
+                try:
+                    # Others might use just (node) since cursor might be bound to query
+                    matches = cursor.matches(node)
+                    execution_strategies[query_type] = lambda q, n, c: c.matches(n)
+                    return matches
+                except TypeError:
+                    execution_strategies[query_type] = lambda q, n, c: q.matches(n)
+                    return query_obj.matches(node)
+
         # 1. Extract Definitions (Classes, Functions)
         query = self._get_query_obj(lang, ext, "definitions")
         if query:
             try:
-                matches = query.matches(root)
+                cursor = _get_local_cursor("definitions", query)
+                matches = _execute_query("definitions", query, root, cursor)
 
                 for match in matches:
-                    captures = match.captures
+                    captures = match[1] if isinstance(match, tuple) else match.captures
 
                     node_type = "unknown"
                     name_node = None
@@ -225,7 +277,9 @@ class CodeParser:
                         # Analyze body for calls
                         calls = set()
                         if body_node:
-                            calls = self._extract_calls(body_node, lang, ext, content)
+                            calls_query = self._get_query_obj(lang, ext, "calls")
+                            if calls_query:
+                                calls = self._extract_calls(body_node, lang, ext, content, _get_local_cursor("calls", calls_query), lambda q, n, c: _execute_query("calls", q, n, c))
 
                         symbols.append({
                             "name": name,
@@ -240,7 +294,10 @@ class CodeParser:
                 print(f"Error parsing definitions in {filepath}: {e}")
 
         # 2. Extract Inheritance
-        inheritance_map = self._extract_inheritance(root, lang, ext, content)
+        inheritance_query = self._get_query_obj(lang, ext, "inheritance")
+        inheritance_map = {}
+        if inheritance_query:
+            inheritance_map = self._extract_inheritance(root, lang, ext, content, _get_local_cursor("inheritance", inheritance_query), lambda q, n, c: _execute_query("inheritance", q, n, c))
         # Merge into symbols
         for sym in symbols:
             if sym['name'] in inheritance_map:
@@ -252,16 +309,16 @@ class CodeParser:
             "symbols": symbols
         }
 
-    def _extract_calls(self, node, lang, ext, content) -> Set[str]:
+    def _extract_calls(self, node, lang, ext, content, cursor, execute_fn) -> Set[str]:
         calls = set()
         query = self._get_query_obj(lang, ext, "calls")
         if not query:
             return calls
 
         try:
-            matches = query.matches(node)
+            matches = execute_fn(query, node, cursor)
             for match in matches:
-                captures = match.captures
+                captures = match[1] if isinstance(match, tuple) else match.captures
                 if 'func_name' in captures:
                     for n in captures['func_name']:
                         func_name = content[n.start_byte:n.end_byte].decode('utf-8')
@@ -271,7 +328,7 @@ class CodeParser:
             pass
         return calls
 
-    def _extract_inheritance(self, node, lang, ext, content) -> Dict[str, List[str]]:
+    def _extract_inheritance(self, node, lang, ext, content, cursor, execute_fn) -> Dict[str, List[str]]:
         # Map class_name -> list of superclasses
         inheritance = {}
         query = self._get_query_obj(lang, ext, "inheritance")
@@ -279,10 +336,10 @@ class CodeParser:
             return inheritance
 
         try:
-            matches = query.matches(node)
+            matches = execute_fn(query, node, cursor)
 
             for match in matches:
-                captures = match.captures
+                captures = match[1] if isinstance(match, tuple) else match.captures
                 if 'classname' in captures and 'superclass' in captures:
                     class_name_node = captures['classname'][0]
                     class_name = content[class_name_node.start_byte:class_name_node.end_byte].decode('utf-8')
