@@ -184,7 +184,7 @@ class CodeParser:
                 matches = query.matches(root)
 
                 for match in matches:
-                    captures = match.captures
+                    captures = match[1] if isinstance(match, tuple) else match.captures
 
                     node_type = "unknown"
                     name_node = None
@@ -261,7 +261,7 @@ class CodeParser:
         try:
             matches = query.matches(node)
             for match in matches:
-                captures = match.captures
+                captures = match[1] if isinstance(match, tuple) else match.captures
                 if 'func_name' in captures:
                     for n in captures['func_name']:
                         func_name = content[n.start_byte:n.end_byte].decode('utf-8')
@@ -282,7 +282,7 @@ class CodeParser:
             matches = query.matches(node)
 
             for match in matches:
-                captures = match.captures
+                captures = match[1] if isinstance(match, tuple) else match.captures
                 if 'classname' in captures and 'superclass' in captures:
                     class_name_node = captures['classname'][0]
                     class_name = content[class_name_node.start_byte:class_name_node.end_byte].decode('utf-8')
