@@ -13,6 +13,13 @@ import tree_sitter_cpp
 from tree_sitter import Language, Parser, Query
 
 class CodeParser:
+    """
+    Code Parser using Tree-sitter.
+    Extracts symbols, calls, and relationships for the CodeGraph.
+
+    @synapse:rule Dynamically handle tree-sitter capture extraction and cache execution strategy in `execution_strategies` per query type to avoid try-except overhead in hot loops.
+    @synapse:rule Instantiate `QueryCursor` locally per `parse_file` execution to ensure thread-safety and keep O(1) instantiation overhead for repetitive queries.
+    """
     def __init__(self):
         self.languages = {
             ".py": Language(tree_sitter_python.language()),
@@ -30,6 +37,9 @@ class CodeParser:
 
         # Cache for compiled queries: (ext, query_type) -> Query
         self.query_cache: Dict[Tuple[str, str], Optional[Query]] = {}
+
+        # Cache for execution strategy: (ext, query_type) -> strategy function
+        self.execution_strategies: Dict[Tuple[str, str], Any] = {}
 
     def _get_compiled_query(self, lang: Language, lang_ext: str, query_type: str) -> Optional[Query]:
         """
@@ -157,6 +167,87 @@ class CodeParser:
 
         return None
 
+    def _execute_query(self, query: Query, node: Any, lang_ext: str, query_type: str, cursor: Optional[Any] = None) -> List[Any]:
+        """
+        Executes a query against a node, using a dynamically determined and cached execution strategy.
+        This handles compatibility across different `tree-sitter` API versions (e.g., <0.22 vs >=0.22).
+
+        @synapse:rule Cache execution strategies to avoid try-except overhead in hot loops.
+        """
+        cache_key = (lang_ext, query_type)
+        if cache_key in self.execution_strategies:
+            strategy = self.execution_strategies[cache_key]
+            return strategy(query, node, cursor)
+
+        # Determine strategy
+        def strategy_query_matches(q, n, c):
+            return q.matches(n)
+
+        def strategy_cursor_matches_with_query(q, n, c):
+            return c.matches(q, n)
+
+        def strategy_cursor_matches(q, n, c):
+            return c.matches(n)
+
+        strategy = None
+
+        if hasattr(query, 'matches'):
+            try:
+                # Test query.matches
+                query.matches(node)
+                strategy = strategy_query_matches
+            except Exception:
+                pass
+
+        if strategy is None and cursor is not None:
+            if hasattr(cursor, 'matches'):
+                try:
+                    # Test cursor.matches(node) (tree-sitter >= 0.22 where QueryCursor takes query in __init__)
+                    cursor.matches(node)
+                    strategy = strategy_cursor_matches
+                except Exception:
+                    try:
+                        # Test cursor.matches(query, node) (some intermediate versions)
+                        cursor.matches(query, node)
+                        strategy = strategy_cursor_matches_with_query
+                    except Exception:
+                        pass
+
+        if strategy is None:
+            # Fallback to empty list if no strategy works
+            strategy = lambda q, n, c: []
+
+        self.execution_strategies[cache_key] = strategy
+        return strategy(query, node, cursor)
+
+    class CaptureMatch:
+        """Helper to unify capture representations between old and new tree-sitter APIs."""
+        def __init__(self, captures_dict_or_list):
+            self.captures = {}
+            if isinstance(captures_dict_or_list, dict):
+                self.captures = captures_dict_or_list
+            elif isinstance(captures_dict_or_list, list):
+                # old format: list of tuples (node, capture_name)
+                for node, name in captures_dict_or_list:
+                    if name not in self.captures:
+                        self.captures[name] = []
+                    self.captures[name].append(node)
+
+    def _normalize_matches(self, matches: List[Any]) -> List[CaptureMatch]:
+        """Normalizes the return value of matches to a common structure."""
+        normalized = []
+        for match in matches:
+            if isinstance(match, tuple) and len(match) == 2:
+                # Newer versions return (pattern_index, captures_dict)
+                normalized.append(self.CaptureMatch(match[1]))
+            elif hasattr(match, 'captures'):
+                # Older versions return objects with a `captures` attribute (list of tuples)
+                normalized.append(self.CaptureMatch(match.captures))
+            else:
+                # Direct captures format
+                normalized.append(self.CaptureMatch(match))
+        return normalized
+
     def parse_file(self, filepath: str) -> Dict[str, Any]:
         """Parses a file and returns extracted symbols and relationships."""
         ext = os.path.splitext(filepath)[1]
@@ -177,11 +268,29 @@ class CodeParser:
 
         symbols = []
 
+        # Local cache for QueryCursor instances to ensure O(1) instantiation and thread-safety
+        import tree_sitter
+        cursors: Dict[str, Any] = {}
+
+        def get_cursor(query_type: str, q: Query):
+            if query_type not in cursors:
+                try:
+                    # tree-sitter >= 0.22 requires query as arg
+                    cursors[query_type] = tree_sitter.QueryCursor(q)
+                except Exception:
+                    try:
+                        cursors[query_type] = tree_sitter.QueryCursor()
+                    except Exception:
+                        cursors[query_type] = None
+            return cursors[query_type]
+
         # 1. Extract Definitions (Classes, Functions)
         query = self._get_query_obj(lang, ext, "definitions")
         if query:
             try:
-                matches = query.matches(root)
+                cursor = get_cursor("definitions", query)
+                raw_matches = self._execute_query(query, root, ext, "definitions", cursor)
+                matches = self._normalize_matches(raw_matches)
 
                 for match in matches:
                     captures = match.captures
@@ -225,7 +334,11 @@ class CodeParser:
                         # Analyze body for calls
                         calls = set()
                         if body_node:
-                            calls = self._extract_calls(body_node, lang, ext, content)
+                            calls_query = self._get_query_obj(lang, ext, "calls")
+                            calls_cursor = None
+                            if calls_query:
+                                calls_cursor = get_cursor("calls", calls_query)
+                            calls = self._extract_calls(body_node, lang, ext, content, calls_query, calls_cursor)
 
                         symbols.append({
                             "name": name,
@@ -240,7 +353,11 @@ class CodeParser:
                 print(f"Error parsing definitions in {filepath}: {e}")
 
         # 2. Extract Inheritance
-        inheritance_map = self._extract_inheritance(root, lang, ext, content)
+        inherit_query = self._get_query_obj(lang, ext, "inheritance")
+        inherit_cursor = None
+        if inherit_query:
+            inherit_cursor = get_cursor("inheritance", inherit_query)
+        inheritance_map = self._extract_inheritance(root, lang, ext, content, inherit_query, inherit_cursor)
         # Merge into symbols
         for sym in symbols:
             if sym['name'] in inheritance_map:
@@ -252,14 +369,16 @@ class CodeParser:
             "symbols": symbols
         }
 
-    def _extract_calls(self, node, lang, ext, content) -> Set[str]:
+    def _extract_calls(self, node, lang, ext, content, query=None, cursor=None) -> Set[str]:
         calls = set()
-        query = self._get_query_obj(lang, ext, "calls")
+        if not query:
+            query = self._get_query_obj(lang, ext, "calls")
         if not query:
             return calls
 
         try:
-            matches = query.matches(node)
+            raw_matches = self._execute_query(query, node, ext, "calls", cursor)
+            matches = self._normalize_matches(raw_matches)
             for match in matches:
                 captures = match.captures
                 if 'func_name' in captures:
@@ -271,15 +390,17 @@ class CodeParser:
             pass
         return calls
 
-    def _extract_inheritance(self, node, lang, ext, content) -> Dict[str, List[str]]:
+    def _extract_inheritance(self, node, lang, ext, content, query=None, cursor=None) -> Dict[str, List[str]]:
         # Map class_name -> list of superclasses
         inheritance = {}
-        query = self._get_query_obj(lang, ext, "inheritance")
+        if not query:
+            query = self._get_query_obj(lang, ext, "inheritance")
         if not query:
             return inheritance
 
         try:
-            matches = query.matches(node)
+            raw_matches = self._execute_query(query, node, ext, "inheritance", cursor)
+            matches = self._normalize_matches(raw_matches)
 
             for match in matches:
                 captures = match.captures

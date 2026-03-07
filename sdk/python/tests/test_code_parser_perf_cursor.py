@@ -15,7 +15,7 @@ def test_query_cursor_instantiations():
     for i in range(10):
         content += f"def func_{i}():\n    print('hello')\n    other_func()\n\n"
 
-    with patch('sdk.python.lib.code_parser.QueryCursor', autospec=True) as MockCursor:
+    with patch('tree_sitter.QueryCursor', autospec=True) as MockCursor:
         # MockCursor is called 3 times now:
         # 1. definitions
         # 2. inheritance
