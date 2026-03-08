@@ -174,6 +174,34 @@ class AnalystAgent:
             clusters[key].append(execId)
         return clusters
 
+    def optimize_prompt(self, prompt: str) -> str:
+        """
+        @synapse:optimization Reduces token usage before LLM submission by safely collapsing
+        redundant inline spaces and excessive newlines while preserving indentation to avoid
+        corrupting code or stack traces.
+        """
+        import re
+        lines = prompt.split('\n')
+        optimized_lines = []
+        consecutive_empty = 0
+
+        for line in lines:
+            stripped = line.lstrip()
+
+            if not stripped:
+                consecutive_empty += 1
+                if consecutive_empty <= 1:
+                    optimized_lines.append("")
+            else:
+                consecutive_empty = 0
+                indent = line[:len(line) - len(stripped)]
+
+                # Replace >= 2 spaces with a single space to save tokens, but preserve indentation.
+                content = re.sub(r' {2,}', ' ', stripped)
+                optimized_lines.append(indent + content)
+
+        return '\n'.join(optimized_lines).strip()
+
     def generate_golden_rule(self, role, note, count, stack):
         # Clean Role for Prompt (it's a URI)
         role_name = role.split('/')[-1]
@@ -191,6 +219,7 @@ class AnalystAgent:
         The rule should be a short, imperative sentence (e.g., "Always verify hook order").
         Return ONLY the rule text.
         """
+        prompt = self.optimize_prompt(prompt)
         return self.llm.completion(prompt).strip().strip('"')
 
     def validate_rule(self, rule_text: str, stack: str) -> bool:
@@ -347,6 +376,7 @@ class AnalystAgent:
         Focus on adding missing Classes or Properties.
         Return ONLY the .ttl content. Start with @prefix.
         """
+        prompt = self.optimize_prompt(prompt)
         try:
             ttl_content = self.llm.completion(prompt)
 
