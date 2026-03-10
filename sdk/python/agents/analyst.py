@@ -174,6 +174,17 @@ class AnalystAgent:
             clusters[key].append(execId)
         return clusters
 
+    def optimize_prompt(self, prompt: str) -> str:
+        """
+        @synapse:rule Optimize token usage by collapsing redundant whitespace and newlines, preserving indentation.
+        """
+        import re
+        # Strip trailing spaces on each line
+        optimized = re.sub(r'[ \t]+$', '', prompt, flags=re.MULTILINE)
+        # Collapse multiple newlines into a maximum of two
+        optimized = re.sub(r'\n{3,}', '\n\n', optimized)
+        return optimized.strip()
+
     def generate_golden_rule(self, role, note, count, stack):
         # Clean Role for Prompt (it's a URI)
         role_name = role.split('/')[-1]
@@ -191,7 +202,8 @@ class AnalystAgent:
         The rule should be a short, imperative sentence (e.g., "Always verify hook order").
         Return ONLY the rule text.
         """
-        return self.llm.completion(prompt).strip().strip('"')
+        optimized_prompt = self.optimize_prompt(prompt)
+        return self.llm.completion(optimized_prompt).strip().strip('"')
 
     def validate_rule(self, rule_text: str, stack: str) -> bool:
         """Run sanity checks (dry-run) to validate the new rule."""
@@ -348,7 +360,8 @@ class AnalystAgent:
         Return ONLY the .ttl content. Start with @prefix.
         """
         try:
-            ttl_content = self.llm.completion(prompt)
+            optimized_prompt = self.optimize_prompt(prompt)
+            ttl_content = self.llm.completion(optimized_prompt)
 
             # Security: Validate Content Size (Max 10KB)
             if len(ttl_content.encode('utf-8')) > 10 * 1024:
