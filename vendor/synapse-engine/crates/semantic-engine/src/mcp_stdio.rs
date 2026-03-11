@@ -690,6 +690,7 @@ impl McpStdioServer {
             .and_then(|v| v.as_u64())
             .unwrap_or(1) as u32;
         let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(20) as u32;
+        let prefix_len = args.get("prefix_len").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
 
         let req = Self::create_request(HybridSearchRequest {
             query: query.to_string(),
@@ -698,7 +699,7 @@ impl McpStdioServer {
             graph_depth,
             mode: SearchMode::Hybrid as i32,
             limit,
-            prefix_len: 0,
+            prefix_len,
         });
 
         match self.engine.hybrid_search(req).await {
