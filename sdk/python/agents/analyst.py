@@ -8,6 +8,7 @@ import json
 import grpc
 import yaml
 import uuid
+import re
 from collections import defaultdict
 from typing import List, Dict, Any, Optional
 
@@ -174,6 +175,30 @@ class AnalystAgent:
             clusters[key].append(execId)
         return clusters
 
+    def optimize_prompt(self, prompt: str) -> str:
+        """
+        @synapse:rule Optimize LLM prompts by safely collapsing redundant spaces and newlines while preserving indentation to avoid corrupting code or stack traces.
+        """
+        # Collapse multiple empty lines into at most one empty line (i.e. two newlines)
+        prompt = re.sub(r'\n{3,}', '\n\n', prompt)
+
+        # Split into lines to process inline spaces while preserving leading indentation
+        lines = prompt.split('\n')
+        optimized_lines = []
+        for line in lines:
+            # Find leading whitespace (indentation)
+            leading_spaces = len(line) - len(line.lstrip())
+            indent = line[:leading_spaces]
+
+            # Collapse spaces in the rest of the line
+            content = line[leading_spaces:]
+            content = re.sub(r'[ \t]{2,}', ' ', content)
+
+            # Reconstruct the line and remove trailing spaces
+            optimized_lines.append((indent + content).rstrip())
+
+        return '\n'.join(optimized_lines)
+
     def generate_golden_rule(self, role, note, count, stack):
         # Clean Role for Prompt (it's a URI)
         role_name = role.split('/')[-1]
@@ -191,6 +216,7 @@ class AnalystAgent:
         The rule should be a short, imperative sentence (e.g., "Always verify hook order").
         Return ONLY the rule text.
         """
+        prompt = self.optimize_prompt(prompt)
         return self.llm.completion(prompt).strip().strip('"')
 
     def validate_rule(self, rule_text: str, stack: str) -> bool:
@@ -347,6 +373,7 @@ class AnalystAgent:
         Focus on adding missing Classes or Properties.
         Return ONLY the .ttl content. Start with @prefix.
         """
+        prompt = self.optimize_prompt(prompt)
         try:
             ttl_content = self.llm.completion(prompt)
 
