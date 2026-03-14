@@ -182,6 +182,7 @@ class CodeParser:
                 return matches
             except TypeError:
                 self.execution_strategies[cache_key] = False # doesn't need query arg
+                return cursor_or_query.matches(node)
 
         needs_query_arg = self.execution_strategies[cache_key]
         if needs_query_arg:
