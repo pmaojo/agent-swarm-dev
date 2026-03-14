@@ -186,11 +186,14 @@ class AnalystAgent:
         lines = prompt.split('\n')
         optimized_lines = []
         for line in lines:
-            # Match leading spaces
-            leading_spaces = len(line) - len(line.lstrip(' '))
+            # Match leading whitespace (spaces and tabs)
+            match = re.match(r'^([ \t]*)', line)
+            leading_whitespace = match.group(1) if match else ''
+
             # Collapse spaces in the rest of the line
-            content = re.sub(r' {2,}', ' ', line.lstrip(' '))
-            optimized_lines.append((' ' * leading_spaces) + content)
+            rest_of_line = line[len(leading_whitespace):]
+            content = re.sub(r' {2,}', ' ', rest_of_line)
+            optimized_lines.append(leading_whitespace + content)
 
         # Rejoin and collapse 3+ newlines into 2
         optimized = '\n'.join(optimized_lines)
