@@ -4,6 +4,7 @@ Extracts symbols, calls, and relationships for the CodeGraph.
 """
 import os
 import hashlib
+import grpc
 from typing import Dict, List, Any, Optional, Tuple, Set
 
 import tree_sitter_python
@@ -16,8 +17,34 @@ try:
 except ImportError:
     QueryCursor = None
 
+try:
+    from synapse_proto import codegraph_pb2, codegraph_pb2_grpc
+except ImportError:
+    try:
+        from agents.synapse_proto import codegraph_pb2, codegraph_pb2_grpc
+    except ImportError:
+        codegraph_pb2 = None
+        codegraph_pb2_grpc = None
+
 class CodeParser:
     def __init__(self):
+        self.grpc_host = os.getenv("CODEGRAPH_GRPC_HOST", "localhost")
+        self.grpc_port = int(os.getenv("CODEGRAPH_GRPC_PORT", "50053"))
+        self.channel = None
+        self.stub = None
+
+        if codegraph_pb2_grpc:
+            try:
+                self.channel = grpc.insecure_channel(f"{self.grpc_host}:{self.grpc_port}")
+                grpc.channel_ready_future(self.channel).result(timeout=1)
+                self.stub = codegraph_pb2_grpc.CodeGraphServiceStub(self.channel)
+                #print("✅ CodeParser connected to CodeGraph Engine")
+            except Exception:
+                self.stub = None
+                if self.channel:
+                    self.channel.close()
+                    self.channel = None
+
         self.languages = {
             ".py": Language(tree_sitter_python.language()),
             ".rs": Language(tree_sitter_rust.language()),
@@ -195,6 +222,24 @@ class CodeParser:
 
     def parse_file(self, filepath: str) -> Dict[str, Any]:
         """Parses a file and returns extracted symbols and relationships."""
+        if self.stub:
+            try:
+                request = codegraph_pb2.ParseRequest(file_path=filepath)
+                response = self.stub.ParseFile(request)
+                symbols = []
+                for sym in response.symbols:
+                    symbols.append({
+                        "name": sym.name,
+                        "type": sym.type,
+                        "start_line": sym.start_line,
+                        "end_line": sym.end_line,
+                        "hash": sym.hash,
+                        "calls": list(sym.calls)
+                    })
+                return {"symbols": symbols}
+            except grpc.RpcError as e:
+                print(f"⚠️ CodeParser gRPC fallback to Python: {e}")
+
         ext = os.path.splitext(filepath)[1]
         if ext not in self.languages:
             return {}

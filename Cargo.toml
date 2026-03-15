@@ -2,7 +2,8 @@
 members = [
     "swarmd",
     "synapse-engine/crates/*",
-    "apicentric_repo"
+    "apicentric_repo",
+    "codegraph-engine"
 ]
 resolver = "2"
 
