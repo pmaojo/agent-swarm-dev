@@ -457,10 +457,11 @@ class OrchestratorAgent:
             for r in res.results:
                 if r.score >= critical_threshold:
                     uri = r.uri.lower()
-                    for s in ["python", "rust", "typescript", "javascript", "godot"]:
-                        if s in uri or s in r.content.lower():
-                            print(f"⚡ V5 Fast Route Zero-LLM direct assignment: {s} (score: {r.score:.3f} >= {critical_threshold})")
-                            return s
+                    s = uri.split("/")[-1] if "/" in uri else uri
+                    for valid_s in ["python", "rust", "typescript", "javascript", "godot"]:
+                        if valid_s in uri or valid_s in r.content.lower():
+                            print(f"⚡ V5 Fast Route Zero-LLM direct assignment: {valid_s} (score: {r.score:.3f} >= {critical_threshold})")
+                            return valid_s
                 else:
                     print(f"⚠️ V5 Vector Routing score {r.score:.3f} below threshold {critical_threshold}")
 

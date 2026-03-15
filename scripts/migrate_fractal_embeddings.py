@@ -1,108 +1,83 @@
 #!/usr/bin/env python3
 import os
 import sys
-import json
 import grpc
 
-# Add SDK path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'sdk', 'python')))
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'sdk', 'python', 'lib')))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'sdk', 'python', 'agents'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'sdk', 'python', 'lib'))
 
-# Make sure the generated protobuf module is importable
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'sdk', 'python', 'agents')))
+from synapse_proto import semantic_engine_pb2
+from synapse_proto import semantic_engine_pb2_grpc
+from embeddings import FastEmbedFractal
 
-try:
-    from synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
-except ImportError as e:
-    print(f"Failed to import Synapse protobufs: {e}. Did you run `python -m grpc_tools.protoc ...`?")
-    sys.exit(1)
-
-try:
-    from embeddings import FastEmbedFractal
-except ImportError as e:
-    print(f"Failed to import FastEmbedFractal: {e}")
-    sys.exit(1)
-
-def run_migration():
-    print("🚀 Initializing Fractal Embedding Migration...")
-
-    # Initialize fractal embedder
-    embedder = FastEmbedFractal()
-
-    # Connect to Synapse
+def migrate_embeddings():
+    print("Connecting to Synapse gRPC...")
     grpc_host = os.getenv("SYNAPSE_GRPC_HOST", "localhost")
     grpc_port = int(os.getenv("SYNAPSE_GRPC_PORT", "50051"))
-
+    options = [
+        ('grpc.max_send_message_length', 50 * 1024 * 1024),
+        ('grpc.max_receive_message_length', 50 * 1024 * 1024)
+    ]
+    channel = grpc.insecure_channel(f'{grpc_host}:{grpc_port}', options=options)
     try:
-        channel = grpc.insecure_channel(f"{grpc_host}:{grpc_port}")
-        grpc.channel_ready_future(channel).result(timeout=2)
-        stub = semantic_engine_pb2_grpc.SemanticEngineStub(channel)
+        grpc.channel_ready_future(channel).result(timeout=5)
         print("✅ Connected to Synapse")
-    except Exception as e:
-        print(f"❌ Failed to connect to Synapse: {e}")
+    except grpc.FutureTimeoutError:
+        print("❌ Failed to connect to Synapse")
         return
 
-    # 1. Fetch all triples
-    print("📡 Fetching existing triples...")
+    stub = semantic_engine_pb2_grpc.SemanticEngineStub(channel)
+
+    print("Fetching all triples...")
     try:
-        req = semantic_engine_pb2.EmptyRequest(namespace="default")
-        res = stub.GetAllTriples(req)
-        triples = res.triples
+        res = stub.GetAllTriples(semantic_engine_pb2.EmptyRequest(namespace="default"))
+        triples = list(res.triples)
         print(f"📦 Received {len(triples)} triples.")
     except Exception as e:
         print(f"❌ Failed to fetch triples: {e}")
         return
 
-    # 2. Re-embed content
-    print("🧠 Generating Fractal Embeddings...")
-    new_triples = []
+    if not triples:
+        print("No triples to migrate.")
+        return
 
-    for i, t in enumerate(triples):
-        # We create a simple content representation of the triple to embed
-        # (similar to what SynapseStore does internally)
-        content = f"{t.subject} {t.predicate} {t.object}"
+    embedder = FastEmbedFractal()
 
-        # Generate embedding
-        vectors = embedder.embed([content])
-        if not vectors:
-            print(f"⚠️ Warning: No embedding generated for {t.subject}")
-            continue
-        vector = vectors[0]
+    print("Generating Fractal Embeddings...")
+    # Extract content for embedding (subject + predicate + object string)
+    texts = [f"{t.subject} {t.predicate} {t.object}" for t in triples]
+    fractal_embs = embedder.embed(texts)
 
-        # Create new triple with embedding attached
-        # Note: We must construct a semantic_engine_pb2.Triple
-        new_t = semantic_engine_pb2.Triple(
-            subject=t.subject,
-            predicate=t.predicate,
-            object=t.object,
-            embedding=vector
-        )
-        if t.HasField("provenance"):
-            new_t.provenance.CopyFrom(t.provenance)
-
-        new_triples.append(new_t)
-
-        if (i + 1) % 100 == 0:
-            print(f"⏳ Processed {i + 1}/{len(triples)} triples...")
-
-    # 3. Re-ingest triples
-    # To truly 'migrate', we ideally delete and re-ingest, or just ingest over them
-    # Because of how vector_store works, inserting the same triple subject/predicate/object
-    # might skip vector generation if the key exists.
-    # We will just print instructions to wipe and restart Synapse or ingest directly.
-    # Since SynapseStore::ingest_triples accepts the Triple object, we can ingest them.
-
-    print("💾 Re-ingesting triples with Fractal Embeddings...")
+    print("Re-ingesting updated triples in batches...")
     batch_size = 100
-    for i in range(0, len(new_triples), batch_size):
-        batch = new_triples[i:i + batch_size]
-        req = semantic_engine_pb2.IngestRequest(triples=batch, namespace="default")
-        try:
-            stub.IngestTriples(req)
-        except Exception as e:
-            print(f"⚠️ Error ingesting batch {i}: {e}")
+    total_nodes = 0
+    total_edges = 0
 
-    print("✅ Migration Complete! Synapse now operates in V5 Fractal Space.")
+    for i in range(0, len(triples), batch_size):
+        batch = triples[i:i+batch_size]
+        batch_embs = fractal_embs[i:i+batch_size]
+
+        new_triples = []
+        for t, emb in zip(batch, batch_embs):
+            nt = semantic_engine_pb2.Triple(
+                subject=t.subject,
+                predicate=t.predicate,
+                object=t.object,
+                provenance=t.provenance,
+                embedding=emb
+            )
+            new_triples.append(nt)
+
+        ingest_req = semantic_engine_pb2.IngestRequest(namespace="default", triples=new_triples)
+        try:
+            resp = stub.IngestTriples(ingest_req, timeout=30)
+            total_nodes += resp.nodes_added
+            total_edges += resp.edges_added
+            print(f"Ingested batch {i//batch_size + 1}/{(len(triples) + batch_size - 1)//batch_size}...")
+        except grpc.RpcError as e:
+            print(f"Failed to ingest batch {i//batch_size + 1}: {e}")
+
+    print(f"Migration complete: {total_nodes} nodes, {total_edges} edges added.")
 
 if __name__ == "__main__":
-    run_migration()
+    migrate_embeddings()
