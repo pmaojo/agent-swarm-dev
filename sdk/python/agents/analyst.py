@@ -174,6 +174,31 @@ class AnalystAgent:
             clusters[key].append(execId)
         return clusters
 
+    def optimize_prompt(self, prompt: str) -> str:
+        """
+        Reduces token usage before LLM submission by safely collapsing redundant
+        inline spaces and excessive newlines while preserving indentation to avoid
+        corrupting code or stack traces.
+        """
+        # @synapse:rule Optimize prompts before LLM submission to conserve tokens while preserving code formatting.
+        import re
+        # Collapse multiple spaces into one, but preserve leading spaces (indentation)
+        lines = prompt.split('\n')
+        optimized_lines = []
+        for line in lines:
+            # Match leading whitespace (spaces and tabs)
+            match = re.match(r'^([ \t]*)', line)
+            leading_whitespace = match.group(1) if match else ''
+
+            # Collapse spaces in the rest of the line
+            rest_of_line = line[len(leading_whitespace):]
+            content = re.sub(r' {2,}', ' ', rest_of_line)
+            optimized_lines.append(leading_whitespace + content)
+
+        # Rejoin and collapse 3+ newlines into 2
+        optimized = '\n'.join(optimized_lines)
+        return re.sub(r'\n{3,}', '\n\n', optimized).strip()
+
     def generate_golden_rule(self, role, note, count, stack):
         # Clean Role for Prompt (it's a URI)
         role_name = role.split('/')[-1]
@@ -191,7 +216,8 @@ class AnalystAgent:
         The rule should be a short, imperative sentence (e.g., "Always verify hook order").
         Return ONLY the rule text.
         """
-        return self.llm.completion(prompt).strip().strip('"')
+        optimized_prompt = self.optimize_prompt(prompt)
+        return self.llm.completion(optimized_prompt).strip().strip('"')
 
     def validate_rule(self, rule_text: str, stack: str) -> bool:
         """Run sanity checks (dry-run) to validate the new rule."""
@@ -348,7 +374,8 @@ class AnalystAgent:
         Return ONLY the .ttl content. Start with @prefix.
         """
         try:
-            ttl_content = self.llm.completion(prompt)
+            optimized_prompt = self.optimize_prompt(prompt)
+            ttl_content = self.llm.completion(optimized_prompt)
 
             # Security: Validate Content Size (Max 10KB)
             if len(ttl_content.encode('utf-8')) > 10 * 1024:
