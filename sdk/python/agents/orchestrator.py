@@ -438,7 +438,7 @@ class OrchestratorAgent:
             
         # We search the graph for tech stacks that match this task semantically
         req = semantic_engine_pb2.HybridSearchRequest(
-            query=f"Skill Nodo for: {task}",
+            query=f"Tech stack for: {task}",
             namespace="default",
             vector_k=3,
             graph_depth=0,
@@ -458,9 +458,10 @@ class OrchestratorAgent:
                 if r.score >= critical_threshold:
                     uri = r.uri.lower()
                     s = uri.split("/")[-1] if "/" in uri else uri
-                    # Check distance < threshold conceptually equivalent to score >= threshold
-                    print(f"⚡ V5 Fast Route Zero-LLM direct assignment: {s} (score: {r.score:.3f} >= {critical_threshold})")
-                    return s
+                    for valid_s in ["python", "rust", "typescript", "javascript", "godot"]:
+                        if valid_s in uri or valid_s in r.content.lower():
+                            print(f"⚡ V5 Fast Route Zero-LLM direct assignment: {valid_s} (score: {r.score:.3f} >= {critical_threshold})")
+                            return valid_s
                 else:
                     print(f"⚠️ V5 Vector Routing score {r.score:.3f} below threshold {critical_threshold}")
 

@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import os
 import sys
 import grpc
@@ -11,11 +12,13 @@ from embeddings import FastEmbedFractal
 
 def migrate_embeddings():
     print("Connecting to Synapse gRPC...")
+    grpc_host = os.getenv("SYNAPSE_GRPC_HOST", "localhost")
+    grpc_port = int(os.getenv("SYNAPSE_GRPC_PORT", "50051"))
     options = [
         ('grpc.max_send_message_length', 50 * 1024 * 1024),
         ('grpc.max_receive_message_length', 50 * 1024 * 1024)
     ]
-    channel = grpc.insecure_channel('localhost:50051', options=options)
+    channel = grpc.insecure_channel(f'{grpc_host}:{grpc_port}', options=options)
     try:
         grpc.channel_ready_future(channel).result(timeout=5)
         print("✅ Connected to Synapse")
