@@ -5,7 +5,10 @@ Extracts symbols, calls, and relationships for the CodeGraph.
 import os
 import hashlib
 import grpc
+import logging
 from typing import Dict, List, Any, Optional, Tuple, Set
+
+logger = logging.getLogger(__name__)
 
 import tree_sitter_python
 import tree_sitter_rust
@@ -238,7 +241,7 @@ class CodeParser:
                     })
                 return {"symbols": symbols}
             except grpc.RpcError as e:
-                print(f"⚠️ CodeParser gRPC fallback to Python: {e}")
+                logger.warning(f"⚠️ codegraph-engine gRPC service unavailable or failed. Falling back to local Python CodeParser logic. Error: {e}")
 
         ext = os.path.splitext(filepath)[1]
         if ext not in self.languages:
