@@ -63,6 +63,7 @@ class TestStackRouting(unittest.TestCase):
         # Instantiate Analyst
         analyst = AnalystAgent()
         analyst.mock_llm = True
+        analyst.sanity_suite = {'sanity_checks': {'python': [{'description': 'Test description'}]}}
 
         # Mock query_graph response for find_unconsolidated_failures
         # Return 5 failures for python stack

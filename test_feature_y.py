@@ -18,5 +18,10 @@ class TestFeatureY(unittest.TestCase):
         processed_data = process_data(data)
         self.assertIsNone(processed_data)
 
+    def test_process_data_empty_list(self):
+        data = []
+        processed_data = process_data(data)
+        self.assertIsNone(processed_data)
+
 if __name__ == '__main__':
     unittest.main()

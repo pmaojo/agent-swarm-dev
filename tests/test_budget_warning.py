@@ -62,7 +62,7 @@ class TestBudgetWarning(unittest.TestCase):
             pass # We don't care about budget exceeded here, just warning
 
         # Verify Telegram Alert Sent
-        self.mock_post.assert_called_once()
+        self.assertEqual(self.mock_post.call_count, 2)
         print("✅ Telegram Alert Sent.")
 
         # Verify IngestTriples called (to log warning)

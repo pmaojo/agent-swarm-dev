@@ -39,7 +39,8 @@ class TestSovereignBranch(unittest.TestCase):
             self.assertTrue(mock_stub.IngestTriples.called)
             # Inspect payload if possible, but just checking call is enough for smoke test
 
-    def test_cloud_provider_selection(self):
+    @patch('cloud_gateways.factory.semantic_engine_pb2')
+    def test_cloud_provider_selection(self, mock_semantic_engine_pb2):
         """Test SPARQL-based provider selection logic."""
         mock_stub = MagicMock()
 
