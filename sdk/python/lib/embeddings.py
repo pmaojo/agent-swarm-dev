@@ -10,8 +10,9 @@ class FractalProjectionHead(nn.Module):
     Lightweight MLP (~2.5M params) to project fastembed (bge-small) embeddings
     into a fractal space aligned with Synapse Ontology.
     """
-    def __init__(self, input_dim=384, hidden_dim=2048, output_dim=384):
+    def __init__(self, input_dim=384, hidden_dim=3072, output_dim=384):
         super(FractalProjectionHead, self).__init__()
+        # Dimensions aligned with Synapse Ontology (Fractal Projection)
         self.fc1 = nn.Linear(input_dim, hidden_dim)
         self.relu = nn.ReLU()
         self.fc2 = nn.Linear(hidden_dim, output_dim)
