@@ -12,21 +12,27 @@ def llm_service():
     service = LLMService()
 
     # Mock the internal OpenAI client
-    mock_client = MagicMock()
     mock_response = MagicMock()
     mock_message = MagicMock()
     mock_message.content = "Cached response"
     mock_response.choices = [MagicMock(message=mock_message)]
     mock_response.usage = MagicMock(prompt_tokens=10, completion_tokens=10)
-    mock_client.chat.completions.create.return_value = mock_response
-    service.client = mock_client
+    # We patch litellm.completion below instead of attaching client
 
     # Mock Synapse connection
     service.stub = MagicMock()
 
     return service
 
-def test_llm_cache_hits(llm_service):
+@patch('sdk.python.lib.llm.litellm.completion')
+def test_llm_cache_hits(mock_completion, llm_service):
+    mock_response = MagicMock()
+    mock_message = MagicMock()
+    mock_message.content = "Cached response"
+    mock_response.choices = [MagicMock(message=mock_message)]
+    mock_response.usage = {"prompt_tokens": 10, "completion_tokens": 10}
+    mock_completion.return_value = mock_response
+
     # First call (should hit the API)
     start1 = time.time()
     res1 = llm_service.completion("Hello world", system_prompt="Test")
@@ -41,15 +47,31 @@ def test_llm_cache_hits(llm_service):
     assert res2 == "Cached response"
 
     # Verify the API was only called once
-    llm_service.client.chat.completions.create.assert_called_once()
+    mock_completion.assert_called_once()
 
-def test_llm_cache_misses_different_prompt(llm_service):
+@patch('sdk.python.lib.llm.litellm.completion')
+def test_llm_cache_misses_different_prompt(mock_completion, llm_service):
+    mock_response = MagicMock()
+    mock_message = MagicMock()
+    mock_message.content = "Cached response"
+    mock_response.choices = [MagicMock(message=mock_message)]
+    mock_response.usage = {"prompt_tokens": 10, "completion_tokens": 10}
+    mock_completion.return_value = mock_response
+
     llm_service.completion("Hello world 1", system_prompt="Test")
     llm_service.completion("Hello world 2", system_prompt="Test")
 
-    assert llm_service.client.chat.completions.create.call_count == 2
+    assert mock_completion.call_count == 2
 
-def test_llm_cache_lru_eviction(llm_service):
+@patch('sdk.python.lib.llm.litellm.completion')
+def test_llm_cache_lru_eviction(mock_completion, llm_service):
+    mock_response = MagicMock()
+    mock_message = MagicMock()
+    mock_message.content = "Cached response"
+    mock_response.choices = [MagicMock(message=mock_message)]
+    mock_response.usage = {"prompt_tokens": 10, "completion_tokens": 10}
+    mock_completion.return_value = mock_response
+
     # Set max size to 2
     llm_service._cache_max_size = 2
     llm_service._cache.clear()
@@ -62,4 +84,4 @@ def test_llm_cache_lru_eviction(llm_service):
 
     # Call Prompt 1 again (should miss cache, API call count goes to 4)
     llm_service.completion("Prompt 1")
-    assert llm_service.client.chat.completions.create.call_count == 4
+    assert mock_completion.call_count == 4
