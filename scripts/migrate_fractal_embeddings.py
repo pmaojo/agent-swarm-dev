@@ -11,11 +11,12 @@ from sdk.python.agents.synapse_proto import semantic_engine_pb2, semantic_engine
 from sdk.python.lib.embeddings import FastEmbedFractal
 
 def main():
+    host = os.environ.get("SYNAPSE_GRPC_HOST", "localhost")
     port = os.environ.get("SYNAPSE_GRPC_PORT", "50051")
-    channel = grpc.insecure_channel(f"localhost:{port}")
+    channel = grpc.insecure_channel(f"{host}:{port}")
     stub = semantic_engine_pb2_grpc.SemanticEngineStub(channel)
 
-    print(f"Connecting to Semantic Engine on port {port}...")
+    print(f"Connecting to Semantic Engine on {host}:{port}...")
 
     try:
         req = semantic_engine_pb2.EmptyRequest(namespace="default")
