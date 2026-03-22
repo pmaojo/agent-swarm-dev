@@ -1,12 +1,12 @@
-# Technical Design: Rust Microservices for Orchestrator, Analyst, and LLM Gateway
+# Diseño Técnico: Microservicios en Rust para Orchestrator, Analyst y LLM Gateway
 
-## Objective
-Convert the computationally heavy Python modules (Analyst Agent, Orchestrator Core, LLM Service Gateway) into independent Rust microservices interacting via gRPC.
+## Objetivo
+Convertir los módulos de Python computacionalmente pesados (Analyst Agent, Orchestrator Core, LLM Service Gateway) en microservicios independientes en Rust que interactúen a través de gRPC, eliminando el overhead del GIL de Python y mejorando significativamente la latencia y la concurrencia.
 
-## Architecture
+## Arquitectura
 
-### 1. Protobuf Definitions
-The new services will be defined in a new package, e.g., `orchestrator.v1`.
+### 1. Definiciones Protobuf
+Los nuevos servicios se definirán en un nuevo paquete, por ejemplo, `orchestrator.v1`.
 
 ```protobuf
 syntax = "proto3";
@@ -27,18 +27,31 @@ service LlmGatewayService {
 }
 ```
 
-### 2. Rust Implementation (`orchestrator-engine` / `synapse-engine`)
-- Use `tonic` and `tokio` for async gRPC serving.
-- Integrate `fastembed-rs` (if available, or rust equivalents) for vector math.
-- Implement LRU caching for the `LlmGatewayService`.
-- Deploy as independent binaries or a unified backend service.
+### 2. Implementación en Rust (`orchestrator-engine` / `synapse-engine`)
+- Utilizar `tonic` y `tokio` para la publicación asíncrona de los servicios gRPC.
+- Integrar `fastembed-rs` (si está disponible, o equivalentes en Rust) para las matemáticas de vectores de alta dimensión (Fractal Search V5).
+- Implementar caché LRU en memoria para el `LlmGatewayService`.
+- Desplegar como binarios independientes o como un servicio backend unificado dentro del ecosistema de Synapse.
 
-### 3. Python Integration (`sdk/python/agents/orchestrator.py`, etc.)
-- Use `grpc_tools.protoc` to generate `orchestrator_pb2.py` and `orchestrator_pb2_grpc.py`.
-- Instantiate stubs, similar to the `CodeGraphService` integration.
-- Replace internal logic with stub calls to the Rust server. Provide asynchronous non-blocking channel checks.
+### 3. Integración en Python (`sdk/python/agents/orchestrator.py`, etc.)
+- Emplear `grpc_tools.protoc` para generar los archivos `orchestrator_pb2.py` y `orchestrator_pb2_grpc.py`.
+- Instanciar stubs gRPC dentro de las clases de agentes, de manera similar a la integración existente con el `CodeGraphService`.
+- Reemplazar la lógica interna pesada de Python con llamadas a los stubs hacia el servidor Rust. Proporcionar verificaciones de canal asíncronas y no bloqueantes (ej., `grpc.channel_ready_future`) para mitigar fallos temporales de conexión, o hacer fallback elegantemente.
 
-## Impact
-- Substantial reduction in CPU time during high concurrency tasks.
-- Improved latency in the critical path (Analyst token collapsing, LLM routing).
-- Decouples core logic from Python to prepare for broader backend modernization.
+## Integración gRPC con el Orchestrator
+
+Para conectar el ecosistema de agentes Python con los nuevos microservicios, se implementará un cliente gRPC dentro de la clase `OrchestratorAgent`.
+
+1. **Importación de Protobufs**:
+   Se importarán los archivos generados (e.g., `orchestrator_pb2_grpc`) asegurando un correcto empaquetado y utilizando las rutas relativas adecuadas en Python 3 para los archivos `_grpc.py`.
+
+2. **Inicialización**:
+   Se añadirán variables de entorno (como `ORCHESTRATOR_GRPC_HOST` y `ORCHESTRATOR_GRPC_PORT`) para inicializar los canales gRPC dinámicamente.
+
+3. **Ciclo de Vida de la Conexión**:
+   Se implementarán métodos de conexión (`connect`) e inicialización segura del `OrchestratorServiceStub`, con una gestión adecuada para cerrar el canal al finalizar.
+
+## Impacto
+- Reducción sustancial en el tiempo de CPU durante tareas de alta concurrencia ("War Room").
+- Mejora de latencia en la ruta crítica (colapso de tokens del Analyst, enrutamiento LLM).
+- Desacoplamiento de la lógica base de Python para preparar una modernización más amplia del backend.
