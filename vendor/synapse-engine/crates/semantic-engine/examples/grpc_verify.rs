@@ -66,6 +66,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             graph_depth: 1,
             mode: SearchMode::Hybrid as i32,
             limit: 10,
+            prefix_len: 64,
         })
         .await?;
 

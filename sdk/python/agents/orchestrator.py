@@ -438,7 +438,7 @@ class OrchestratorAgent:
             
         # We search the graph for tech stacks that match this task semantically
         req = semantic_engine_pb2.HybridSearchRequest(
-            query=f"Tech stack for: {task}",
+            query=f"Skill Nodo: {task}",
             namespace="default",
             vector_k=3,
             graph_depth=0,
