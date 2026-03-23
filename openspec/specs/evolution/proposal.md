@@ -1,11 +1,11 @@
 # OpenSpec Proposal: Migrating Computationally Heavy Python Modules to Rust
 
-## Motivation
+## SRE Analysis
 
-As observed in Synapse execution logs and system profiling, the following Python modules suffer from high computational load and latency, likely due to Python GIL and synchronous I/O bottlenecks:
-1. **Analyst Agent** (`sdk/python/agents/analyst.py`) - Extensive text processing, clustering, and prompt optimization.
-2. **Orchestrator Core** (`sdk/python/agents/orchestrator.py`) - Complex state machine management, parallel execution graph processing, and zero-LLM routing with high-dimensional vector math.
-3. **LLM Service Gateway** (`sdk/python/lib/cloud_gateways/factory.py` or `sdk/python/lib/llm.py`) - Managing LLM caching, external API requests, and fallback logic.
+Based on the analysis of the agent-swarm-dev repository and Synapse execution logs, the following 3 Python modules exhibit the highest computational load and latency. This is primarily due to the Python GIL limiting concurrency and synchronous I/O bottlenecks:
+1. **Analyst Agent** (`sdk/python/agents/analyst.py`) - Extensive text processing, clustering, and prompt optimization tasks block the event loop.
+2. **Orchestrator Core** (`sdk/python/agents/orchestrator.py`) - High-dimensional vector math for Zero-LLM routing, parallel execution graph processing, and complex state machine management cause latency spikes.
+3. **LLM Service Gateway** (`sdk/python/lib/cloud_gateways/factory.py` or `sdk/python/lib/llm.py`) - Managing LLM caching and external API requests synchronously impacts overall system throughput.
 
 ## Proposal
 
