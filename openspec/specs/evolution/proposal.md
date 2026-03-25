@@ -5,7 +5,7 @@
 As observed in Synapse execution logs and system profiling, the following Python modules suffer from high computational load and latency, likely due to Python GIL and synchronous I/O bottlenecks:
 1. **Analyst Agent** (`sdk/python/agents/analyst.py`) - Extensive text processing, clustering, and prompt optimization.
 2. **Orchestrator Core** (`sdk/python/agents/orchestrator.py`) - Complex state machine management, parallel execution graph processing, and zero-LLM routing with high-dimensional vector math.
-3. **LLM Service Gateway** (`sdk/python/lib/cloud_gateways/factory.py` or `sdk/python/lib/llm.py`) - Managing LLM caching, external API requests, and fallback logic.
+3. **LLM Service Gateway** (`sdk/python/lib/llm.py`) - Managing LLM caching, external API requests, and fallback logic.
 
 ## Proposal
 
