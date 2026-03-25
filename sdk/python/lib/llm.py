@@ -16,9 +16,13 @@ import litellm
 litellm.telemetry = False
 litellm.success_callback = []
 litellm.failure_callback = []
+litellm.callbacks = []
+litellm._async_success_callback = []
+litellm._async_failure_callback = []
 litellm.set_verbose = False
 from dotenv import load_dotenv
 from tenacity import retry, stop_after_attempt, wait_random_exponential, retry_if_not_exception_type
+import threading
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -332,15 +336,55 @@ class LLMService:
             processed_fallbacks.append(fallback_dict)
         return processed_fallbacks
 
-    @retry(
-        wait=wait_random_exponential(min=1, max=60),
-        stop=stop_after_attempt(6),
-        retry=retry_if_not_exception_type(BudgetExceededException)
-    )
+    _rate_limit_lock = threading.Lock()
+    _last_request_time = 0.0
+    _min_request_interval = 4.0  # seconds between requests to avoid free tier 15 RPM limit
+
     def completion(self, prompt: str, system_prompt: str = "You are a helpful assistant.", json_mode: bool = False, tools: Optional[List[Dict]] = None, tool_choice: Any = None, messages: Optional[List[Dict]] = None) -> Any:
         """
-        Generate a completion using the configured LLM, with Budget Enforcement.
+        Wrapper to handle rate limiting and retries internally using tenacious retry logic.
         """
+        return self._completion_with_retry(prompt, system_prompt, json_mode, tools, tool_choice, messages)
+
+    @retry(
+        wait=wait_random_exponential(min=1, max=60),
+        stop=stop_after_attempt(10),
+        retry=retry_if_not_exception_type(BudgetExceededException)
+    )
+    def _completion_with_retry(self, prompt: str, system_prompt: str, json_mode: bool, tools: Optional[List[Dict]], tool_choice: Any, messages: Optional[List[Dict]]) -> Any:
+        """
+        Generate a completion using the configured LLM, with Budget Enforcement and Rate Limiting.
+        """
+        # Apply global rate limit queueing
+        with self._rate_limit_lock:
+            current_time = time.time()
+            time_since_last = current_time - LLMService._last_request_time
+            if time_since_last < LLMService._min_request_interval:
+                sleep_time = LLMService._min_request_interval - time_since_last
+                logger.info(f"⏳ Rate limiting: sleeping for {sleep_time:.2f} seconds...")
+                time.sleep(sleep_time)
+            LLMService._last_request_time = time.time()
+
+        try:
+            return self._inner_completion(prompt, system_prompt, json_mode, tools, tool_choice, messages)
+        except Exception as e:
+            err_str = str(e)
+            if "RateLimitError" in err_str or "429" in err_str:
+                # check if there's a "retry in Xs" message
+                import re
+                match = re.search(r"Please retry in ([\d\.]+)s", err_str)
+                if match:
+                    sleep_time = float(match.group(1)) + 1.0 # add 1s buffer
+                    logger.warning(f"⏳ API asked to wait, sleeping for {sleep_time:.2f} seconds before retrying...")
+                    time.sleep(sleep_time)
+                    # update last request time so others will wait
+                    LLMService._last_request_time = time.time()
+                else:
+                    logger.warning(f"⏳ Rate limit hit, applying exponential backoff...")
+            raise e
+
+    def _inner_completion(self, prompt: str, system_prompt: str, json_mode: bool, tools: Optional[List[Dict]], tool_choice: Any, messages: Optional[List[Dict]]) -> Any:
+
         if self.mock_mode:
             logger.info(f"🤖 [MOCK LLM] Prompt: {prompt[:50]}...")
             return '{"status": "success", "mock": true}' if json_mode else "Mock LLM Response: Task Completed."
@@ -379,7 +423,7 @@ class LLMService:
                 api_base=api_base,
                 response_format=response_format,
                 tools=tools,
-                temperature=0.7,
+                temperature=1.0,
                 max_tokens=500,
                 fallbacks=processed_fallbacks
             )

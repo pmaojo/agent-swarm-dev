@@ -97,6 +97,9 @@ class OrchestratorAgent:
             "Deployer": 4
         }
 
+    def connect_synapse(self):
+        self.connect()
+
     def connect(self):
         try:
             self.channel = grpc.insecure_channel(f"{self.grpc_host}:{self.grpc_port}")
