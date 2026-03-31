@@ -11,11 +11,17 @@ import uuid
 from collections import defaultdict
 from typing import List, Dict, Any, Optional
 
+import re
+
 # Add path to lib and agents
 SDK_PYTHON_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, SDK_PYTHON_PATH)
 sys.path.insert(0, os.path.join(SDK_PYTHON_PATH, "lib"))
 sys.path.insert(0, os.path.join(SDK_PYTHON_PATH, "agents"))
+
+_LEADING_WS_RE = re.compile(r'^([ \t]*)')
+_MULTI_SPACE_RE = re.compile(r' {2,}')
+_MULTI_NEWLINE_RE = re.compile(r'\n{3,}')
 
 try:
     from synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
@@ -181,23 +187,24 @@ class AnalystAgent:
         corrupting code or stack traces.
         """
         # @synapse:rule Optimize prompts before LLM submission to conserve tokens while preserving code formatting.
-        import re
+        # @synapse:rule Pre-compile regular expressions at the module level in optimize_prompt to safely and efficiently collapse redundant inline spaces and newlines, reducing token usage and CPU cycles without corrupting code formatting.
+
         # Collapse multiple spaces into one, but preserve leading spaces (indentation)
         lines = prompt.split('\n')
         optimized_lines = []
         for line in lines:
             # Match leading whitespace (spaces and tabs)
-            match = re.match(r'^([ \t]*)', line)
+            match = _LEADING_WS_RE.match(line)
             leading_whitespace = match.group(1) if match else ''
 
             # Collapse spaces in the rest of the line
             rest_of_line = line[len(leading_whitespace):]
-            content = re.sub(r' {2,}', ' ', rest_of_line)
+            content = _MULTI_SPACE_RE.sub(' ', rest_of_line)
             optimized_lines.append(leading_whitespace + content)
 
         # Rejoin and collapse 3+ newlines into 2
         optimized = '\n'.join(optimized_lines)
-        return re.sub(r'\n{3,}', '\n\n', optimized).strip()
+        return _MULTI_NEWLINE_RE.sub('\n\n', optimized).strip()
 
     def generate_golden_rule(self, role, note, count, stack):
         # Clean Role for Prompt (it's a URI)
