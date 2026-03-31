@@ -35,3 +35,16 @@ def test_optimize_prompt():
 
     # Check that excessive newlines are reduced
     assert "\n\n\n" not in optimized
+
+def test_optimize_prompt_performance():
+    import time
+    from agents.analyst import AnalystAgent
+    analyst = AnalystAgent()
+    prompt = "    This is   a   test prompt\n\n\nwith   multiple      spaces\n\nand  newlines.\n" * 50
+
+    start = time.time()
+    for _ in range(100):
+        analyst.optimize_prompt(prompt)
+    duration = time.time() - start
+
+    assert duration < 1.0, f"Performance regression: optimize_prompt took {duration}s for 100 iterations, expected < 1.0s"
