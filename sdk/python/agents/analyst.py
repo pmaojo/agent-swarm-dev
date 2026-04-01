@@ -174,6 +174,11 @@ class AnalystAgent:
             clusters[key].append(execId)
         return clusters
 
+    # Pre-compiled regexes for prompt optimization
+    _re_leading_ws = __import__('re').compile(r'^([ \t]*)')
+    _re_multiple_spaces = __import__('re').compile(r' {2,}')
+    _re_excessive_newlines = __import__('re').compile(r'\n{3,}')
+
     def optimize_prompt(self, prompt: str) -> str:
         """
         Reduces token usage before LLM submission by safely collapsing redundant
@@ -181,23 +186,25 @@ class AnalystAgent:
         corrupting code or stack traces.
         """
         # @synapse:rule Optimize prompts before LLM submission to conserve tokens while preserving code formatting.
-        import re
+        # @synapse:constraint Use pre-compiled regexes for prompt token optimization to reduce CPU cycles in hot paths.
+
         # Collapse multiple spaces into one, but preserve leading spaces (indentation)
         lines = prompt.split('\n')
         optimized_lines = []
+
         for line in lines:
             # Match leading whitespace (spaces and tabs)
-            match = re.match(r'^([ \t]*)', line)
+            match = self._re_leading_ws.match(line)
             leading_whitespace = match.group(1) if match else ''
 
             # Collapse spaces in the rest of the line
             rest_of_line = line[len(leading_whitespace):]
-            content = re.sub(r' {2,}', ' ', rest_of_line)
+            content = self._re_multiple_spaces.sub(' ', rest_of_line)
             optimized_lines.append(leading_whitespace + content)
 
         # Rejoin and collapse 3+ newlines into 2
         optimized = '\n'.join(optimized_lines)
-        return re.sub(r'\n{3,}', '\n\n', optimized).strip()
+        return self._re_excessive_newlines.sub('\n\n', optimized).strip()
 
     def generate_golden_rule(self, role, note, count, stack):
         # Clean Role for Prompt (it's a URI)
