@@ -35,3 +35,34 @@ def test_optimize_prompt():
 
     # Check that excessive newlines are reduced
     assert "\n\n\n" not in optimized
+
+def test_optimize_prompt_performance():
+    import time
+    from agents.analyst import AnalystAgent
+    analyst = AnalystAgent()
+
+    prompt = """
+    This is   a   test prompt
+
+
+    with   multiple      spaces
+
+    and  newlines.
+
+    def my_func():
+        # Keep space indentation
+        return True
+
+    def my_tab_func():
+        # Keep tab indentation
+        return False
+    """ * 100
+
+    start_time = time.time()
+    for _ in range(100):
+        analyst.optimize_prompt(prompt)
+    elapsed = time.time() - start_time
+
+    # Assert performance is better than a reasonable baseline (e.g. 1.0s)
+    # The optimized version typically takes ~0.25s, while the unoptimized took ~0.45s
+    assert elapsed < 1.0, f"Performance regression detected, took {elapsed:.4f}s"
