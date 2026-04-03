@@ -5,40 +5,39 @@ Convert the computationally heavy Python modules (Analyst Agent, Orchestrator Co
 
 ## Architecture
 
-### 1. Protobuf Definitions
-The new services will be defined in a new package, e.g., `orchestrator.v1`.
+### 1. Protobuf Definitions (`semantic_engine.proto`)
+The new services will be integrated into the existing `synapse-engine` gRPC ecosystem. We will expand the protobuf definitions to include robust APIs for our three primary bottlenecks:
 
 ```protobuf
 syntax = "proto3";
-package orchestrator.v1;
+package semantic.engine.v1;
 
-service OrchestratorService {
-  rpc RouteTask(RouteTaskRequest) returns (RouteTaskResponse);
-  rpc ManageStateGraph(StateGraphRequest) returns (StateGraphResponse);
+service OrchestratorCoreService {
+  rpc FastClassifyStack(StackClassificationRequest) returns (StackClassificationResponse);
+  rpc ExecuteTaskGraph(TaskGraphRequest) returns (stream TaskGraphUpdateResponse);
 }
 
 service AnalystService {
-  rpc OptimizePrompt(OptimizePromptRequest) returns (OptimizePromptResponse);
-  rpc ClusterFailures(ClusterFailuresRequest) returns (ClusterFailuresResponse);
+  rpc OptimizePromptTokens(TokenOptimizationRequest) returns (TokenOptimizationResponse);
+  rpc GenerateSemanticClusters(ClusteringRequest) returns (ClusteringResponse);
 }
 
-service LlmGatewayService {
-  rpc Complete(LlmCompletionRequest) returns (LlmCompletionResponse);
+service LlmServiceGateway {
+  rpc ProxyCompletion(CompletionRequest) returns (CompletionResponse);
 }
 ```
 
-### 2. Rust Implementation (`orchestrator-engine` / `synapse-engine`)
-- Use `tonic` and `tokio` for async gRPC serving.
-- Integrate `fastembed-rs` (if available, or rust equivalents) for vector math.
-- Implement LRU caching for the `LlmGatewayService`.
-- Deploy as independent binaries or a unified backend service.
+### 2. Rust Microservices Implementation (`synapse-engine`)
+- **Tonic & Tokio**: Services will be bound using `tonic::transport::Server` within the `tokio` async runtime, mapping incoming Python gRPC requests to high-performance, non-blocking Rust native handlers.
+- **FastEmbed Integration**: The `OrchestratorCoreService` will utilize the Rust-native `fastembed` crate to compute spatial truncations and high-dimensional vector routing instantly, bypassing the Python GIL.
+- **Gateway Caching**: The `LlmServiceGateway` will implement an atomic, thread-safe `moka` LRU cache to slash duplicate inference latencies.
 
-### 3. Python Integration (`sdk/python/agents/orchestrator.py`, etc.)
-- Use `grpc_tools.protoc` to generate `orchestrator_pb2.py` and `orchestrator_pb2_grpc.py`.
-- Instantiate stubs, similar to the `CodeGraphService` integration.
-- Replace internal logic with stub calls to the Rust server. Provide asynchronous non-blocking channel checks.
+### 3. Python Orchestrator Integration via gRPC (`sdk/python`)
+- **Stub Generation**: We will auto-generate Python gRPC bindings (`orchestrator_pb2.py`, `orchestrator_pb2_grpc.py`) using `grpcio-tools`.
+- **Dynamic Channel Management**: The `OrchestratorAgent` and `AnalystAgent` will instantiate resilient gRPC channels to the Rust microservices. Crucially, they will utilize `grpc.channel_ready_future` to implement a non-blocking timeout check.
+- **Graceful Fallback**: If the Rust engine is unavailable or unbuildable on the target host, the stubs will fallback seamlessly to the legacy Python native logic to ensure uninterrupted Orchestrator operation.
 
 ## Impact
-- Substantial reduction in CPU time during high concurrency tasks.
-- Improved latency in the critical path (Analyst token collapsing, LLM routing).
-- Decouples core logic from Python to prepare for broader backend modernization.
+- **Latency Collapse**: Token optimization and text clustering latency will drop by an estimated 90% via native Rust string handling in the Analyst microservice.
+- **Multithreaded Orchestration**: The Orchestrator will be unblocked to run vastly more parallel LLM generation tasks simultaneously using thread-safe gRPC futures instead of constrained GIL-bound threads.
+- **Memory Efficiency**: Utilizing `moka` in the Rust LLM gateway will significantly reduce memory overhead compared to unbounded Python dictionaries.
