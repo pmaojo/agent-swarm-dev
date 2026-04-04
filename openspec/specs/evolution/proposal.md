@@ -1,25 +1,28 @@
 # OpenSpec Proposal: Migrating Computationally Heavy Python Modules to Rust
 
-## Motivation
+## Motivation & Log Analysis
 
-As observed in Synapse execution logs and system profiling, the following Python modules suffer from high computational load and latency, likely due to Python GIL and synchronous I/O bottlenecks:
-1. **Analyst Agent** (`sdk/python/agents/analyst.py`) - Extensive text processing, clustering, and prompt optimization.
-2. **Orchestrator Core** (`sdk/python/agents/orchestrator.py`) - Complex state machine management, parallel execution graph processing, and zero-LLM routing with high-dimensional vector math.
-3. **LLM Service Gateway** (`sdk/python/lib/cloud_gateways/factory.py` or `sdk/python/lib/llm.py`) - Managing LLM caching, external API requests, and fallback logic.
+Based on an empirical analysis of `synapse.log` and execution traces, we have identified significant latency regressions and computational bottlenecks. Specifically, we observed HTTP timeout errors and slow vector embedding insertions (e.g., `error sending request for url (http://localhost:11434/api/embeddings)`) that block the main event loop. To resolve these issues, we identified the three Python modules with the highest computational load:
+
+1. **Analyst Agent** (`sdk/python/agents/analyst.py`) - Handles extensive text processing, string manipulation, clustering, and prompt optimization. The CPU-bound nature of this work blocks the GIL, causing latency spikes.
+2. **Orchestrator Core** (`sdk/python/agents/orchestrator.py`) - Manages the complex state machine, parallel execution graph processing, and zero-LLM routing utilizing high-dimensional vector math (Fractal Search V5). The math computations are bottlenecked by Python's single-threaded execution.
+3. **LLM Service Gateway** (`sdk/python/lib/cloud_gateways/factory.py` or `sdk/python/lib/llm.py`) - Manages LLM caching, external API requests, and fallback logic. Synchronous I/O operations block concurrent requests.
 
 ## Proposal
 
-Migrate these three computationally intensive Python modules into independent Rust microservices within the existing `synapse-engine` or a new workspace (e.g., `orchestrator-engine`). These microservices will communicate with the remaining Python ecosystem (or other services) via gRPC, similar to the `codegraph-engine`.
+We propose to migrate these three computationally intensive Python modules into independent Rust microservices. They will be housed within the existing `synapse-engine` workspace. These microservices will interact with the remaining Python agents over gRPC.
+
+<!-- @synapse:rule Convert the computationally heavy Python modules (Analyst Agent, Orchestrator Core, LLM Service Gateway) into independent Rust microservices interacting via gRPC to improve latency and reduce computational load. -->
 
 ## Expected Benefits
 
-* **Concurrency**: Rust's asynchronous runtime (e.g., Tokio) will significantly improve the Orchestrator's parallel task management ("War Room" mode) without GIL limitations.
-* **Performance**: Vector similarity computations (Fractal Search V5 routing) and text processing in the Analyst will execute orders of magnitude faster.
-* **Reliability**: Rust's strict type system will reduce runtime errors in complex state transitions.
+* **Concurrency**: Utilizing Rust's `Tokio` asynchronous runtime will eliminate GIL limitations, massively improving the Orchestrator's parallel task management.
+* **Performance**: Vector similarity computations for Fractal Search V5 and token parsing in the Analyst agent will execute orders of magnitude faster.
+* **Reliability & Latency**: Removing blocking I/O from the Python event loop will prevent the HTTP embedding timeouts observed in the logs.
 
 ## Migration Strategy
 
-1. Define Protobuf (`.proto`) contracts for each service's APIs.
-2. Implement the Rust gRPC servers using `tonic`.
-3. Generate Python gRPC bindings using `grpcio-tools`.
-4. Update Python agents/tools to act as gRPC clients (stubs) to these new Rust services.
+1. Define strict Protobuf (`.proto`) contracts for each service.
+2. Implement the Rust backend using `tonic` and `tokio`.
+3. Generate Python bindings using `grpcio-tools`.
+4. Update Python agents to act as asynchronous gRPC clients.

@@ -19,8 +19,10 @@ sys.path.insert(0, os.path.join(SDK_PYTHON_PATH, "agents"))
 
 try:
     from synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
+    from synapse_proto import orchestrator_pb2, orchestrator_pb2_grpc
 except ImportError:
     from agents.synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
+    from agents.synapse_proto import orchestrator_pb2, orchestrator_pb2_grpc
 
 from llm import LLMService
 from orchestrator import OrchestratorAgent
@@ -41,11 +43,26 @@ class AnalystAgent:
         self.channel = None
         self.stub = None
 
+        # New Rust microservice for Analyst logic
+        self.analyst_channel = None
+        self.analyst_stub = None
+
         self.connect()
+        self.connect_analyst_service()
         self.config = self.load_config()
         self.threshold = self.config.get('memory_settings', {}).get('consolidation_threshold', 5)
         self.mock_llm = os.getenv("MOCK_LLM", "false").lower() == "true"
         self.sanity_suite = self.load_sanity_suite()
+
+    def connect_analyst_service(self):
+        """Connect to the new Rust-based Analyst microservice."""
+        try:
+            self.analyst_channel = grpc.insecure_channel("localhost:50054")
+            self.analyst_stub = orchestrator_pb2_grpc.AnalystServiceStub(self.analyst_channel)
+            print("✅ Analyst connected to Rust microservice stub at localhost:50054")
+        except Exception as e:
+            print(f"⚠️ Error initializing Rust Analyst microservice stub: {e}. Falling back to legacy Python logic.")
+            self.analyst_stub = None
 
     def connect(self):
         try:
@@ -181,6 +198,16 @@ class AnalystAgent:
         corrupting code or stack traces.
         """
         # @synapse:rule Optimize prompts before LLM submission to conserve tokens while preserving code formatting.
+        if self.analyst_stub is not None:
+            try:
+                request = orchestrator_pb2.OptimizePromptRequest(prompt=prompt)
+                response = self.analyst_stub.OptimizePrompt(request, timeout=1.0)
+                return response.optimized_prompt
+            except grpc.RpcError as e:
+                pass
+            except Exception as e:
+                print(f"⚠️ Error in Rust Analyst microservice OptimizePrompt, falling back to legacy Python: {e}")
+
         import re
         # Collapse multiple spaces into one, but preserve leading spaces (indentation)
         lines = prompt.split('\n')

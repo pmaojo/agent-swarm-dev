@@ -24,8 +24,10 @@ sys.path.insert(0, os.path.join(SDK_PYTHON_PATH, "agents"))
 
 try:
     from synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc, codegraph_pb2, codegraph_pb2_grpc
+    from synapse_proto import orchestrator_pb2, orchestrator_pb2_grpc
 except ImportError:
     from agents.synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc, codegraph_pb2, codegraph_pb2_grpc
+    from agents.synapse_proto import orchestrator_pb2, orchestrator_pb2_grpc
 
 from llm import LLMService
 from product_manager import ProductManagerAgent
@@ -62,6 +64,10 @@ class OrchestratorAgent:
         self.codegraph_channel = None
         self.codegraph_stub = None
 
+        # Orchestrator Microservice Configuration
+        self.orchestrator_engine_channel = None
+        self.orchestrator_engine_stub = None
+
         self.namespace = "default"
         self.agents = {}
 
@@ -73,6 +79,7 @@ class OrchestratorAgent:
 
         # Connect to Synapse
         self.connect()
+        self.connect_orchestrator_service()
         
         # Load Schema at startup
         self.load_schema()
@@ -96,6 +103,16 @@ class OrchestratorAgent:
             "Reviewer": 3,
             "Deployer": 4
         }
+
+    def connect_orchestrator_service(self):
+        """Connect to the new Rust-based Orchestrator microservice."""
+        try:
+            self.orchestrator_engine_channel = grpc.insecure_channel("localhost:50054")
+            self.orchestrator_engine_stub = orchestrator_pb2_grpc.OrchestratorServiceStub(self.orchestrator_engine_channel)
+            print("✅ Orchestrator connected to Rust microservice stub at localhost:50054")
+        except Exception as e:
+            print(f"⚠️ Error initializing Rust Orchestrator microservice stub: {e}. Falling back to legacy Python logic.")
+            self.orchestrator_engine_stub = None
 
     def connect(self):
         try:
@@ -724,6 +741,17 @@ class OrchestratorAgent:
         return "FeatureImplementationTask"
 
     def get_handler_for_task(self, task_type: str) -> str:
+        if self.orchestrator_engine_stub is not None:
+            try:
+                request = orchestrator_pb2.RouteTaskRequest(task_description=task_type)
+                response = self.orchestrator_engine_stub.RouteTask(request, timeout=1.0)
+                if response.agent_type and response.agent_type != "Unknown" and response.agent_type != "":
+                    return response.agent_type
+            except grpc.RpcError as e:
+                pass
+            except Exception as e:
+                print(f"⚠️ Error routing task via Rust microservice: {e}. Falling back to Python.")
+
         mapping = {
             "RequirementsDefinitionTask": "ProductManager",
             "SystemDesignTask": "Architect",
@@ -734,6 +762,19 @@ class OrchestratorAgent:
         return mapping.get(task_type, "Unknown")
 
     def get_next_task(self, current_task_type: str, outcome: str) -> Optional[str]:
+        if self.orchestrator_engine_stub is not None:
+            try:
+                request = orchestrator_pb2.StateGraphRequest(current_state=current_task_type, action=outcome)
+                response = self.orchestrator_engine_stub.ManageStateGraph(request, timeout=1.0)
+                if response.next_state and response.next_state != "":
+                    if response.next_state == "None":
+                        return None
+                    return response.next_state
+            except grpc.RpcError as e:
+                pass
+            except Exception as e:
+                print(f"⚠️ Error managing state graph via Rust microservice: {e}. Falling back to Python.")
+
         transitions = {
             "RequirementsDefinitionTask": {"success": "SystemDesignTask", "failure": "RequirementsDefinitionTask"},
             "SystemDesignTask": {"success": "FeatureImplementationTask", "failure": "RequirementsDefinitionTask"},
