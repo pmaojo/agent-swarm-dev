@@ -13,6 +13,7 @@ Based on an empirical analysis of `synapse.log` and execution traces, we have id
 We propose to migrate these three computationally intensive Python modules into independent Rust microservices. They will be housed within the existing `synapse-engine` workspace. These microservices will interact with the remaining Python agents over gRPC.
 
 <!-- @synapse:rule Convert the computationally heavy Python modules (Analyst Agent, Orchestrator Core, LLM Service Gateway) into independent Rust microservices interacting via gRPC to improve latency and reduce computational load. -->
+**Analysis & Evidence:** Our empirical analysis of `synapse.log` directly correlates the observed HTTP timeout errors (`error sending request for url (http://localhost:11434/api/embeddings)`) with blocking I/O operations and CPU-bound tasks in the aforementioned Python modules. By migrating the Analyst Agent, Orchestrator Core, and LLM Service Gateway to Rust, we leverage Tokio's asynchronous runtime to eliminate the GIL bottleneck, thereby preventing the main event loop from blocking during high-latency operations like vector embedding insertions and Fractal Search routing.
 
 ## Expected Benefits
 

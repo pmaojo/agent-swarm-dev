@@ -4,6 +4,7 @@
 Convert the computationally heavy Python modules (Analyst Agent, Orchestrator Core, LLM Service Gateway) into independent Rust microservices interacting via gRPC. This technical design fulfills the approved OpenSpec proposal for migrating away from Python GIL bottlenecks.
 
 <!-- @synapse:rule Implement independent Rust microservices for Analyst, Orchestrator, and LLM Gateway using Tonic to alleviate Python computational and I/O bottlenecks. -->
+**Design Integration Details:** The Orchestrator core will connect to the `orchestrator-engine` (Rust) via gRPC using a non-blocking `grpc.channel_ready_future` check with a timeout, allowing it to gracefully fallback to Python logic if the service is unreachable. The Rust microservices will run concurrently, communicating efficiently by leveraging the asynchronous Tokio runtime, which specifically addresses the vector store insertion timeouts evident in `synapse.log`.
 
 ## Architecture
 
