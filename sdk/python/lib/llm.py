@@ -31,13 +31,13 @@ if SDK_PYTHON_PATH not in sys.path:
 
 try:
     from agents.synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
-    from agents.synapse_proto import orchestrator_pb2, orchestrator_pb2_grpc
+    from agents.synapse_proto import orchestration_engine_pb2, orchestration_engine_pb2_grpc
 except ImportError:
     logger.warning("⚠️  Warning: Could not import Synapse protobufs. Budgeting disabled.")
     semantic_engine_pb2 = None
     semantic_engine_pb2_grpc = None
-    orchestrator_pb2 = None
-    orchestrator_pb2_grpc = None
+    orchestration_engine_pb2 = None
+    orchestration_engine_pb2_grpc = None
 
 # --- Constants ---
 # Pricing per 1K tokens (approximate for GPT-4o)
@@ -63,7 +63,8 @@ class LLMService:
         # Rust LLM Gateway Microservice Configuration
         self.llm_gateway_channel = None
         self.llm_gateway_stub = None
-        self.connect_llm_gateway_service()
+        if orchestration_engine_pb2_grpc:
+            self.connect_llm_gateway_service()
 
         self.api_key = os.getenv("GEMINI_API_KEY") or os.getenv("OPENAI_API_KEY")
         self.kilo_key = os.getenv("KILO_GATEWAY_API_KEY")
@@ -340,28 +341,28 @@ class LLMService:
             processed_fallbacks.append(fallback_dict)
         return processed_fallbacks
 
+    def connect_llm_gateway_service(self):
+        """Connect to the new Rust-based LLM Gateway microservice."""
+        try:
+            self.llm_gateway_channel = grpc.insecure_channel("localhost:50056")
+            self.llm_gateway_stub = orchestration_engine_pb2_grpc.LlmGatewayServiceStub(self.llm_gateway_channel)
+            print("✅ Connected to Rust LLM Gateway microservice stub at localhost:50056")
+        except Exception as e:
+            print(f"⚠️ Error initializing Rust LLM Gateway microservice stub: {e}. Falling back to legacy Python logic.")
+            self.llm_gateway_stub = None
+
     @retry(
         wait=wait_random_exponential(min=1, max=60),
         stop=stop_after_attempt(6),
         retry=retry_if_not_exception_type(BudgetExceededException)
     )
-    def connect_llm_gateway_service(self):
-        """Connect to the new Rust-based LLM Gateway microservice."""
-        try:
-            self.llm_gateway_channel = grpc.insecure_channel("localhost:50054")
-            self.llm_gateway_stub = orchestrator_pb2_grpc.LlmGatewayServiceStub(self.llm_gateway_channel)
-            print("✅ Connected to Rust LLM Gateway microservice stub at localhost:50054")
-        except Exception as e:
-            print(f"⚠️ Error initializing Rust LLM Gateway microservice stub: {e}. Falling back to legacy Python logic.")
-            self.llm_gateway_stub = None
-
     def completion(self, prompt: str, system_prompt: str = "You are a helpful assistant.", json_mode: bool = False, tools: Optional[List[Dict]] = None, tool_choice: Any = None, messages: Optional[List[Dict]] = None) -> Any:
         """
         Generate a completion using the configured LLM, with Budget Enforcement.
         """
-        if self.llm_gateway_stub is not None:
+        if self.llm_gateway_stub is not None and orchestration_engine_pb2 is not None:
             try:
-                request = orchestrator_pb2.LlmCompletionRequest(
+                request = orchestration_engine_pb2.LlmCompletionRequest(
                     prompt=prompt,
                     model=self.model,
                     system_prompt=system_prompt,
