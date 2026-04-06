@@ -1,46 +1,128 @@
-# Technical Design: Rust Microservices for Orchestrator, Analyst, and LLM Gateway
+# Technical Design: Rust Microservices & Orchestrator gRPC Integration
 
-## Objective
-Convert the computationally heavy Python modules (Analyst Agent, Orchestrator Core, LLM Service Gateway) into independent Rust microservices interacting via gRPC. This technical design fulfills the approved OpenSpec proposal for migrating away from Python GIL bottlenecks.
+## 1. Architecture Overview
 
-<!-- @synapse:rule Implement independent Rust microservices for Analyst, Orchestrator, and LLM Gateway using Tonic to alleviate Python computational and I/O bottlenecks. -->
+As outlined in the OpenSpec Migration Proposal, the computationally heavy and latency-sensitive Python modules (Analyst, Orchestrator Core, LLM Gateway) will be replaced with high-performance Rust microservices. This design document specifies the integration layer, focusing on how the remaining Python ecosystem will communicate with the new Rust backbone via gRPC.
 
-## Architecture
+### System Diagram
 
-### 1. Protobuf Definitions
-The new services will be defined in a new package `orchestrator.v1` and compiled using `grpcio-tools`.
+```
+[ Python Agents / CLI ]
+        │
+        ▼ (gRPC)
+┌───────────────────────┐
+│ llm-gateway (Rust)    │ ──► [ OpenAI / LiteLLM API ]
+│ (Axum/Hyper proxy)    │
+└────────┬──────────────┘
+         │ (Async updates)
+         ▼
+[ Synapse Graph DB ] ◄─────┐
+         ▲                 │
+         │ (SPARQL/gRPC)   │ (gRPC)
+┌────────┴──────────────┐  │
+│ orchestrator-core     │  │
+│ (Rust / Tokio)        │  │
+└────────┬──────────────┘  │
+         ▲                 │
+         │ (gRPC streams)  │
+┌────────┴──────────────┐  │
+│ analyst-service       │──┘
+│ (Rust / Rayon)        │
+└───────────────────────┘
+```
+
+## 2. gRPC Integration Strategy
+
+The migration will utilize a "Strangler Fig" pattern. We will define Protobuf (`.proto`) interfaces for the existing Python class methods, implement the servers in Rust (using `tonic`), and swap the Python class implementations to become gRPC clients (stubs).
+
+### 2.1 Interface Definitions (`.proto`)
+
+A unified `orchestration_engine.proto` will be created in the `synapse-engine/crates/orchestration-engine/proto` directory (or similar structure).
+
+**Example Service Definitions:**
 
 ```protobuf
 syntax = "proto3";
-package orchestrator.v1;
+package orchestration;
 
-service OrchestratorService {
-  rpc RouteTask(RouteTaskRequest) returns (RouteTaskResponse);
-  rpc ManageStateGraph(StateGraphRequest) returns (StateGraphResponse);
+// --- Analyst Service ---
+service Analyst {
+  rpc ClusterFailures (ClusterRequest) returns (ClusterResponse);
+  rpc GenerateGoldenRules (RuleRequest) returns (RuleResponse);
 }
 
-service AnalystService {
-  rpc OptimizePrompt(OptimizePromptRequest) returns (OptimizePromptResponse);
-  rpc ClusterFailures(ClusterFailuresRequest) returns (ClusterFailuresResponse);
+// --- Orchestrator Core ---
+service Orchestrator {
+  rpc AssignTask (TaskRequest) returns (TaskResponse);
+  rpc StreamStatus (TaskStatusRequest) returns (stream TaskStatusResponse);
 }
 
-service LlmGatewayService {
-  rpc Complete(LlmCompletionRequest) returns (LlmCompletionResponse);
+// --- LLM Gateway ---
+// Primarily acts as a reverse HTTP proxy, but exposes management via gRPC
+service LLMManager {
+  rpc CheckBudget (BudgetRequest) returns (BudgetResponse);
+  rpc UpdateQuotas (QuotaRequest) returns (QuotaResponse);
 }
 ```
 
-### 2. Rust Implementation (`orchestrator-engine` / `synapse-engine`)
-- **Frameworks**: Use `tonic` and `tokio` for high-performance, asynchronous gRPC serving.
-- **Vector Math**: Integrate `fastembed-rs` to perform the 64d Fractal Search V5 routing computations, completely offloading this from Python.
-- **Caching**: Implement a thread-safe LRU cache for the `LlmGatewayService` to minimize redundant API calls.
-- **Deployment**: Expose the services on a dedicated port defined via environment variables.
+### 2.2 Rust Implementation (`tonic` & `tokio`)
 
-### 3. Python Integration (`sdk/python/agents/orchestrator.py`, etc.)
-- **Code Generation**: Use `python -m grpc_tools.protoc` to generate `orchestrator_pb2.py` and `orchestrator_pb2_grpc.py`.
-- **Stub Initialization**: Instantiate non-blocking stubs within the Python agents (e.g., `OrchestratorAgent`).
-- **Resilience**: Implement asynchronous non-blocking channel checks (e.g., `grpc.channel_ready_future` with a timeout). If the Rust microservice is unavailable, fallback gracefully to the legacy Python implementation or a `None` stub to prevent system halting.
+- **Server Setup:** Each microservice will run a `tonic` gRPC server. The Orchestrator core will likely bind to `50054`, Analyst to `50055`, etc.
+- **Concurrency:** The `orchestrator-core` will utilize `tokio::spawn` to manage independent agent state machines. The `analyst-service` will use `rayon` inside blocking Tokio threads to perform CPU-bound log analysis without stalling the async reactor.
 
-## Impact
-- Substantial reduction in CPU time and latency during high concurrency tasks.
-- Resolves HTTP timeouts observed in embedding generation.
-- Decouples core logic from Python to prepare for broader backend modernization.
+### 2.3 Python Client Stubs (`grpcio`)
+
+The Python codebase will be updated to use the generated `pb2` and `pb2_grpc` files.
+
+**Example Python Client Update (`sdk/python/agents/orchestrator.py`):**
+
+```python
+import grpc
+from agents.synapse_proto import orchestration_pb2, orchestration_pb2_grpc
+
+class OrchestratorAgent:
+    def __init__(self, host='localhost:50054'):
+        # Establish non-blocking connection
+        self.channel = grpc.insecure_channel(
+            host,
+            options=[
+                ('grpc.max_send_message_length', 50 * 1024 * 1024),
+                ('grpc.max_receive_message_length', 50 * 1024 * 1024),
+            ]
+        )
+        # Attempt connection, fallback gracefully if Rust isn't running
+        try:
+            grpc.channel_ready_future(self.channel).result(timeout=2.0)
+            self.stub = orchestration_pb2_grpc.OrchestratorStub(self.channel)
+        except grpc.FutureTimeoutError:
+            self.stub = None
+            print("WARNING: Rust Orchestrator unreachable, falling back to local Python logic.")
+
+    def assign_task(self, task_data):
+        if self.stub:
+            req = orchestration_pb2.TaskRequest(data=task_data)
+            return self.stub.AssignTask(req)
+        else:
+            # Legacy Python fallback
+            return self._legacy_assign_task(task_data)
+```
+
+## 3. Handling Protobuf Generation
+
+As noted in the system memory, Python `_grpc.py` files generated by `protoc` often have relative import issues. A build script must be included to patch these:
+
+```bash
+# Generate
+python -m grpc_tools.protoc -I proto --python_out=sdk/python/agents/synapse_proto --grpc_python_out=sdk/python/agents/synapse_proto proto/orchestration_engine.proto
+
+# Patch imports
+sed -i 's/import orchestration_engine_pb2/from . import orchestration_engine_pb2/g' sdk/python/agents/synapse_proto/orchestration_engine_pb2_grpc.py
+```
+
+## 4. Migration Roadmap
+
+1. **Phase 1: Define Contracts:** Write `.proto` files based on the input/output schemas of `AnalystAgent.cluster_failures`, `OrchestratorAgent.autonomous_loop`, and `LLMService.completion`.
+2. **Phase 2: Rust Scaffolding:** Initialize Cargo workspaces for the three services and implement mock gRPC responses.
+3. **Phase 3: Python Integration:** Update the Python SDK to route calls through the stubs (with local fallbacks).
+4. **Phase 4: Rust Implementation:** Port the actual business logic (Regex parsing, Tokio state machines, Axum routing) to Rust.
+5. **Phase 5: Cutover:** Remove Python fallbacks once stability is proven via integration tests.
