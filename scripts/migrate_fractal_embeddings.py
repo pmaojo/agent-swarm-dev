@@ -13,7 +13,11 @@ from sdk.python.lib.embeddings import FastEmbedFractal
 def main():
     host = os.environ.get("SYNAPSE_GRPC_HOST", "localhost")
     port = os.environ.get("SYNAPSE_GRPC_PORT", "50051")
-    channel = grpc.insecure_channel(f"{host}:{port}")
+    options = [
+        ('grpc.max_send_message_length', 50 * 1024 * 1024),
+        ('grpc.max_receive_message_length', 50 * 1024 * 1024)
+    ]
+    channel = grpc.insecure_channel(f"{host}:{port}", options=options)
     stub = semantic_engine_pb2_grpc.SemanticEngineStub(channel)
 
     print(f"Connecting to Semantic Engine on {host}:{port}...")
@@ -55,14 +59,22 @@ def main():
             new_triples.append(new_t)
 
     print(f"Ingesting {len(new_triples)} triples with new fractal embeddings...")
-    ingest_req = semantic_engine_pb2.IngestRequest(triples=new_triples, namespace="default")
 
-    try:
-        # Increase limit if batch is too big
-        ingest_resp = stub.IngestTriples(ingest_req)
-        print(f"Successfully re-ingested triples: {ingest_resp.nodes_added} nodes, {ingest_resp.edges_added} edges.")
-    except Exception as e:
-        print(f"Failed to ingest triples: {e}")
+    # Process in batches to avoid any further memory issues or huge payloads
+    batch_size = 500
+    total_nodes = 0
+    total_edges = 0
+    for i in range(0, len(new_triples), batch_size):
+        batch = new_triples[i:i + batch_size]
+        ingest_req = semantic_engine_pb2.IngestRequest(triples=batch, namespace="default")
+        try:
+            ingest_resp = stub.IngestTriples(ingest_req)
+            total_nodes += ingest_resp.nodes_added
+            total_edges += ingest_resp.edges_added
+        except Exception as e:
+            print(f"Failed to ingest batch {i//batch_size}: {e}")
+
+    print(f"Successfully re-ingested triples: {total_nodes} nodes, {total_edges} edges.")
 
 
 if __name__ == "__main__":
