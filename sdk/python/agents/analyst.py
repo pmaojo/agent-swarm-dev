@@ -19,10 +19,10 @@ sys.path.insert(0, os.path.join(SDK_PYTHON_PATH, "agents"))
 
 try:
     from synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
-    from synapse_proto import orchestrator_pb2, orchestrator_pb2_grpc
+    from synapse_proto import orchestration_engine_pb2, orchestration_engine_pb2_grpc
 except ImportError:
     from agents.synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
-    from agents.synapse_proto import orchestrator_pb2, orchestrator_pb2_grpc
+    from agents.synapse_proto import orchestration_engine_pb2, orchestration_engine_pb2_grpc
 
 from llm import LLMService
 from orchestrator import OrchestratorAgent
@@ -57,9 +57,9 @@ class AnalystAgent:
     def connect_analyst_service(self):
         """Connect to the new Rust-based Analyst microservice."""
         try:
-            self.analyst_channel = grpc.insecure_channel("localhost:50054")
-            self.analyst_stub = orchestrator_pb2_grpc.AnalystServiceStub(self.analyst_channel)
-            print("✅ Analyst connected to Rust microservice stub at localhost:50054")
+            self.analyst_channel = grpc.insecure_channel("localhost:50055")
+            self.analyst_stub = orchestration_engine_pb2_grpc.AnalystServiceStub(self.analyst_channel)
+            print("✅ Analyst connected to Rust microservice stub at localhost:50055")
         except Exception as e:
             print(f"⚠️ Error initializing Rust Analyst microservice stub: {e}. Falling back to legacy Python logic.")
             self.analyst_stub = None
@@ -138,6 +138,36 @@ class AnalystAgent:
         return self.query_graph(query)
 
     def cluster_failures(self, failures):
+        if self.analyst_stub is not None:
+            try:
+                failure_infos = []
+                for f in failures:
+                    exec_id = f.get("?execId", f.get("execId", ""))
+                    note = f.get("?note", f.get("note", ""))
+                    role = f.get("?role", f.get("role", ""))
+                    stack = f.get("?stack", f.get("stack", "python"))
+
+                    if isinstance(exec_id, dict): exec_id = exec_id.get('value', '')
+                    if isinstance(note, dict): note = note.get('value', '')
+                    if isinstance(role, dict): role = role.get('value', '')
+                    if isinstance(stack, dict): stack = stack.get('value', 'python')
+
+                    failure_infos.append(orchestration_engine_pb2.FailureInfo(
+                        exec_id=str(exec_id), note=str(note), role=str(role), stack=str(stack)
+                    ))
+
+                request = orchestration_engine_pb2.ClusterRequest(failures=failure_infos)
+                response = self.analyst_stub.ClusterFailures(request, timeout=2.0)
+                if response.json_clusters and response.json_clusters != "{}":
+                    try:
+                        return json.loads(response.json_clusters)
+                    except json.JSONDecodeError:
+                        pass
+            except grpc.RpcError:
+                pass
+            except Exception as e:
+                print(f"⚠️ Error clustering via Rust microservice: {e}. Falling back to Python.")
+
         clusters = defaultdict(list)
         decoder = json.JSONDecoder()
 
@@ -229,6 +259,17 @@ class AnalystAgent:
     def generate_golden_rule(self, role, note, count, stack):
         # Clean Role for Prompt (it's a URI)
         role_name = role.split('/')[-1]
+
+        if self.analyst_stub is not None:
+            try:
+                request = orchestration_engine_pb2.RuleRequest(role=role_name, note=note, count=count, stack=stack)
+                response = self.analyst_stub.GenerateGoldenRules(request, timeout=3.0)
+                if response.rule:
+                    return response.rule
+            except grpc.RpcError:
+                pass
+            except Exception as e:
+                print(f"⚠️ Error generating rule via Rust microservice: {e}. Falling back to Python.")
 
         if self.mock_llm:
             print(f"⚠️  Using MOCK LLM response for role: {role_name} (Stack: {stack})")
