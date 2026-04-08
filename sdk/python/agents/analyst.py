@@ -27,12 +27,19 @@ except ImportError:
 from llm import LLMService
 from orchestrator import OrchestratorAgent
 
+import re
+
 # Define Strict Namespaces
 SWARM = "http://swarm.os/ontology/"
 NIST = "http://nist.gov/caisi/"
 PROV = "http://www.w3.org/ns/prov#"
 RDF = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
 SKOS = "http://www.w3.org/2004/02/skos/core#"
+
+# @synapse:rule Optimize prompt efficiently using pre-compiled regular expressions at the module level to reduce token usage and CPU cycles without corrupting code formatting.
+_LEADING_WS_RE = re.compile(r'^([ \t]*)')
+_MULTI_SPACE_RE = re.compile(r' {2,}')
+_MULTI_NEWLINE_RE = re.compile(r'\n{3,}')
 
 class AnalystAgent:
     def __init__(self):
@@ -238,23 +245,22 @@ class AnalystAgent:
             except Exception as e:
                 print(f"⚠️ Error in Rust Analyst microservice OptimizePrompt, falling back to legacy Python: {e}")
 
-        import re
         # Collapse multiple spaces into one, but preserve leading spaces (indentation)
         lines = prompt.split('\n')
         optimized_lines = []
         for line in lines:
             # Match leading whitespace (spaces and tabs)
-            match = re.match(r'^([ \t]*)', line)
+            match = _LEADING_WS_RE.match(line)
             leading_whitespace = match.group(1) if match else ''
 
             # Collapse spaces in the rest of the line
             rest_of_line = line[len(leading_whitespace):]
-            content = re.sub(r' {2,}', ' ', rest_of_line)
+            content = _MULTI_SPACE_RE.sub(' ', rest_of_line)
             optimized_lines.append(leading_whitespace + content)
 
         # Rejoin and collapse 3+ newlines into 2
         optimized = '\n'.join(optimized_lines)
-        return re.sub(r'\n{3,}', '\n\n', optimized).strip()
+        return _MULTI_NEWLINE_RE.sub('\n\n', optimized).strip()
 
     def generate_golden_rule(self, role, note, count, stack):
         # Clean Role for Prompt (it's a URI)
