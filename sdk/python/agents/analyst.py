@@ -8,6 +8,7 @@ import json
 import grpc
 import yaml
 import uuid
+import re
 from collections import defaultdict
 from typing import List, Dict, Any, Optional
 
@@ -33,6 +34,9 @@ NIST = "http://nist.gov/caisi/"
 PROV = "http://www.w3.org/ns/prov#"
 RDF = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
 SKOS = "http://www.w3.org/2004/02/skos/core#"
+
+_MULTI_SPACE_RE = re.compile(r' {2,}')
+_MULTI_NEWLINE_RE = re.compile(r'\n{3,}')
 
 class AnalystAgent:
     def __init__(self):
@@ -227,7 +231,6 @@ class AnalystAgent:
         inline spaces and excessive newlines while preserving indentation to avoid
         corrupting code or stack traces.
         """
-        # @synapse:rule Optimize prompts before LLM submission to conserve tokens while preserving code formatting.
         if self.analyst_stub is not None:
             try:
                 request = orchestrator_pb2.OptimizePromptRequest(prompt=prompt)
@@ -238,23 +241,29 @@ class AnalystAgent:
             except Exception as e:
                 print(f"⚠️ Error in Rust Analyst microservice OptimizePrompt, falling back to legacy Python: {e}")
 
-        import re
-        # Collapse multiple spaces into one, but preserve leading spaces (indentation)
+        # Fast path string manipulation combined with pre-compiled regex to conserve CPU
         lines = prompt.split('\n')
         optimized_lines = []
         for line in lines:
-            # Match leading whitespace (spaces and tabs)
-            match = re.match(r'^([ \t]*)', line)
-            leading_whitespace = match.group(1) if match else ''
+            if not line.strip():
+                optimized_lines.append(line)
+                continue
 
-            # Collapse spaces in the rest of the line
-            rest_of_line = line[len(leading_whitespace):]
-            content = re.sub(r' {2,}', ' ', rest_of_line)
-            optimized_lines.append(leading_whitespace + content)
+            # Use lstrip to efficiently extract leading whitespace
+            stripped = line.lstrip(' \t')
+            leading_whitespace = line[:len(line) - len(stripped)]
+
+            # Collapse spaces in the rest of the line only if multiple spaces exist
+            if '  ' in stripped:
+                stripped = _MULTI_SPACE_RE.sub(' ', stripped)
+
+            optimized_lines.append(leading_whitespace + stripped)
 
         # Rejoin and collapse 3+ newlines into 2
         optimized = '\n'.join(optimized_lines)
-        return re.sub(r'\n{3,}', '\n\n', optimized).strip()
+        if '\n\n\n' in optimized:
+            optimized = _MULTI_NEWLINE_RE.sub('\n\n', optimized)
+        return optimized.strip()
 
     def generate_golden_rule(self, role, note, count, stack):
         # Clean Role for Prompt (it's a URI)
