@@ -8,8 +8,11 @@ import json
 import grpc
 import yaml
 import uuid
+import re
 from collections import defaultdict
 from typing import List, Dict, Any, Optional
+
+_MULTI_NEWLINE_RE = re.compile(r'\n{3,}')
 
 # Add path to lib and agents
 SDK_PYTHON_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -228,6 +231,7 @@ class AnalystAgent:
         corrupting code or stack traces.
         """
         # @synapse:rule Optimize prompts before LLM submission to conserve tokens while preserving code formatting.
+        # @synapse:rule Optimize prompt efficiently using pre-compiled regex and fast string manipulation to reduce CPU cycles while avoiding token explosion.
         if self.analyst_stub is not None:
             try:
                 request = orchestrator_pb2.OptimizePromptRequest(prompt=prompt)
@@ -238,23 +242,21 @@ class AnalystAgent:
             except Exception as e:
                 print(f"⚠️ Error in Rust Analyst microservice OptimizePrompt, falling back to legacy Python: {e}")
 
-        import re
-        # Collapse multiple spaces into one, but preserve leading spaces (indentation)
-        lines = prompt.split('\n')
+        # Fast string parsing without regex looping
         optimized_lines = []
-        for line in lines:
-            # Match leading whitespace (spaces and tabs)
-            match = re.match(r'^([ \t]*)', line)
-            leading_whitespace = match.group(1) if match else ''
+        for line in prompt.split('\n'):
+            stripped = line.lstrip()
+            if not stripped:
+                optimized_lines.append('')
+                continue
 
-            # Collapse spaces in the rest of the line
-            rest_of_line = line[len(leading_whitespace):]
-            content = re.sub(r' {2,}', ' ', rest_of_line)
-            optimized_lines.append(leading_whitespace + content)
+            leading_whitespace = line[:len(line) - len(stripped)]
+            # Use split/join instead of regex for space collapsing to reduce CPU cycles
+            optimized_lines.append(leading_whitespace + ' '.join(stripped.split()))
 
-        # Rejoin and collapse 3+ newlines into 2
+        # Rejoin and collapse 3+ newlines into 2 using pre-compiled regex
         optimized = '\n'.join(optimized_lines)
-        return re.sub(r'\n{3,}', '\n\n', optimized).strip()
+        return _MULTI_NEWLINE_RE.sub('\n\n', optimized).strip()
 
     def generate_golden_rule(self, role, note, count, stack):
         # Clean Role for Prompt (it's a URI)
