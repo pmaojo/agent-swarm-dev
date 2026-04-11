@@ -1,45 +1,45 @@
-# OpenSpec Proposal: Rust Microservices Migration
+# Propuesta OpenSpec: Migración a Microservicios de Rust
 
-## 1. Executive Summary
-Based on the execution logs and architectural review, the `agent-swarm-dev` platform is experiencing severe computational and I/O bottlenecks in Python. This proposal outlines the migration of three critical Python modules—Analyst Agent, Orchestrator Core, and LLM Service Gateway—to high-performance, independent Rust microservices integrated via gRPC. This evolution is necessary to break free from the Python GIL constraints and synchronous blocking, enabling massive concurrency and sub-millisecond latency.
+## 1. Resumen Ejecutivo
+Basado en los registros de ejecución y la revisión arquitectónica, la plataforma `agent-swarm-dev` está experimentando severos cuellos de botella computacionales y de I/O en Python. Esta propuesta detalla la migración de tres módulos críticos de Python—Analyst Agent, Orchestrator Core y LLM Service Gateway—a microservicios de Rust independientes y de alto rendimiento integrados vía gRPC. Esta evolución es necesaria para liberarse de las restricciones del GIL de Python y el bloqueo síncrono, permitiendo concurrencia masiva y latencia por debajo del milisegundo.
 
-## 2. Identified Bottlenecks (from Logs & Analysis)
+## 2. Cuellos de Botella Identificados (de Logs y Análisis)
 
 ### 2.1 Analyst Agent (`sdk/python/agents/analyst.py`)
-- **Issue**: Heavy CPU-bound computation during failure clustering and pattern recognition.
-- **Details**: Iterating through extensive historical logs and executing complex string manipulations (Regex, JSON parsing) in Python scales poorly. The synchronous in-memory clustering blocks the event loop, causing severe latency spikes during the generation of "Golden Rules."
-- **Evidence**: Execution metrics show significant CPU spikes and processing delays when `cluster_failures` is triggered on large Synapse datasets.
+- **Problema**: Computación pesada ligada a la CPU durante el agrupamiento de fallas (clustering) y reconocimiento de patrones.
+- **Detalles**: Iterar a través de extensos registros históricos y ejecutar manipulaciones de cadenas complejas (Regex, análisis JSON) en Python escala de manera deficiente. El agrupamiento síncrono en memoria bloquea el bucle de eventos, causando picos de latencia severos durante la generación de "Golden Rules".
+- **Evidencia**: Las métricas de ejecución muestran picos de CPU significativos y retrasos de procesamiento cuando se activa `cluster_failures` en grandes conjuntos de datos de Synapse.
 
 ### 2.2 Orchestrator Core (`sdk/python/agents/orchestrator.py`)
-- **Issue**: State management and decision latency bottlenecks.
-- **Details**: The primary `autonomous_loop` is severely hampered by blocking synchronous I/O operations (like database calls and API requests) and `time.sleep` cycles. Python's GIL prevents true parallel execution of concurrent autonomous agents.
-- **Evidence**: `synapse.log` and performance traces highlight blocking gRPC operations, limiting the system to handling only a few concurrent tasks effectively.
+- **Problema**: Cuellos de botella de latencia en la gestión del estado y decisiones.
+- **Detalles**: El `autonomous_loop` primario está severamente obstaculizado por operaciones síncronas de I/O bloqueantes (como llamadas a bases de datos y peticiones de API) y ciclos `time.sleep`. El GIL de Python impide la verdadera ejecución paralela de agentes autónomos concurrentes.
+- **Evidencia**: `synapse.log` y trazas de rendimiento destacan operaciones gRPC bloqueantes, limitando el sistema a manejar efectivamente solo unas pocas tareas concurrentes.
 
 ### 2.3 LLM Service Gateway (`sdk/python/lib/llm.py`)
-- **Issue**: I/O Bound latency on the critical path.
-- **Details**: Intercepting every LLM call for budget enforcement (`check_budget`) triggers synchronous SPARQL queries over the network to Synapse. This adds massive Round Trip Time (RTT) latency directly to the AI generation loop.
-- **Evidence**: Execution logs indicate that decorators inject over 200ms of overhead per inference request, drastically slowing down multi-step agent reasoning.
+- **Problema**: Latencia ligada a operaciones de I/O en la ruta crítica.
+- **Detalles**: Interceptar cada llamada a LLM para el cumplimiento del presupuesto (`check_budget`) desencadena consultas SPARQL síncronas a través de la red hacia Synapse. Esto añade una latencia de Tiempo de Ida y Vuelta (RTT) masiva directamente al bucle de generación de IA.
+- **Evidencia**: Los registros de ejecución indican que los decoradores inyectan más de 200ms de sobrecarga por petición de inferencia, ralentizando drásticamente el razonamiento de múltiples pasos del agente.
 
-## 3. Proposed Solution
+## 3. Solución Propuesta
 
-Migrate the identified bottlenecks to a dedicated Rust Workspace:
+Migrar los cuellos de botella identificados a un Espacio de Trabajo en Rust dedicado:
 
 1. **`analyst-service` (Rust)**:
-   - Implement concurrent data processing pipelines using `Rayon`.
-   - Utilize high-performance concurrency primitives (e.g., `DashMap`) to handle log clustering and rule generation asynchronously.
+   - Implementar tuberías de procesamiento de datos concurrentes usando `Rayon`.
+   - Utilizar primitivas de concurrencia de alto rendimiento (ej. `DashMap`) para manejar el agrupamiento de logs y la generación de reglas asíncronamente.
 2. **`orchestrator-core` (Rust)**:
-   - Rebuild the autonomous state machine using the `tokio` asynchronous runtime.
-   - Decouple state transitions from I/O, allowing non-blocking gRPC communication with the Python periphery and Synapse.
+   - Reconstruir la máquina de estado autónoma usando el runtime asíncrono `tokio`.
+   - Desacoplar las transiciones de estado de I/O, permitiendo comunicación gRPC no bloqueante con la periferia de Python y Synapse.
 3. **`llm-gateway` (Rust)**:
-   - Construct a high-throughput reverse proxy (via `axum` or `hyper`).
-   - Implement an in-memory sliding window or token bucket for budget tracking, flushing to persistent storage asynchronously without blocking the LLM request.
+   - Construir un proxy inverso de alto rendimiento (vía `axum` o `hyper`).
+   - Implementar una ventana deslizante en memoria o un token bucket para el seguimiento del presupuesto, volcando el estado a almacenamiento persistente de forma asíncrona sin bloquear la petición LLM.
 
-## 4. Expected Impact
-- **Latency**: Sub-millisecond overhead for the LLM Gateway.
-- **Throughput**: 10x - 50x increase in concurrent task management capabilities for the Orchestrator.
-- **Computation**: Near-instantaneous log processing leveraging multi-threading in the Analyst Agent.
+## 4. Impacto Esperado
+- **Latencia**: Sobrecarga por debajo del milisegundo para el LLM Gateway.
+- **Rendimiento (Throughput)**: Aumento de 10x - 50x en las capacidades de gestión de tareas concurrentes para el Orchestrator.
+- **Computación**: Procesamiento de logs casi instantáneo aprovechando el multihilo en el Analyst Agent.
 
-## 5. Success Criteria
-- Existing Python test suites (`tests/test_stack_routing.py`, etc.) pass when run against the new gRPC stubs.
-- Rust services can be instantiated successfully alongside existing infrastructure via `start_all.sh`.
-- Empirical benchmarks demonstrate latency reductions mapping to the Expected Impact.
+## 5. Criterios de Éxito
+- Las suites de pruebas existentes de Python (`tests/test_stack_routing.py`, etc.) pasan exitosamente cuando se ejecutan contra los nuevos stubs de gRPC.
+- Los servicios de Rust pueden ser instanciados exitosamente junto a la infraestructura existente vía `start_all.sh`.
+- Evaluaciones empíricas demuestran reducciones de latencia que coinciden con el Impacto Esperado.
