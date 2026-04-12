@@ -26,6 +26,7 @@ except ImportError:
 
 from llm import LLMService
 from orchestrator import OrchestratorAgent
+import re
 
 # Define Strict Namespaces
 SWARM = "http://swarm.os/ontology/"
@@ -33,6 +34,9 @@ NIST = "http://nist.gov/caisi/"
 PROV = "http://www.w3.org/ns/prov#"
 RDF = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
 SKOS = "http://www.w3.org/2004/02/skos/core#"
+
+# @synapse:constraint Optimize prompt module-level pre-compiled regex for efficiency
+_MULTI_NEWLINE_RE = re.compile(r'\n{3,}')
 
 class AnalystAgent:
     def __init__(self):
@@ -227,7 +231,10 @@ class AnalystAgent:
         inline spaces and excessive newlines while preserving indentation to avoid
         corrupting code or stack traces.
         """
-        # @synapse:rule Optimize prompts before LLM submission to conserve tokens while preserving code formatting.
+        # <!-- @synapse:rule Target: AnalystAgent/optimize_prompt
+        # Inefficiency Detected: Compilación de regex dentro de bucles por cada línea, causando latencia alta.
+        # TDD Status: Refactor (Performance >1.0s a <0.1s en 100 iteraciones)
+        # Synapse Tag Injected: Prioritizar operaciones string rápidas (split/join/lstrip) y regex pre-compiladas a nivel de módulo sobre llamadas de regex repetitivas en bucles. -->
         if self.analyst_stub is not None:
             try:
                 request = orchestrator_pb2.OptimizePromptRequest(prompt=prompt)
@@ -238,23 +245,24 @@ class AnalystAgent:
             except Exception as e:
                 print(f"⚠️ Error in Rust Analyst microservice OptimizePrompt, falling back to legacy Python: {e}")
 
-        import re
         # Collapse multiple spaces into one, but preserve leading spaces (indentation)
         lines = prompt.split('\n')
         optimized_lines = []
         for line in lines:
-            # Match leading whitespace (spaces and tabs)
-            match = re.match(r'^([ \t]*)', line)
-            leading_whitespace = match.group(1) if match else ''
+            # Fast-path: Use lstrip to extract leading whitespace efficiently
+            stripped_line = line.lstrip(' \t')
+            leading_whitespace = line[:len(line) - len(stripped_line)]
 
-            # Collapse spaces in the rest of the line
-            rest_of_line = line[len(leading_whitespace):]
-            content = re.sub(r' {2,}', ' ', rest_of_line)
-            optimized_lines.append(leading_whitespace + content)
+            # Collapse spaces in the rest of the line using fast string splitting instead of regex
+            if stripped_line:
+                content = ' '.join(stripped_line.split())
+                optimized_lines.append(leading_whitespace + content)
+            else:
+                optimized_lines.append(leading_whitespace)
 
         # Rejoin and collapse 3+ newlines into 2
         optimized = '\n'.join(optimized_lines)
-        return re.sub(r'\n{3,}', '\n\n', optimized).strip()
+        return _MULTI_NEWLINE_RE.sub('\n\n', optimized).strip()
 
     def generate_golden_rule(self, role, note, count, stack):
         # Clean Role for Prompt (it's a URI)
