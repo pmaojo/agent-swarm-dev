@@ -9,8 +9,9 @@ class FractalProjectionHead(nn.Module):
     """
     Lightweight MLP (~2.5M params) to project fastembed (bge-small) embeddings
     into a fractal space aligned with Synapse Ontology.
+    @synapse:rule: Use Matryoshka geometry for Fractal Projection. We project to an output of 3072 dimensions aligned with the Synapse Ontology so we can slice `prefix_len=64` for Fast Routing.
     """
-    def __init__(self, input_dim=384, hidden_dim=3072, output_dim=384):
+    def __init__(self, input_dim=384, hidden_dim=3072, output_dim=3072):
         super(FractalProjectionHead, self).__init__()
         # Dimensions aligned with Synapse Ontology (Fractal Projection)
         self.fc1 = nn.Linear(input_dim, hidden_dim)
