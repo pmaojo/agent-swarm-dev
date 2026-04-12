@@ -741,6 +741,11 @@ class OrchestratorAgent:
         return "FeatureImplementationTask"
 
     def get_handler_for_task(self, task_type: str) -> str:
+        # @synapse:rule: Zero-LLM Routing. Fast classify stack via 64d coarse Matryoshka filter.
+        fast_stack = self.fast_classify_stack(task_type)
+        if fast_stack:
+            return fast_stack
+
         if self.orchestrator_engine_stub is not None:
             try:
                 request = orchestration_engine_pb2.RouteTaskRequest(task_description=task_type)
