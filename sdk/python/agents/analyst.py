@@ -26,6 +26,11 @@ except ImportError:
 
 from llm import LLMService
 from orchestrator import OrchestratorAgent
+import re
+
+# Module-level pre-compiled regex objects for optimize_prompt performance
+_MULTI_SPACE_RE = re.compile(r' {2,}')
+_MULTI_NEWLINE_RE = re.compile(r'\n{3,}')
 
 # Define Strict Namespaces
 SWARM = "http://swarm.os/ontology/"
@@ -238,23 +243,22 @@ class AnalystAgent:
             except Exception as e:
                 print(f"⚠️ Error in Rust Analyst microservice OptimizePrompt, falling back to legacy Python: {e}")
 
-        import re
+        # @synapse:rule Prioritize fast-path string manipulation (lstrip) and pre-compiled regex over compiling regex inside loops to avoid CPU latency bottlenecks when processing large textual prompts.
         # Collapse multiple spaces into one, but preserve leading spaces (indentation)
         lines = prompt.split('\n')
         optimized_lines = []
         for line in lines:
-            # Match leading whitespace (spaces and tabs)
-            match = re.match(r'^([ \t]*)', line)
-            leading_whitespace = match.group(1) if match else ''
-
-            # Collapse spaces in the rest of the line
-            rest_of_line = line[len(leading_whitespace):]
-            content = re.sub(r' {2,}', ' ', rest_of_line)
+            stripped = line.lstrip(' \t')
+            if not stripped:
+                optimized_lines.append(line)
+                continue
+            leading_whitespace = line[:len(line) - len(stripped)]
+            content = _MULTI_SPACE_RE.sub(' ', stripped)
             optimized_lines.append(leading_whitespace + content)
 
         # Rejoin and collapse 3+ newlines into 2
         optimized = '\n'.join(optimized_lines)
-        return re.sub(r'\n{3,}', '\n\n', optimized).strip()
+        return _MULTI_NEWLINE_RE.sub('\n\n', optimized).strip()
 
     def generate_golden_rule(self, role, note, count, stack):
         # Clean Role for Prompt (it's a URI)
