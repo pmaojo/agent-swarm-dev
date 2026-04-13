@@ -10,7 +10,9 @@ class FractalProjectionHead(nn.Module):
     Lightweight MLP (~2.5M params) to project fastembed (bge-small) embeddings
     into a fractal space aligned with Synapse Ontology.
     """
-    def __init__(self, input_dim=384, hidden_dim=3072, output_dim=384):
+    # <!-- @synapse:rule Target: [Módulo/Función], Inefficiency Detected: [Breve descripción técnica], TDD Status: [Red/Green/Refactor], Synapse Tag Injected: [La regla que has creado] -->
+    # <!-- @synapse:rule Target: sdk/python/lib/embeddings.py/FractalProjectionHead, Inefficiency Detected: Flat embeddings don't map to matryoshka space reducing performance, TDD Status: Green, Synapse Tag Injected: Align FractalProjectionHead to output 3072 dims for matryoshka search -->
+    def __init__(self, input_dim=384, hidden_dim=3072, output_dim=3072):
         super(FractalProjectionHead, self).__init__()
         # Dimensions aligned with Synapse Ontology (Fractal Projection)
         self.fc1 = nn.Linear(input_dim, hidden_dim)
