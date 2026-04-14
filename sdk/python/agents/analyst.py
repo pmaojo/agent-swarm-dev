@@ -227,6 +227,7 @@ class AnalystAgent:
         inline spaces and excessive newlines while preserving indentation to avoid
         corrupting code or stack traces.
         """
+        # <!-- @synapse:rule Target: [AnalystAgent/optimize_prompt] Inefficiency Detected: [Uso de expresiones regulares costosas dentro de un bucle para limpiar espacios] TDD Status: [Green] Synapse Tag Injected: [Optimización de latencia en procesamiento de strings priorizando split y join sobre expresiones regulares en bucles] -->
         # @synapse:rule Optimize prompts before LLM submission to conserve tokens while preserving code formatting.
         if self.analyst_stub is not None:
             try:
@@ -239,22 +240,27 @@ class AnalystAgent:
                 print(f"⚠️ Error in Rust Analyst microservice OptimizePrompt, falling back to legacy Python: {e}")
 
         import re
-        # Collapse multiple spaces into one, but preserve leading spaces (indentation)
+        # Optimize prompt parsing using fast-path string manipulations and module-level compiled regex
+        # Use a global module-level compiled regex directly if possible, or define one cleanly.
+        global _MULTI_NEWLINE_RE
+        if '_MULTI_NEWLINE_RE' not in globals():
+            _MULTI_NEWLINE_RE = re.compile(r'\n{3,}')
+
         lines = prompt.split('\n')
         optimized_lines = []
         for line in lines:
-            # Match leading whitespace (spaces and tabs)
-            match = re.match(r'^([ \t]*)', line)
-            leading_whitespace = match.group(1) if match else ''
+            stripped = line.lstrip(' \t')
+            leading_whitespace = line[:len(line) - len(stripped)]
 
-            # Collapse spaces in the rest of the line
-            rest_of_line = line[len(leading_whitespace):]
-            content = re.sub(r' {2,}', ' ', rest_of_line)
+            # Collapse spaces in the rest of the line while preserving trailing spaces behavior as before
+            # The old behavior `re.sub(r' {2,}', ' ', rest_of_line)` preserves single trailing spaces if any
+            content = ' '.join(stripped.split())
+            if stripped.endswith(' ') and not content.endswith(' '):
+                content += ' '
             optimized_lines.append(leading_whitespace + content)
 
-        # Rejoin and collapse 3+ newlines into 2
         optimized = '\n'.join(optimized_lines)
-        return re.sub(r'\n{3,}', '\n\n', optimized).strip()
+        return _MULTI_NEWLINE_RE.sub('\n\n', optimized).strip()
 
     def generate_golden_rule(self, role, note, count, stack):
         # Clean Role for Prompt (it's a URI)
