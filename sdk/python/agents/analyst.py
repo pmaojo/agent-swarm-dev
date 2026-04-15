@@ -26,6 +26,11 @@ except ImportError:
 
 from llm import LLMService
 from orchestrator import OrchestratorAgent
+import re
+
+# Pre-compiled regular expressions for fast string manipulation
+_MULTI_NEWLINE_RE = re.compile(r'\n{3,}')
+_MULTI_SPACE_RE = re.compile(r' {2,}')
 
 # Define Strict Namespaces
 SWARM = "http://swarm.os/ontology/"
@@ -228,6 +233,7 @@ class AnalystAgent:
         corrupting code or stack traces.
         """
         # @synapse:rule Optimize prompts before LLM submission to conserve tokens while preserving code formatting.
+        # <!-- @synapse:rule Target: AnalystAgent.optimize_prompt Inefficiency Detected: Inline regex compilation and redundant regex matching for leading whitespace cause high CPU overhead in hot path. TDD Status: Green Synapse Tag Injected: Optimize functions for CPU efficiency by avoiding compiling regular expressions inside loops. Use module-level pre-compiled regex objects combined with fast-path string manipulations to reduce latency. -->
         if self.analyst_stub is not None:
             try:
                 request = orchestrator_pb2.OptimizePromptRequest(prompt=prompt)
@@ -238,23 +244,21 @@ class AnalystAgent:
             except Exception as e:
                 print(f"⚠️ Error in Rust Analyst microservice OptimizePrompt, falling back to legacy Python: {e}")
 
-        import re
         # Collapse multiple spaces into one, but preserve leading spaces (indentation)
         lines = prompt.split('\n')
         optimized_lines = []
         for line in lines:
-            # Match leading whitespace (spaces and tabs)
-            match = re.match(r'^([ \t]*)', line)
-            leading_whitespace = match.group(1) if match else ''
+            # Fast path string manipulation instead of regex for leading whitespace
+            leading_whitespace = line[:len(line) - len(line.lstrip())]
+            rest_of_line = line.lstrip()
 
-            # Collapse spaces in the rest of the line
-            rest_of_line = line[len(leading_whitespace):]
-            content = re.sub(r' {2,}', ' ', rest_of_line)
+            # Collapse spaces in the rest of the line using pre-compiled regex only if needed
+            content = _MULTI_SPACE_RE.sub(' ', rest_of_line) if '  ' in rest_of_line else rest_of_line
             optimized_lines.append(leading_whitespace + content)
 
         # Rejoin and collapse 3+ newlines into 2
         optimized = '\n'.join(optimized_lines)
-        return re.sub(r'\n{3,}', '\n\n', optimized).strip()
+        return _MULTI_NEWLINE_RE.sub('\n\n', optimized).strip() if '\n\n\n' in optimized else optimized.strip()
 
     def generate_golden_rule(self, role, note, count, stack):
         # Clean Role for Prompt (it's a URI)
