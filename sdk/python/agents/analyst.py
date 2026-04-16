@@ -26,6 +26,11 @@ except ImportError:
 
 from llm import LLMService
 from orchestrator import OrchestratorAgent
+import re
+
+# @synapse:rule Target: AnalystAgent.optimize_prompt Inefficiency Detected: Uncompiled regexes and slow string parsing in a loop TDD Status: Green Synapse Tag Injected: Use pre-compiled regex and fast-path manipulations for high-frequency string operations.
+_MULTI_SPACE_RE = re.compile(r' {2,}')
+_MULTI_NEWLINE_RE = re.compile(r'\n{3,}')
 
 # Define Strict Namespaces
 SWARM = "http://swarm.os/ontology/"
@@ -238,23 +243,26 @@ class AnalystAgent:
             except Exception as e:
                 print(f"⚠️ Error in Rust Analyst microservice OptimizePrompt, falling back to legacy Python: {e}")
 
-        import re
         # Collapse multiple spaces into one, but preserve leading spaces (indentation)
         lines = prompt.split('\n')
         optimized_lines = []
         for line in lines:
-            # Match leading whitespace (spaces and tabs)
-            match = re.match(r'^([ \t]*)', line)
-            leading_whitespace = match.group(1) if match else ''
+            # Fast path string manipulation
+            stripped = line.lstrip()
+            if not stripped:
+                optimized_lines.append(line)
+                continue
 
-            # Collapse spaces in the rest of the line
-            rest_of_line = line[len(leading_whitespace):]
-            content = re.sub(r' {2,}', ' ', rest_of_line)
+            leading_len = len(line) - len(stripped)
+            leading_whitespace = line[:leading_len]
+
+            # Collapse spaces in the rest of the line using pre-compiled regex
+            content = _MULTI_SPACE_RE.sub(' ', stripped)
             optimized_lines.append(leading_whitespace + content)
 
-        # Rejoin and collapse 3+ newlines into 2
+        # Rejoin and collapse 3+ newlines into 2 using pre-compiled regex
         optimized = '\n'.join(optimized_lines)
-        return re.sub(r'\n{3,}', '\n\n', optimized).strip()
+        return _MULTI_NEWLINE_RE.sub('\n\n', optimized).strip()
 
     def generate_golden_rule(self, role, note, count, stack):
         # Clean Role for Prompt (it's a URI)
