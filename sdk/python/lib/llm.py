@@ -31,13 +31,13 @@ if SDK_PYTHON_PATH not in sys.path:
 
 try:
     from agents.synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
-    from agents.synapse_proto import orchestration_engine_pb2, orchestration_engine_pb2_grpc
+    from agents.synapse_proto import orchestrator_pb2, orchestrator_pb2_grpc
 except ImportError:
     logger.warning("⚠️  Warning: Could not import Synapse protobufs. Budgeting disabled.")
     semantic_engine_pb2 = None
     semantic_engine_pb2_grpc = None
-    orchestration_engine_pb2 = None
-    orchestration_engine_pb2_grpc = None
+    orchestrator_pb2 = None
+    orchestrator_pb2_grpc = None
 
 # --- Constants ---
 # Pricing per 1K tokens (approximate for GPT-4o)
@@ -60,11 +60,6 @@ class LLMService:
         load_dotenv(dotenv_path)
         self.mock_mode = os.getenv("MOCK_LLM", "false").lower() == "true"
 
-        # Rust LLM Gateway Microservice Configuration
-        self.llm_gateway_channel = None
-        self.llm_gateway_stub = None
-        if orchestration_engine_pb2_grpc:
-            self.connect_llm_gateway_service()
 
         self.api_key = os.getenv("GEMINI_API_KEY") or os.getenv("OPENAI_API_KEY")
         self.kilo_key = os.getenv("KILO_GATEWAY_API_KEY")
@@ -95,6 +90,7 @@ class LLMService:
         self.grpc_host = os.getenv("SYNAPSE_GRPC_HOST", "localhost")
         self.grpc_port = int(os.getenv("SYNAPSE_GRPC_PORT", "50051"))
         self.max_daily_budget = float(os.getenv("MAX_DAILY_BUDGET", "10.0")) # Default $10
+        self.connect_llm_gateway_service()
         self.channel = None
         self.stub = None
         self.namespace = "default"
@@ -343,13 +339,9 @@ class LLMService:
 
     def connect_llm_gateway_service(self):
         """Connect to the new Rust-based LLM Gateway microservice."""
-        try:
-            self.llm_gateway_channel = grpc.insecure_channel("localhost:50056")
-            self.llm_gateway_stub = orchestration_engine_pb2_grpc.LlmGatewayServiceStub(self.llm_gateway_channel)
-            print("✅ Connected to Rust LLM Gateway microservice stub at localhost:50056")
-        except Exception as e:
-            print(f"⚠️ Error initializing Rust LLM Gateway microservice stub: {e}. Falling back to legacy Python logic.")
-            self.llm_gateway_stub = None
+        self.llm_gateway_channel = grpc.insecure_channel("localhost:50056")
+        self.llm_gateway_stub = orchestrator_pb2_grpc.LlmGatewayServiceStub(self.llm_gateway_channel)
+        print("✅ Connected to Rust LLM Gateway microservice stub at localhost:50056")
 
     @retry(
         wait=wait_random_exponential(min=1, max=60),
@@ -360,97 +352,16 @@ class LLMService:
         """
         Generate a completion using the configured LLM, with Budget Enforcement.
         """
-        if self.llm_gateway_stub is not None and orchestration_engine_pb2 is not None:
-            try:
-                request = orchestration_engine_pb2.LlmCompletionRequest(
-                    prompt=prompt,
-                    model=self.model,
-                    system_prompt=system_prompt,
-                    json_mode=json_mode,
-                    tools_json=json.dumps(tools) if tools else "",
-                    messages_json=json.dumps(messages) if messages else ""
-                )
-                # Apply a strict timeout so we don't hang if the Rust server isn't up
-                response = self.llm_gateway_stub.Complete(request, timeout=1.5)
-                if response.completion:
-                    if json_mode and not self.mock_mode:
-                        # Dummy parse for the sake of completion fallback test.
-                        pass
-                    return response.completion
-            except grpc.RpcError as e:
-                pass # expected if not running
-            except Exception as e:
-                logger.warning(f"⚠️ Error with Rust LLM Gateway microservice: {e}. Falling back to legacy Python logic.")
-
-        if self.mock_mode:
-            logger.info(f"🤖 [MOCK LLM] Prompt: {prompt[:50]}...")
-            return '{"status": "success", "mock": true}' if json_mode else "Mock LLM Response: Task Completed."
-
-        self.check_budget()
-
-        if messages is None:
-            messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}]
-
-        # LiteLLM uses 'response_format' similar to OpenAI
-        response_format = {"type": "json_object"} if json_mode else None
-        
-        cache_key = self._get_cache_key(messages, json_mode, tools, tool_choice)
-        cached_result = self._check_cache(cache_key)
-        if cached_result:
-            return cached_result
-
-        try:
-            target_model = self._resolve_model_name(self.model)
-            api_key = self.api_key
-            api_base = None
-
-            # Handle Kilo Gateway specifics
-            if self.model.startswith("kilo/"):
-                api_key = self.kilo_key
-                api_base = "https://api.kilo.ai/api/gateway"
-
-            processed_fallbacks = self._prepare_fallbacks()
-            response_format = {"type": "json_object"} if json_mode else None
-
-            # Use synchronous completion to avoid loop issues in threads
-            response = litellm.completion(
-                model=target_model,
-                messages=messages,
-                api_key=api_key,
-                api_base=api_base,
-                response_format=response_format,
-                tools=tools,
-                temperature=0.7,
-                max_tokens=500,
-                fallbacks=processed_fallbacks
-            )
-
-            if response.usage:
-                self.log_spend(response.usage.get("prompt_tokens", 0), response.usage.get("completion_tokens", 0))
-
-            result = response.choices[0].message
-            
-            # Handle "thinking" models (like MiniMax M2.5) that return thoughts in 'reasoning'
-            final_content = result.content or ""
-            if not final_content and hasattr(result, "reasoning") and result.reasoning:
-                final_content = result.reasoning
-            elif not final_content and isinstance(result, dict) and result.get("reasoning"):
-                final_content = result.get("reasoning")
-
-            if not (tools and getattr(result, "tool_calls", None)):
-                result = final_content
-
-            # Store in cache
-            self._cache[cache_key] = result
-            if len(self._cache) > self._cache_max_size:
-                self._cache.popitem(last=False)
-
-            return result
-        except BudgetExceededException:
-            raise # Propagate up
-        except Exception as e:
-            logger.error(f"Error calling LLM via LiteLLM: {e}")
-            raise
+        request = orchestrator_pb2.LlmCompletionRequest(
+            prompt=prompt,
+            model=self.model,
+            system_prompt=system_prompt,
+            json_mode=json_mode,
+            tools_json=json.dumps(tools) if tools else "",
+            messages_json=json.dumps(messages) if messages else ""
+        )
+        response = self.llm_gateway_stub.Complete(request, timeout=1.5)
+        return response.completion
 
     def get_structured_completion(self, prompt: str, system_prompt: str) -> Dict[str, Any]:
         """
