@@ -19,10 +19,12 @@ sys.path.insert(0, os.path.join(SDK_PYTHON_PATH, "agents"))
 
 try:
     from synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
-    from synapse_proto import orchestration_engine_pb2, orchestration_engine_pb2_grpc
+    from synapse_proto import orchestrator_pb2, orchestrator_pb2_grpc
+    from synapse_proto import orchestrator_pb2, orchestrator_pb2_grpc
 except ImportError:
     from agents.synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
-    from agents.synapse_proto import orchestration_engine_pb2, orchestration_engine_pb2_grpc
+    from agents.synapse_proto import orchestrator_pb2, orchestrator_pb2_grpc
+    from agents.synapse_proto import orchestrator_pb2, orchestrator_pb2_grpc
 
 from llm import LLMService
 from orchestrator import OrchestratorAgent
@@ -42,10 +44,8 @@ class AnalystAgent:
         self.llm = LLMService()
         self.channel = None
         self.stub = None
-
-        # New Rust microservice for Analyst logic
-        self.analyst_channel = None
         self.analyst_stub = None
+
 
         self.connect()
         self.connect_analyst_service()
@@ -56,13 +56,9 @@ class AnalystAgent:
 
     def connect_analyst_service(self):
         """Connect to the new Rust-based Analyst microservice."""
-        try:
-            self.analyst_channel = grpc.insecure_channel("localhost:50055")
-            self.analyst_stub = orchestration_engine_pb2_grpc.AnalystServiceStub(self.analyst_channel)
-            print("✅ Analyst connected to Rust microservice stub at localhost:50055")
-        except Exception as e:
-            print(f"⚠️ Error initializing Rust Analyst microservice stub: {e}. Falling back to legacy Python logic.")
-            self.analyst_stub = None
+        self.analyst_channel = grpc.insecure_channel("localhost:50055")
+        self.analyst_stub = orchestrator_pb2_grpc.AnalystServiceStub(self.analyst_channel)
+        print("✅ Analyst connected to Rust microservice stub at localhost:50055")
 
     def connect(self):
         try:
@@ -138,88 +134,27 @@ class AnalystAgent:
         return self.query_graph(query)
 
     def cluster_failures(self, failures):
-        if self.analyst_stub is not None:
-            try:
-                failure_infos = []
-                for f in failures:
-                    exec_id = f.get("?execId", f.get("execId", ""))
-                    note = f.get("?note", f.get("note", ""))
-                    role = f.get("?role", f.get("role", ""))
-                    stack = f.get("?stack", f.get("stack", "python"))
-
-                    if isinstance(exec_id, dict): exec_id = exec_id.get('value', '')
-                    if isinstance(note, dict): note = note.get('value', '')
-                    if isinstance(role, dict): role = role.get('value', '')
-                    if isinstance(stack, dict): stack = stack.get('value', 'python')
-
-                    failure_infos.append(orchestration_engine_pb2.FailureInfo(
-                        exec_id=str(exec_id), note=str(note), role=str(role), stack=str(stack)
-                    ))
-
-                request = orchestration_engine_pb2.ClusterRequest(failures=failure_infos)
-                response = self.analyst_stub.ClusterFailures(request, timeout=2.0)
-                if response.json_clusters and response.json_clusters != "{}":
-                    try:
-                        return json.loads(response.json_clusters)
-                    except json.JSONDecodeError:
-                        pass
-            except grpc.RpcError:
-                pass
-            except Exception as e:
-                print(f"⚠️ Error clustering via Rust microservice: {e}. Falling back to Python.")
-
-        clusters = defaultdict(list)
-        decoder = json.JSONDecoder()
-
+        failure_infos = []
         for f in failures:
-            role = f.get('role') or f.get('?role')
-            note = f.get('note') or f.get('?note')
-            execId = f.get('execId') or f.get('?execId')
-            stack = f.get('stack') or f.get('?stack') or "unknown"
+            exec_id = f.get("?execId", f.get("execId", ""))
+            note = f.get("?note", f.get("note", ""))
+            role = f.get("?role", f.get("role", ""))
+            stack = f.get("?stack", f.get("stack", "python"))
 
-            # Note is a literal, check if it's a JSON string
-            if isinstance(note, dict):
-                note = note.get('value', '')
+            if isinstance(exec_id, dict): exec_id = exec_id.get('value', '')
+            if isinstance(note, dict): note = note.get('value', '')
+            if isinstance(role, dict): role = role.get('value', '')
+            if isinstance(stack, dict): stack = stack.get('value', 'python')
 
-            # Stack might be a dict if it came from JSON results with type info
-            if isinstance(stack, dict):
-                stack = stack.get('value', 'unknown')
+            failure_infos.append(orchestrator_pb2.FailureInfo(
+                exec_id=str(exec_id), note=str(note), role=str(role), stack=str(stack)
+            ))
 
-            # Role might be a dict (URI)
-            if isinstance(role, dict):
-                role = role.get('value', '')
-
-            try:
-                # Remove surrounding quotes from JSON string if double-encoded
-                if note.startswith('"') and note.endswith('"') and len(note) > 1:
-                     note = note[1:-1]
-
-                # Stack usually comes as "python" (quoted)
-                if stack.startswith('"') and stack.endswith('"'):
-                    stack = stack[1:-1]
-
-                # @synapse:optimization Use raw_decode to avoid full parsing of large log arrays
-                # @synapse:fix Ensure note is hashable (handle nested lists/dicts)
-                if note.startswith('[') and note.endswith(']'):
-                   try:
-                       # Skip the opening bracket '[' at index 0, start parsing at index 1
-                       parsed_val, _ = decoder.raw_decode(note, 1)
-
-                       # If valid parsed value, use it.
-                       # Ensure it's hashable for clustering keys.
-                       if isinstance(parsed_val, (list, dict)):
-                           note = str(parsed_val)
-                       else:
-                           note = parsed_val
-                   except json.JSONDecodeError:
-                       pass
-            except:
-                pass
-
-            # Cluster by (Role, Note, Stack)
-            key = (role, note, stack)
-            clusters[key].append(execId)
-        return clusters
+        request = orchestrator_pb2.ClusterRequest(failures=failure_infos)
+        response = self.analyst_stub.ClusterFailures(request, timeout=2.0)
+        if response.json_clusters and response.json_clusters != "{}":
+            return json.loads(response.json_clusters)
+        return {}
 
     def optimize_prompt(self, prompt: str) -> str:
         """
@@ -228,64 +163,17 @@ class AnalystAgent:
         corrupting code or stack traces.
         """
         # @synapse:rule Optimize prompts before LLM submission to conserve tokens while preserving code formatting.
-        if self.analyst_stub is not None:
-            try:
-                request = orchestrator_pb2.OptimizePromptRequest(prompt=prompt)
-                response = self.analyst_stub.OptimizePrompt(request, timeout=1.0)
-                return response.optimized_prompt
-            except grpc.RpcError as e:
-                pass
-            except Exception as e:
-                print(f"⚠️ Error in Rust Analyst microservice OptimizePrompt, falling back to legacy Python: {e}")
-
-        import re
-        # Collapse multiple spaces into one, but preserve leading spaces (indentation)
-        lines = prompt.split('\n')
-        optimized_lines = []
-        for line in lines:
-            # Match leading whitespace (spaces and tabs)
-            match = re.match(r'^([ \t]*)', line)
-            leading_whitespace = match.group(1) if match else ''
-
-            # Collapse spaces in the rest of the line
-            rest_of_line = line[len(leading_whitespace):]
-            content = re.sub(r' {2,}', ' ', rest_of_line)
-            optimized_lines.append(leading_whitespace + content)
-
-        # Rejoin and collapse 3+ newlines into 2
-        optimized = '\n'.join(optimized_lines)
-        return re.sub(r'\n{3,}', '\n\n', optimized).strip()
+        request = orchestrator_pb2.OptimizePromptRequest(prompt=prompt)
+        response = self.analyst_stub.OptimizePrompt(request, timeout=1.0)
+        return response.optimized_prompt
 
     def generate_golden_rule(self, role, note, count, stack):
         # Clean Role for Prompt (it's a URI)
         role_name = role.split('/')[-1]
 
-        if self.analyst_stub is not None:
-            try:
-                request = orchestration_engine_pb2.RuleRequest(role=role_name, note=note, count=count, stack=stack)
-                response = self.analyst_stub.GenerateGoldenRules(request, timeout=3.0)
-                if response.rule:
-                    return response.rule
-            except grpc.RpcError:
-                pass
-            except Exception as e:
-                print(f"⚠️ Error generating rule via Rust microservice: {e}. Falling back to Python.")
-
-        if self.mock_llm:
-            print(f"⚠️  Using MOCK LLM response for role: {role_name} (Stack: {stack})")
-            return f"Always follow {stack} best practices."
-
-        prompt = f"""
-        You are a Data Analyst for an AI Swarm.
-        Identify a pattern in these {count} failures for the role '{role_name}' working with stack '{stack}'.
-        The failure note is: "{note}"
-
-        Create a concise "Golden Rule" (HardConstraint) to prevent this in the future.
-        The rule should be a short, imperative sentence (e.g., "Always verify hook order").
-        Return ONLY the rule text.
-        """
-        optimized_prompt = self.optimize_prompt(prompt)
-        return self.llm.completion(optimized_prompt).strip().strip('"')
+        request = orchestrator_pb2.RuleRequest(role=role_name, note=note, count=count, stack=stack)
+        response = self.analyst_stub.GenerateGoldenRules(request, timeout=3.0)
+        return response.rule
 
     def validate_rule(self, rule_text: str, stack: str) -> bool:
         """Run sanity checks (dry-run) to validate the new rule."""
