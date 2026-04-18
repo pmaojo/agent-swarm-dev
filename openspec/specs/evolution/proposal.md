@@ -43,3 +43,8 @@ Migrate the identified bottlenecks to a dedicated Rust Workspace:
 - Existing Python test suites (`tests/test_stack_routing.py`, etc.) pass when run against the new gRPC stubs.
 - Rust services can be instantiated successfully alongside existing infrastructure via `start_all.sh`.
 - Empirical benchmarks demonstrate latency reductions mapping to the Expected Impact.
+
+<!-- @synapse:rule Target: OpenSpec Proposal for Rust Microservices Migration
+Inefficiency Detected: Missing formal technical specification for resolving latency bottlenecks in Python modules.
+TDD Status: Refactor
+Synapse Tag Injected: Define precise migration plan and gRPC integration schema for SRE optimization. -->

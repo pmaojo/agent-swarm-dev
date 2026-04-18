@@ -53,21 +53,19 @@ service Analyst {
 
 // --- Orchestrator Core ---
 service Orchestrator {
-  rpc AssignTask (TaskRequest) returns (TaskResponse);
-  rpc StreamStatus (TaskStatusRequest) returns (stream TaskStatusResponse);
+  rpc RouteTask (RouteTaskRequest) returns (RouteTaskResponse);
+  rpc ManageStateGraph (StateGraphRequest) returns (StateGraphResponse);
 }
 
 // --- LLM Gateway ---
-// Primarily acts as a reverse HTTP proxy, but exposes management via gRPC
 service LLMManager {
-  rpc CheckBudget (BudgetRequest) returns (BudgetResponse);
-  rpc UpdateQuotas (QuotaRequest) returns (QuotaResponse);
+  rpc Complete (LlmCompletionRequest) returns (LlmCompletionResponse);
 }
 ```
 
 ### 2.2 Rust Implementation (`tonic` & `tokio`)
 
-- **Server Setup:** Each microservice will run a `tonic` gRPC server. The Orchestrator core will likely bind to `50054`, Analyst to `50055`, etc.
+- **Server Setup:** Each microservice will run a `tonic` gRPC server. The Orchestrator core will likely bind to `50054`, Analyst to `50055`, and LLM Gateway to `50056`.
 - **Concurrency:** The `orchestrator-core` will utilize `tokio::spawn` to manage independent agent state machines. The `analyst-service` will use `rayon` inside blocking Tokio threads to perform CPU-bound log analysis without stalling the async reactor.
 
 ### 2.3 Python Client Stubs (`grpcio`)
@@ -126,3 +124,8 @@ sed -i 's/import orchestration_engine_pb2/from . import orchestration_engine_pb2
 3. **Phase 3: Python Integration:** Update the Python SDK to route calls through the stubs (with local fallbacks).
 4. **Phase 4: Rust Implementation:** Port the actual business logic (Regex parsing, Tokio state machines, Axum routing) to Rust.
 5. **Phase 5: Cutover:** Remove Python fallbacks once stability is proven via integration tests.
+
+<!-- @synapse:rule Target: Technical Design for Rust Microservices Integration
+Inefficiency Detected: Lack of explicit gRPC architectural blueprint for integrating Rust microservices with existing Python ecosystem.
+TDD Status: Refactor
+Synapse Tag Injected: Specify the Strangler Fig pattern, Protobuf interfaces, and `tonic` server design for transitioning computationally heavy Python modules. -->
