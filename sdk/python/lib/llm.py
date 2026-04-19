@@ -63,10 +63,11 @@ class LLMService:
 
         self.api_key = os.getenv("GEMINI_API_KEY") or os.getenv("OPENAI_API_KEY")
         self.kilo_key = os.getenv("KILO_GATEWAY_API_KEY")
-        # Use LLM_MODEL from env, which should be gemini/gemini-3-flash-preview
-        self.model = os.getenv("LLM_MODEL", "gemini/gemini-3-flash-preview")
+        # Use LLM_MODEL from env, which should be gemini/gemini-2.0-flash-lite-001
+        self.model = os.getenv("LLM_MODEL", "gemini/gemini-2.0-flash-lite-001")
         # Configure Fallbacks (Ordered by preference)
         self.fallback_models = [
+            "gemini/gemini-2.0-flash-lite-001",
             "gemini/gemini-1.5-flash-latest",
             "gemini/gemini-2.0-flash",
             "openrouter/google/gemini-2.0-flash-001"
@@ -318,10 +319,11 @@ class LLMService:
             # Use 3.0, 2.5 or 2.0 if specified or default to 3
             if "flash" in res_m and "-8b" not in res_m:
                  # Prioritize latest versions per user request
-                 if "3" in res_m: res_m = "gemini/gemini-3-flash-preview"
+                 if "lite" in res_m: res_m = "gemini/gemini-2.0-flash-lite-001"
+                 elif "3" in res_m: res_m = "gemini/gemini-3-flash-preview"
                  elif "2.5" in res_m: res_m = "gemini/gemini-2.5-flash"
                  elif "2.0" in res_m: res_m = "gemini/gemini-2.0-flash"
-                 else: res_m = "gemini/gemini-3-flash-preview" # Upgrade default to Gemini 3
+                 else: res_m = "gemini/gemini-2.0-flash-lite-001" # Upgrade default to cheapest
             return res_m
         return m
 
