@@ -7,6 +7,7 @@ from fastembed import TextEmbedding
 
 class FractalProjectionHead(nn.Module):
     """
+    @synapse:rule Modify geometry to align fastembed embeddings into a fractal space with Synapse Ontology.
     Lightweight MLP (~2.5M params) to project fastembed (bge-small) embeddings
     into a fractal space aligned with Synapse Ontology.
     """

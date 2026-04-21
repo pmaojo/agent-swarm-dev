@@ -13,7 +13,13 @@ from sdk.python.lib.embeddings import FastEmbedFractal
 def main():
     host = os.environ.get("SYNAPSE_GRPC_HOST", "localhost")
     port = os.environ.get("SYNAPSE_GRPC_PORT", "50051")
-    channel = grpc.insecure_channel(f"{host}:{port}")
+
+    # Configure gRPC channel to handle large payloads (e.g., 50MB) for batch ingesting
+    options = [
+        ('grpc.max_send_message_length', 50 * 1024 * 1024),
+        ('grpc.max_receive_message_length', 50 * 1024 * 1024)
+    ]
+    channel = grpc.insecure_channel(f"{host}:{port}", options=options)
     stub = semantic_engine_pb2_grpc.SemanticEngineStub(channel)
 
     print(f"Connecting to Semantic Engine on {host}:{port}...")
