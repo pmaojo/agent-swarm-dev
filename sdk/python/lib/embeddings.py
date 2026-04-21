@@ -7,8 +7,8 @@ from fastembed import TextEmbedding
 
 class FractalProjectionHead(nn.Module):
     """
-    Lightweight MLP (~2.5M params) to project fastembed (bge-small) embeddings
-    into a fractal space aligned with Synapse Ontology.
+    @synapse:rule Lightweight MLP (~2.5M params) to project fastembed (bge-small)
+    embeddings into a fractal space aligned with Synapse Ontology.
     """
     def __init__(self, input_dim=384, hidden_dim=3072, output_dim=384):
         super(FractalProjectionHead, self).__init__()

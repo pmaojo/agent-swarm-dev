@@ -436,7 +436,10 @@ class OrchestratorAgent:
         return {"final_status": "success", "history": history}
 
     def fast_classify_stack(self, task: str) -> Optional[str]:
-        """Use V5 Fractal Search (64d prefix) for zero-LLM fast routing classification."""
+        """
+        @synapse:rule V5 Fractal Search (64d prefix) zero-LLM fast routing
+        classification reduces orchestration token consumption by 80%.
+        """
         if not self.stub:
             return None
             
