@@ -1,20 +1,20 @@
-# Technical Design: Rust Microservices & Orchestrator gRPC Integration
+# Diseño Técnico: Microservicios en Rust e Integración gRPC del Orchestrator
 
-## 1. Architecture Overview
+## 1. Visión General de la Arquitectura
 
-As outlined in the OpenSpec Migration Proposal, the computationally heavy and latency-sensitive Python modules (Analyst, Orchestrator Core, LLM Gateway) will be replaced with high-performance Rust microservices. This design document specifies the integration layer, focusing on how the remaining Python ecosystem will communicate with the new Rust backbone via gRPC.
+Como se describe en la Propuesta de Migración de OpenSpec, los módulos de Python computacionalmente pesados y sensibles a la latencia (Analyst, Orchestrator Core, LLM Gateway) serán reemplazados por microservicios en Rust de alto rendimiento. Este documento de diseño especifica la capa de integración, centrándose en cómo el ecosistema restante de Python se comunicará con la nueva columna vertebral en Rust a través de gRPC.
 
-### System Diagram
+### Diagrama del Sistema
 
 ```
-[ Python Agents / CLI ]
+[ Agentes de Python / CLI ]
         │
         ▼ (gRPC)
 ┌───────────────────────┐
 │ llm-gateway (Rust)    │ ──► [ OpenAI / LiteLLM API ]
-│ (Axum/Hyper proxy)    │
+│ (Proxy Axum/Hyper)    │
 └────────┬──────────────┘
-         │ (Async updates)
+         │ (Actualizaciones asíncronas)
          ▼
 [ Synapse Graph DB ] ◄─────┐
          ▲                 │
@@ -24,22 +24,22 @@ As outlined in the OpenSpec Migration Proposal, the computationally heavy and la
 │ (Rust / Tokio)        │  │
 └────────┬──────────────┘  │
          ▲                 │
-         │ (gRPC streams)  │
+         │ (Flujos gRPC)   │
 ┌────────┴──────────────┐  │
 │ analyst-service       │──┘
 │ (Rust / Rayon)        │
 └───────────────────────┘
 ```
 
-## 2. gRPC Integration Strategy
+## 2. Estrategia de Integración gRPC
 
-The migration will utilize a "Strangler Fig" pattern. We will define Protobuf (`.proto`) interfaces for the existing Python class methods, implement the servers in Rust (using `tonic`), and swap the Python class implementations to become gRPC clients (stubs).
+La migración utilizará el patrón "Strangler Fig" (Higuera Estranguladora). Definiremos interfaces Protobuf (`.proto`) para los métodos de clase de Python existentes, implementaremos los servidores en Rust (usando `tonic`), e intercambiaremos las implementaciones de clase en Python para convertirlas en clientes gRPC (stubs).
 
-### 2.1 Interface Definitions (`.proto`)
+### 2.1 Definición de Interfaces (`.proto`)
 
-A unified `orchestration_engine.proto` will be created in the `synapse-engine/crates/orchestration-engine/proto` directory (or similar structure).
+Se creará un archivo unificado `orchestration_engine.proto` en el directorio `synapse-engine/crates/orchestration-engine/proto` (o estructura similar).
 
-**Example Service Definitions:**
+**Ejemplo de Definición de Servicios:**
 
 ```protobuf
 syntax = "proto3";
@@ -58,23 +58,23 @@ service Orchestrator {
 }
 
 // --- LLM Gateway ---
-// Primarily acts as a reverse HTTP proxy, but exposes management via gRPC
+// Actúa principalmente como proxy HTTP inverso, pero expone gestión vía gRPC
 service LLMManager {
   rpc CheckBudget (BudgetRequest) returns (BudgetResponse);
   rpc UpdateQuotas (QuotaRequest) returns (QuotaResponse);
 }
 ```
 
-### 2.2 Rust Implementation (`tonic` & `tokio`)
+### 2.2 Implementación en Rust (`tonic` & `tokio`)
 
-- **Server Setup:** Each microservice will run a `tonic` gRPC server. The Orchestrator core will likely bind to `50054`, Analyst to `50055`, etc.
-- **Concurrency:** The `orchestrator-core` will utilize `tokio::spawn` to manage independent agent state machines. The `analyst-service` will use `rayon` inside blocking Tokio threads to perform CPU-bound log analysis without stalling the async reactor.
+- **Configuración del Servidor:** Cada microservicio ejecutará un servidor gRPC `tonic`. El núcleo del Orchestrator probablemente se vinculará al puerto `50054`, el Analyst al `50055`, etc.
+- **Concurrencia:** El `orchestrator-core` utilizará `tokio::spawn` para gestionar máquinas de estado de agentes independientes. El `analyst-service` usará `rayon` dentro de hilos bloqueantes de Tokio para realizar el análisis de registros ligado a la CPU sin estancar el reactor asíncrono.
 
-### 2.3 Python Client Stubs (`grpcio`)
+### 2.3 Stubs de Clientes Python (`grpcio`)
 
-The Python codebase will be updated to use the generated `pb2` and `pb2_grpc` files.
+La base de código de Python será actualizada para usar los archivos `pb2` y `pb2_grpc` generados.
 
-**Example Python Client Update (`sdk/python/agents/orchestrator.py`):**
+**Ejemplo de Actualización de Cliente Python (`sdk/python/agents/orchestrator.py`):**
 
 ```python
 import grpc
@@ -82,7 +82,7 @@ from agents.synapse_proto import orchestration_pb2, orchestration_pb2_grpc
 
 class OrchestratorAgent:
     def __init__(self, host='localhost:50054'):
-        # Establish non-blocking connection
+        # Establecer conexión no bloqueante
         self.channel = grpc.insecure_channel(
             host,
             options=[
@@ -90,39 +90,39 @@ class OrchestratorAgent:
                 ('grpc.max_receive_message_length', 50 * 1024 * 1024),
             ]
         )
-        # Attempt connection, fallback gracefully if Rust isn't running
+        # Intentar conectar, recurrir localmente si Rust no está ejecutándose
         try:
             grpc.channel_ready_future(self.channel).result(timeout=2.0)
             self.stub = orchestration_pb2_grpc.OrchestratorStub(self.channel)
         except grpc.FutureTimeoutError:
             self.stub = None
-            print("WARNING: Rust Orchestrator unreachable, falling back to local Python logic.")
+            print("ADVERTENCIA: Orchestrator de Rust inalcanzable, recurriendo a lógica local de Python.")
 
     def assign_task(self, task_data):
         if self.stub:
             req = orchestration_pb2.TaskRequest(data=task_data)
             return self.stub.AssignTask(req)
         else:
-            # Legacy Python fallback
+            # Fallback a lógica legacy en Python
             return self._legacy_assign_task(task_data)
 ```
 
-## 3. Handling Protobuf Generation
+## 3. Manejo de la Generación de Protobuf
 
-As noted in the system memory, Python `_grpc.py` files generated by `protoc` often have relative import issues. A build script must be included to patch these:
+Como se indica en la memoria del sistema, los archivos `_grpc.py` de Python generados por `protoc` a menudo tienen problemas con importaciones relativas. Se debe incluir un script de construcción para corregirlos:
 
 ```bash
-# Generate
+# Generar
 python -m grpc_tools.protoc -I proto --python_out=sdk/python/agents/synapse_proto --grpc_python_out=sdk/python/agents/synapse_proto proto/orchestration_engine.proto
 
-# Patch imports
+# Corregir importaciones
 sed -i 's/import orchestration_engine_pb2/from . import orchestration_engine_pb2/g' sdk/python/agents/synapse_proto/orchestration_engine_pb2_grpc.py
 ```
 
-## 4. Migration Roadmap
+## 4. Hoja de Ruta de Migración
 
-1. **Phase 1: Define Contracts:** Write `.proto` files based on the input/output schemas of `AnalystAgent.cluster_failures`, `OrchestratorAgent.autonomous_loop`, and `LLMService.completion`.
-2. **Phase 2: Rust Scaffolding:** Initialize Cargo workspaces for the three services and implement mock gRPC responses.
-3. **Phase 3: Python Integration:** Update the Python SDK to route calls through the stubs (with local fallbacks).
-4. **Phase 4: Rust Implementation:** Port the actual business logic (Regex parsing, Tokio state machines, Axum routing) to Rust.
-5. **Phase 5: Cutover:** Remove Python fallbacks once stability is proven via integration tests.
+1. **Fase 1: Definición de Contratos:** Escribir los archivos `.proto` basándose en los esquemas de entrada/salida de `AnalystAgent.cluster_failures`, `OrchestratorAgent.autonomous_loop` y `LLMService.completion`.
+2. **Fase 2: Andamiaje (Scaffolding) en Rust:** Inicializar los espacios de trabajo (workspaces) de Cargo para los tres servicios e implementar respuestas gRPC de prueba (mock).
+3. **Fase 3: Integración en Python:** Actualizar el SDK de Python para enrutar las llamadas a través de los stubs (con fallbacks locales).
+4. **Fase 4: Implementación en Rust:** Portar la lógica de negocio real (análisis Regex, máquinas de estado de Tokio, enrutamiento Axum) a Rust.
+5. **Fase 5: Transición (Cutover):** Eliminar los fallbacks de Python una vez que se demuestre la estabilidad a través de pruebas de integración.
