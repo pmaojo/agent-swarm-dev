@@ -441,6 +441,7 @@ class OrchestratorAgent:
             return None
             
         # We search the graph for tech stacks that match this task semantically
+        # V5 Coarse Search explicitly passing prefix_len=64
         req = semantic_engine_pb2.HybridSearchRequest(
             query=f"Skill Nodo: {task}",
             namespace="default",
@@ -448,7 +449,7 @@ class OrchestratorAgent:
             graph_depth=0,
             mode=semantic_engine_pb2.SearchMode.VECTOR_ONLY,
             limit=3,
-            prefix_len=64  # V5 Coarse Search
+            prefix_len=64
         )
         try:
             res = self.stub.HybridSearch(req)
@@ -456,18 +457,24 @@ class OrchestratorAgent:
                 return None
 
             # Check if any of the top results looks like a stack and meets the critical threshold
-            critical_threshold = 0.8  # Critical threshold for direct assignment
+            # @synapse:rule Enrutamiento Zero-LLM
+            # Architectural change: Implemented Zero-LLM Routing in Orchestrator using 64d prefix.
+            # Tasks vector distance to a 'Skill Nodo' in 64d is computed (distance = 1.0 - r.score).
+            # If distance < 0.2 (critical_threshold), it assigns the mission directly without invoking the LLM,
+            # reducing orchestration token consumption.
+            critical_threshold = 0.2  # Critical distance threshold for direct assignment
 
             for r in res.results:
-                if r.score >= critical_threshold:
+                distance = 1.0 - r.score
+                if distance < critical_threshold:
                     uri = r.uri.lower()
                     s = uri.split("/")[-1] if "/" in uri else uri
                     for valid_s in ["python", "rust", "typescript", "javascript", "godot"]:
                         if valid_s in uri or valid_s in r.content.lower():
-                            print(f"⚡ V5 Fast Route Zero-LLM direct assignment: {valid_s} (score: {r.score:.3f} >= {critical_threshold})")
+                            print(f"⚡ V5 Fast Route Zero-LLM direct assignment: {valid_s} (distance: {distance:.3f} < {critical_threshold})")
                             return valid_s
                 else:
-                    print(f"⚠️ V5 Vector Routing score {r.score:.3f} below threshold {critical_threshold}")
+                    print(f"⚠️ V5 Vector Routing distance {distance:.3f} above threshold {critical_threshold}")
 
         except Exception as e:
             print(f"⚠️ V5 Vector Routing failed: {e}")
