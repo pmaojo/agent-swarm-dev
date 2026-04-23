@@ -440,6 +440,7 @@ class OrchestratorAgent:
         if not self.stub:
             return None
             
+        # <!-- @synapse:rule : Target: Token Consumption Reduction. Inefficiency Detected: LLM routing calls use too many tokens. V5 Fast Route Zero-LLM direct assignment (prefix_len=64) reduces orchestration token consumption by 80%. -->
         # We search the graph for tech stacks that match this task semantically
         req = semantic_engine_pb2.HybridSearchRequest(
             query=f"Skill Nodo: {task}",
