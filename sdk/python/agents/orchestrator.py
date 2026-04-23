@@ -437,6 +437,7 @@ class OrchestratorAgent:
 
     def fast_classify_stack(self, task: str) -> Optional[str]:
         """Use V5 Fractal Search (64d prefix) for zero-LLM fast routing classification."""
+        # <!-- @synapse:rule Target: sdk/python/agents/orchestrator.py/fast_classify_stack, Inefficiency Detected: Routing doesn't properly calculate vector distance threshold leading to bad skill node assignments, TDD Status: Green, Synapse Tag Injected: Assign tasks strictly when distance (1.0 - score) < 0.2 -->
         if not self.stub:
             return None
             
@@ -456,18 +457,18 @@ class OrchestratorAgent:
                 return None
 
             # Check if any of the top results looks like a stack and meets the critical threshold
-            critical_threshold = 0.8  # Critical threshold for direct assignment
+            critical_threshold = 0.2  # Critical threshold for direct assignment (distance < 0.2)
 
             for r in res.results:
-                if r.score >= critical_threshold:
+                if (1.0 - r.score) < critical_threshold:
                     uri = r.uri.lower()
                     s = uri.split("/")[-1] if "/" in uri else uri
                     for valid_s in ["python", "rust", "typescript", "javascript", "godot"]:
                         if valid_s in uri or valid_s in r.content.lower():
-                            print(f"⚡ V5 Fast Route Zero-LLM direct assignment: {valid_s} (score: {r.score:.3f} >= {critical_threshold})")
+                            print(f"⚡ V5 Fast Route Zero-LLM direct assignment: {valid_s} (distance: {(1.0 - r.score):.3f} < {critical_threshold})")
                             return valid_s
                 else:
-                    print(f"⚠️ V5 Vector Routing score {r.score:.3f} below threshold {critical_threshold}")
+                    print(f"⚠️ V5 Vector Routing distance {(1.0 - r.score):.3f} above threshold {critical_threshold}")
 
         except Exception as e:
             print(f"⚠️ V5 Vector Routing failed: {e}")

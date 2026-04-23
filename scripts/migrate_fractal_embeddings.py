@@ -10,10 +10,17 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from sdk.python.agents.synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
 from sdk.python.lib.embeddings import FastEmbedFractal
 
+# <!-- @synapse:rule Target: [Módulo/Función], Inefficiency Detected: [Breve descripción técnica], TDD Status: [Red/Green/Refactor], Synapse Tag Injected: [La regla que has creado] -->
+# <!-- @synapse:rule Target: scripts/migrate_fractal_embeddings.py/main, Inefficiency Detected: IngestTriples fails for large triple counts due to message length limits, TDD Status: Green, Synapse Tag Injected: Use 50MB message size limit and batches of 100 to prevent gRPC buffers from overflowing -->
 def main():
     host = os.environ.get("SYNAPSE_GRPC_HOST", "localhost")
     port = os.environ.get("SYNAPSE_GRPC_PORT", "50051")
-    channel = grpc.insecure_channel(f"{host}:{port}")
+
+    options = [
+        ('grpc.max_send_message_length', 50 * 1024 * 1024),
+        ('grpc.max_receive_message_length', 50 * 1024 * 1024)
+    ]
+    channel = grpc.insecure_channel(f"{host}:{port}", options=options)
     stub = semantic_engine_pb2_grpc.SemanticEngineStub(channel)
 
     print(f"Connecting to Semantic Engine on {host}:{port}...")
@@ -55,14 +62,23 @@ def main():
             new_triples.append(new_t)
 
     print(f"Ingesting {len(new_triples)} triples with new fractal embeddings...")
-    ingest_req = semantic_engine_pb2.IngestRequest(triples=new_triples, namespace="default")
 
-    try:
-        # Increase limit if batch is too big
-        ingest_resp = stub.IngestTriples(ingest_req)
-        print(f"Successfully re-ingested triples: {ingest_resp.nodes_added} nodes, {ingest_resp.edges_added} edges.")
-    except Exception as e:
-        print(f"Failed to ingest triples: {e}")
+    batch_size = 100
+    total_nodes = 0
+    total_edges = 0
+
+    for i in range(0, len(new_triples), batch_size):
+        batch = new_triples[i:i + batch_size]
+        ingest_req = semantic_engine_pb2.IngestRequest(triples=batch, namespace="default")
+
+        try:
+            ingest_resp = stub.IngestTriples(ingest_req)
+            total_nodes += ingest_resp.nodes_added
+            total_edges += ingest_resp.edges_added
+        except Exception as e:
+            print(f"Failed to ingest triples batch {i}: {e}")
+
+    print(f"Successfully re-ingested triples: {total_nodes} nodes, {total_edges} edges.")
 
 
 if __name__ == "__main__":
