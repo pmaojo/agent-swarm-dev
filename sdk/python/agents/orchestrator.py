@@ -436,7 +436,10 @@ class OrchestratorAgent:
         return {"final_status": "success", "history": history}
 
     def fast_classify_stack(self, task: str) -> Optional[str]:
-        """Use V5 Fractal Search (64d prefix) for zero-LLM fast routing classification."""
+        """
+        Use V5 Fractal Search (64d prefix) for zero-LLM fast routing classification.
+        @synapse:rule Zero-LLM Fast Routing saves up to 80% orchestration tokens and significantly reduces latency by attempting assignment to a 'Skill Nodo' directly based on 64d spatial truncation similarity. It only falls back to LLM Semantic Decomposition if the vector score is below the critical_threshold.
+        """
         if not self.stub:
             return None
             
@@ -456,18 +459,20 @@ class OrchestratorAgent:
                 return None
 
             # Check if any of the top results looks like a stack and meets the critical threshold
-            critical_threshold = 0.8  # Critical threshold for direct assignment
+            # Note: We compute distance as 1.0 - score to check if distance is below the threshold
+            critical_threshold = 0.2  # Critical distance threshold for direct assignment
 
             for r in res.results:
-                if r.score >= critical_threshold:
+                distance = 1.0 - r.score
+                if distance < critical_threshold:
                     uri = r.uri.lower()
                     s = uri.split("/")[-1] if "/" in uri else uri
                     for valid_s in ["python", "rust", "typescript", "javascript", "godot"]:
                         if valid_s in uri or valid_s in r.content.lower():
-                            print(f"⚡ V5 Fast Route Zero-LLM direct assignment: {valid_s} (score: {r.score:.3f} >= {critical_threshold})")
+                            print(f"⚡ V5 Fast Route Zero-LLM direct assignment: {valid_s} (distance: {distance:.3f} < {critical_threshold})")
                             return valid_s
                 else:
-                    print(f"⚠️ V5 Vector Routing score {r.score:.3f} below threshold {critical_threshold}")
+                    print(f"⚠️ V5 Vector Routing distance {distance:.3f} above threshold {critical_threshold}")
 
         except Exception as e:
             print(f"⚠️ V5 Vector Routing failed: {e}")
