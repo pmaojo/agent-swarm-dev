@@ -29,16 +29,19 @@ def count_tokens_approx(text: str) -> int:
     """Estimación rápida: ~4 chars per token."""
     return max(1, len(text) // 4)
 
-def call_gemini(messages: List[Dict], label: str = "") -> Dict[str, Any]:
+def call_gemini(messages: List[Dict], label: str = "", json_mode: bool = False) -> Dict[str, Any]:
     """Llama a Gemini y retorna métricas de tokens."""
     start = time.time()
+    kwargs: Dict[str, Any] = dict(
+        model=MODEL,
+        messages=messages,
+        temperature=0.1,
+        max_tokens=512,
+    )
+    if json_mode:
+        kwargs["response_format"] = {"type": "json_object"}
     try:
-        response = litellm.completion(
-            model=MODEL,
-            messages=messages,
-            temperature=0.1,
-            max_tokens=512,
-        )
+        response = litellm.completion(**kwargs)
         elapsed = time.time() - start
         usage = response.usage
         content = response.choices[0].message.content or ""
@@ -125,6 +128,7 @@ def test_lru_cache():
         key = get_key(messages)
         if key in cache:
             hits += 1
+            cache.move_to_end(key)  # mark as most-recently used
             saved = cache[key]["total_tokens"]
             total_tokens_saved += saved
             print(f"  💾 CACHE HIT [{label}] → ahorró {saved} tokens")
@@ -176,29 +180,27 @@ def test_lru_cache():
 # ─── Prueba 3: respuesta JSON vs texto libre ─────────────────────────────────
 
 def test_json_mode():
-    print("\n🔧 TEST 3: JSON mode vs texto libre\n")
+    print("\n🔧 TEST 3: JSON mode (API) vs texto libre\n")
 
-    plain_messages = [
+    # Same messages for both calls — only the API-level response_format differs.
+    # This isolates the effect of structured-output mode from prompt wording.
+    messages = [
         {"role": "system", "content": "Responde brevemente."},
         {"role": "user", "content": "Lista 3 lenguajes de programación populares."},
     ]
-    json_messages = [
-        {"role": "system", "content": 'Responde SOLO con JSON válido, sin texto extra. Formato: {"languages": ["lang1", "lang2", "lang3"]}'},
-        {"role": "user", "content": "Lista 3 lenguajes de programación populares."},
-    ]
 
-    r1 = call_gemini(plain_messages, "Respuesta texto libre")
-    r2 = call_gemini(json_messages, "Respuesta JSON estructurada")
+    r1 = call_gemini(messages, "Texto libre (json_mode=False)", json_mode=False)
+    r2 = call_gemini(messages, "JSON mode API (json_mode=True)", json_mode=True)
     print_result(r1)
     print_result(r2)
 
     if r1["success"] and r2["success"]:
         diff = r1["completion_tokens"] - r2["completion_tokens"]
-        print(f"\n  📊 JSON ahorra ~{diff} completion tokens vs texto libre")
+        print(f"\n  📊 JSON mode ahorra ~{diff} completion tokens vs texto libre")
         if diff > 0:
-            print("  ✅ El modo JSON es más eficiente en tokens de salida.")
+            print("  ✅ El modo JSON API reduce tokens de salida.")
         else:
-            print("  ℹ️  En este caso el texto libre fue más conciso.")
+            print("  ℹ️  Texto libre fue igual o más conciso en este caso.")
 
 # ─── Prueba 4: fallback de modelos ──────────────────────────────────────────
 
