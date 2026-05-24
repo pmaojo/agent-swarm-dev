@@ -8,7 +8,10 @@
     },
     "grafoso-python-tools": {
       "command": "python",
-      "args": ["-m", "agents.server.mcp_server"],
+      "args": [
+        "-m",
+        "agents.server.mcp_server"
+      ],
       "env": {
         "PYTHONPATH": "/home/pelayo-maojo/grafoso"
       },
@@ -39,7 +42,7 @@
   },
   "orchestration": {
     "enabled": true,
-    "llm_model": "gemini/gemini-1.5-flash",
+    "llm_model": "gemini/gemini-2.0-flash-lite",
     "autonomous_mode": true,
     "max_tool_calls_per_request": 5,
     "allow_tool_composition": true

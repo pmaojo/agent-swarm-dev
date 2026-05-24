@@ -21,7 +21,7 @@ import litellm
 litellm.telemetry = False
 litellm.set_verbose = False
 
-MODEL = "gemini/gemini-2.0-flash-lite"  # modelo más ligero disponible
+MODEL = "gemini/gemini-3-flash-preview"  # default del sistema, confirmado disponible
 
 # ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -208,8 +208,9 @@ def test_model_fallback():
     print("\n🔄 TEST 4: Comparación de modelos (eficiencia relativa)\n")
 
     models_to_test = [
-        "gemini/gemini-2.0-flash-lite",   # más barato
-        "gemini/gemini-3-flash-preview",  # modelo default del sistema
+        "gemini/gemini-2.0-flash-lite",   # más barato / menor latencia
+        "gemini/gemini-3-flash-preview",  # default del sistema
+        "gemini/gemini-3.5-flash",        # más capaz de la familia flash
     ]
     messages = [
         {"role": "system", "content": "Responde en máximo 2 oraciones."},

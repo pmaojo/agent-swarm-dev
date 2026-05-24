@@ -63,13 +63,12 @@ class LLMService:
 
         self.api_key = os.getenv("GEMINI_API_KEY") or os.getenv("OPENAI_API_KEY")
         self.kilo_key = os.getenv("KILO_GATEWAY_API_KEY")
-        # Use LLM_MODEL from env, which should be gemini/gemini-3-flash-preview
-        self.model = os.getenv("LLM_MODEL", "gemini/gemini-3-flash-preview")
-        # Configure Fallbacks (Ordered by preference)
+        self.model = os.getenv("LLM_MODEL", "gemini/gemini-3.5-flash")
+        # Fallbacks in preference order — all confirmed available via API
         self.fallback_models = [
-            "gemini/gemini-1.5-flash-latest",
+            "gemini/gemini-3-flash-preview",
             "gemini/gemini-2.0-flash",
-            "openrouter/google/gemini-2.0-flash-001"
+            "gemini/gemini-2.5-flash-lite",
         ]
         
         # Sense environment
@@ -299,31 +298,21 @@ class LLMService:
         return None
 
     def _resolve_model_name(self, m: str) -> str:
-        """Helper to standardize model names for LiteLLM."""
+        """Normalise a model string for LiteLLM — add prefix, drop -latest, upgrade 1.x."""
         if m.startswith("openrouter/"):
             return m
-        
         if m.startswith("kilo/"):
-            # Kilo models use OpenAI-compatible gateway
-            # If the user specifies kilo/model:free, we strip kilo/ but keep :free
-            res = m.replace("kilo/", "openai/", 1)
-            return res
-        
-        # Standardize Gemini
-        if "gemini" in m.lower():
-            res_m = m if "/" in m else f"gemini/{m}"
-            if "-latest" in res_m:
-                 res_m = res_m.replace("-latest", "")
-            
-            # Use 3.0, 2.5 or 2.0 if specified or default to 3
-            if "flash" in res_m and "-8b" not in res_m:
-                 # Prioritize latest versions per user request
-                 if "3" in res_m: res_m = "gemini/gemini-3-flash-preview"
-                 elif "2.5" in res_m: res_m = "gemini/gemini-2.5-flash"
-                 elif "2.0" in res_m: res_m = "gemini/gemini-2.0-flash"
-                 else: res_m = "gemini/gemini-3-flash-preview" # Upgrade default to Gemini 3
-            return res_m
-        return m
+            return m.replace("kilo/", "openai/", 1)
+        if "gemini" not in m.lower():
+            return m
+        # Ensure gemini/ prefix
+        res_m = m if m.startswith("gemini/") else f"gemini/{m}"
+        # Drop deprecated -latest aliases
+        res_m = res_m.replace("-latest", "")
+        # Upgrade 1.x models (all 404 as of 2026-05)
+        if "gemini-1." in res_m:
+            res_m = "gemini/gemini-2.0-flash"
+        return res_m
 
     def _prepare_fallbacks(self) -> List[Dict]:
         processed_fallbacks = []
@@ -349,19 +338,69 @@ class LLMService:
         retry=retry_if_not_exception_type(BudgetExceededException)
     )
     def completion(self, prompt: str, system_prompt: str = "You are a helpful assistant.", json_mode: bool = False, tools: Optional[List[Dict]] = None, tool_choice: Any = None, messages: Optional[List[Dict]] = None) -> Any:
-        """
-        Generate a completion using the configured LLM, with Budget Enforcement.
-        """
-        request = orchestrator_pb2.LlmCompletionRequest(
-            prompt=prompt,
-            model=self.model,
-            system_prompt=system_prompt,
-            json_mode=json_mode,
-            tools_json=json.dumps(tools) if tools else "",
-            messages_json=json.dumps(messages) if messages else ""
+        """Generate a completion. Tries Rust LLM gateway first, falls back to litellm."""
+        if self.mock_mode:
+            return f"MOCK: {prompt[:80]}"
+
+        # --- Try Rust LLM gateway ---
+        if orchestrator_pb2 is not None:
+            try:
+                request = orchestrator_pb2.LlmCompletionRequest(
+                    prompt=prompt,
+                    model=self.model,
+                    system_prompt=system_prompt,
+                    json_mode=json_mode,
+                    tools_json=json.dumps(tools) if tools else "",
+                    messages_json=json.dumps(messages) if messages else ""
+                )
+                response = self.llm_gateway_stub.Complete(request, timeout=1.5)
+                return response.completion
+            except Exception as gw_err:
+                logger.debug(f"Rust LLM gateway unavailable ({gw_err}), falling back to litellm")
+
+        # --- litellm fallback (direct Gemini / OpenAI call) ---
+        self.check_budget()
+
+        if not messages:
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": prompt},
+            ]
+
+        cache_key = self._get_cache_key(messages, json_mode, tools, tool_choice)
+        cached = self._check_cache(cache_key)
+        if cached is not None:
+            return cached
+
+        kwargs: Dict[str, Any] = dict(
+            model=self._resolve_model_name(self.model),
+            messages=messages,
+            temperature=0.7,
+            fallbacks=self._prepare_fallbacks(),
         )
-        response = self.llm_gateway_stub.Complete(request, timeout=1.5)
-        return response.completion
+        if json_mode:
+            kwargs["response_format"] = {"type": "json_object"}
+        if tools:
+            kwargs["tools"] = tools
+            if tool_choice:
+                kwargs["tool_choice"] = tool_choice
+        if self.api_key:
+            kwargs["api_key"] = self.api_key
+
+        resp = litellm.completion(**kwargs)
+        msg = resp.choices[0].message
+        result = msg.content if hasattr(msg, "content") else str(msg)
+
+        if resp.usage:
+            self.log_spend(resp.usage.prompt_tokens, resp.usage.completion_tokens)
+
+        # Store in LRU cache
+        self._cache[cache_key] = result
+        self._cache.move_to_end(cache_key)
+        if len(self._cache) > self._cache_max_size:
+            self._cache.popitem(last=False)
+
+        return result
 
     def get_structured_completion(self, prompt: str, system_prompt: str) -> Dict[str, Any]:
         """
