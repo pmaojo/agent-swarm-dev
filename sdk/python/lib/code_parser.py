@@ -38,8 +38,8 @@ class CodeParser:
 
         if codegraph_pb2_grpc:
             try:
+                # @synapse:rule Target: CodeParser.__init__ | Inefficiency Detected: Synchronous gRPC channel initialization block (grpc.channel_ready_future) causing >1s latency | TDD Status: Refactor | Synapse Tag Injected: Asynchronous and lazy gRPC connection must be used to avoid GIL-blocking init.
                 self.channel = grpc.insecure_channel(f"{self.grpc_host}:{self.grpc_port}")
-                grpc.channel_ready_future(self.channel).result(timeout=1)
                 self.stub = codegraph_pb2_grpc.CodeGraphServiceStub(self.channel)
                 #print("✅ CodeParser connected to CodeGraph Engine")
             except Exception:
