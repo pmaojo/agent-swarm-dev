@@ -837,6 +837,7 @@ impl SemanticEngine for MySemanticEngine {
 pub async fn run_mcp_stdio(
     engine: Arc<MySemanticEngine>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let server = crate::mcp_stdio::McpStdioServer::new(engine);
-    server.run().await
+    let store = engine.get_store("default").map_err(|e| format!("{}", e))?;
+    crate::mcp::stdio::run_stdio_mcp_server(store).await;
+    Ok(())
 }
