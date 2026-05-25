@@ -5,7 +5,6 @@ Loads domain-specific ontologies/scenarios from the `scenarios/` directory into 
 import os
 import json
 import sys
-import grpc
 import rdflib
 
 # --- Synapse/Proto Imports ---
@@ -23,6 +22,7 @@ except ImportError:
     except ImportError:
         semantic_engine_pb2 = None
         semantic_engine_pb2_grpc = None
+from lib.synapse_connect import connect_synapse
 
 SWARM = "http://swarm.os/ontology/"
 
@@ -30,24 +30,10 @@ class ScenarioLoader:
     def __init__(self):
         self.grpc_host = os.getenv("SYNAPSE_GRPC_HOST", "localhost")
         self.grpc_port = int(os.getenv("SYNAPSE_GRPC_PORT", "50051"))
-        self.channel = None
-        self.stub = None
-        self.connect()
-
-    def connect(self):
-        if not semantic_engine_pb2_grpc:
-            print("⚠️ [ScenarioLoader] Synapse gRPC modules not found.")
-            return
-
-        try:
-            self.channel = grpc.insecure_channel(f"{self.grpc_host}:{self.grpc_port}")
-            self.stub = semantic_engine_pb2_grpc.SemanticEngineStub(self.channel)
-        except Exception as e:
-            print(f"⚠️ [ScenarioLoader] Failed to connect to Synapse: {e}")
+        self.stub = connect_synapse(self.grpc_host, self.grpc_port)
 
     def close(self):
-        if self.channel:
-            self.channel.close()
+        pass
 
     def load_scenario(self, scenario_name: str):
         """Loads a scenario from the `scenarios/` directory."""

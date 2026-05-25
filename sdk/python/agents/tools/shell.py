@@ -4,7 +4,6 @@ Shell Command Execution with NIST Guardrails.
 import os
 import sys
 import uuid
-import grpc
 import subprocess
 import requests
 import json
@@ -27,6 +26,7 @@ except ImportError:
         semantic_engine_pb2 = None
         semantic_engine_pb2_grpc = None
         print("⚠️ Warning: Synapse protobufs not found. Guardrails disabled (Safe Mode only).")
+from lib.synapse_connect import connect_synapse
 
 # --- Constants ---
 NIST = "http://nist.gov/caisi/"
@@ -43,17 +43,7 @@ class CommandGuard:
     def __init__(self):
         self.grpc_host = os.getenv("SYNAPSE_GRPC_HOST", "localhost")
         self.grpc_port = int(os.getenv("SYNAPSE_GRPC_PORT", "50051"))
-        self.channel = None
-        self.stub = None
-        self.connect()
-
-    def connect(self):
-        if not semantic_engine_pb2_grpc: return
-        try:
-            self.channel = grpc.insecure_channel(f"{self.grpc_host}:{self.grpc_port}")
-            self.stub = semantic_engine_pb2_grpc.SemanticEngineStub(self.channel)
-        except Exception as e:
-            print(f"❌ Failed to connect to Synapse: {e}")
+        self.stub = connect_synapse(self.grpc_host, self.grpc_port)
 
     def ingest_request(self, cmd_uuid: str, command: str, reason: str):
         if not self.stub: return

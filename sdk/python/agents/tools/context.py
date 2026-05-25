@@ -5,7 +5,6 @@ Parses @file and @symbol tags and enriches context with Synapse knowledge.
 import os
 import re
 import sys
-import grpc
 import json
 from typing import Dict, List, Any, Tuple
 # --- Synapse/Proto Imports ---
@@ -29,6 +28,7 @@ except ImportError:
     except ImportError:
         semantic_engine_pb2 = None
         semantic_engine_pb2_grpc = None
+from lib.synapse_connect import connect_synapse
 
 # Namespaces
 SWARM = "http://swarm.os/ontology/"
@@ -38,25 +38,11 @@ class ContextParser:
     def __init__(self):
         self.grpc_host = os.getenv("SYNAPSE_GRPC_HOST", "localhost")
         self.grpc_port = int(os.getenv("SYNAPSE_GRPC_PORT", "50051"))
-        self.channel = None
-        self.stub = None
+        self.stub = connect_synapse(self.grpc_host, self.grpc_port)
         self.slicer = CodeGraphSlicer() if CodeGraphSlicer else None
-        self.connect()
-
-    def connect(self):
-        if not semantic_engine_pb2_grpc:
-            print("⚠️ [ContextParser] Synapse gRPC modules not found. Context will be limited.")
-            return
-
-        try:
-            self.channel = grpc.insecure_channel(f"{self.grpc_host}:{self.grpc_port}")
-            self.stub = semantic_engine_pb2_grpc.SemanticEngineStub(self.channel)
-        except Exception as e:
-            print(f"⚠️ [ContextParser] Failed to connect to Synapse: {e}")
 
     def close(self):
-        if self.channel:
-            self.channel.close()
+        pass
 
     def _query_synapse(self, sparql_query: str) -> List[Dict]:
         """Executes a SPARQL query against Synapse."""

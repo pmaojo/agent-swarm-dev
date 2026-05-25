@@ -1,7 +1,6 @@
 import os
 import sys
 import json
-import grpc
 from typing import Dict, Any, List, Optional
 from .interfaces import CloudProviderInterface
 from .providers import JulesProvider, ClaudeProvider, CodexProvider
@@ -22,6 +21,7 @@ except ImportError:
     except ImportError:
         semantic_engine_pb2 = None
         semantic_engine_pb2_grpc = None
+from lib.synapse_connect import connect_synapse
 
 SWARM = "http://swarm.os/ontology/"
 NIST = "http://nist.gov/caisi/"
@@ -36,18 +36,12 @@ class CloudGatewayFactory:
         }
         self.grpc_host = os.getenv("SYNAPSE_GRPC_HOST", "localhost")
         self.grpc_port = int(os.getenv("SYNAPSE_GRPC_PORT", "50051"))
-        self.channel = None
-        self.stub = None
-        self.connect_synapse()
+        self.stub = connect_synapse(self.grpc_host, self.grpc_port)
         self.ensure_provider_stats()
 
     def connect_synapse(self):
-        if not semantic_engine_pb2_grpc: return
-        try:
-            self.channel = grpc.insecure_channel(f"{self.grpc_host}:{self.grpc_port}")
-            self.stub = semantic_engine_pb2_grpc.SemanticEngineStub(self.channel)
-        except Exception as e:
-            print(f"⚠️  CloudGateway failed to connect to Synapse: {e}")
+        from lib.synapse_connect import connect_synapse as _connect
+        self.stub = _connect(self.grpc_host, self.grpc_port)
 
     def _ingest(self, triples: List[Dict[str, str]], namespace: str = "default"):
         if not self.stub or not semantic_engine_pb2: return

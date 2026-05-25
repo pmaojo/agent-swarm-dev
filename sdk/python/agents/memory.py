@@ -17,6 +17,7 @@ try:
     from synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
 except ImportError:
     from agents.synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
+from lib.synapse_connect import connect_synapse
 from typing import Any, Dict, List, Optional
 
 
@@ -27,8 +28,9 @@ class MemoryAgent:
     def __init__(self, host: str = "localhost:50051", namespace: str = "default"):
         self.host = host
         self.namespace = self._validate_namespace(namespace)
-        self.channel: Optional[grpc.Channel] = None
-        self.stub: Optional[semantic_engine_pb2_grpc.SemanticEngineStub] = None
+        host_part = self.host.split(":")[0]
+        port_part = self.host.split(":")[1] if ":" in self.host else "50051"
+        self.stub = connect_synapse(host_part, port_part)
 
     def _validate_namespace(self, namespace: str) -> str:
         normalized = namespace.strip()
@@ -38,21 +40,9 @@ class MemoryAgent:
 
     def connect(self) -> None:
         """Connect to Synapse"""
-        try:
-            self.channel = grpc.insecure_channel(self.host)
-            self.stub = semantic_engine_pb2_grpc.SemanticEngineStub(self.channel)
-        except grpc.RpcError as exc:
-            self.channel = None
-            self.stub = None
-            raise MemoryAgentError(
-                f"[MemoryAgent] Connection failed host={self.host} namespace={self.namespace}: {exc}"
-            ) from exc
-        except Exception as exc:
-            self.channel = None
-            self.stub = None
-            raise MemoryAgentError(
-                f"[MemoryAgent] Unexpected connection error host={self.host} namespace={self.namespace}: {exc}"
-            ) from exc
+        host_part = self.host.split(":")[0]
+        port_part = self.host.split(":")[1] if ":" in self.host else "50051"
+        self.stub = connect_synapse(host_part, port_part)
 
     def _ensure_stub(self) -> semantic_engine_pb2_grpc.SemanticEngineStub:
         if self.stub is None:

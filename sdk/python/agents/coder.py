@@ -6,7 +6,6 @@ Enhanced for NIST Guardrails and Autonomous Operations (Phase 3).
 """
 import os
 import json
-import grpc
 import sys
 import time
 import uuid
@@ -23,6 +22,7 @@ try:
     from synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
 except ImportError:
     from agents.synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
+from lib.synapse_connect import connect_synapse
 from llm import LLMService
 
 # --- New Tool Imports ---
@@ -45,26 +45,12 @@ class CoderAgent:
         self.grpc_port = int(os.getenv("SYNAPSE_GRPC_PORT", "50054"))
         self.namespace = "default"
         self.llm = LLMService()
-        self.channel = None
-        self.stub = None
+        self.stub = connect_synapse(self.grpc_host, self.grpc_port)
         self.context_parser = ContextParser()
         self.browser = BrowserTool()
         self.modified_files = []
-        self.connect()
-
-    def connect(self):
-        if not semantic_engine_pb2_grpc:
-            print("⚠️ [Coder] Synapse gRPC modules not found. Tracking disabled.")
-            return
-        try:
-            self.channel = grpc.insecure_channel(f"{self.grpc_host}:{self.grpc_port}")
-            self.stub = semantic_engine_pb2_grpc.SemanticEngineStub(self.channel)
-        except Exception as e:
-            print(f"❌ [Coder] Failed to connect to Synapse: {e}")
 
     def close(self):
-        if self.channel:
-            self.channel.close()
         self.browser.close()
         self.context_parser.close()
 

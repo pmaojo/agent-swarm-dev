@@ -4,7 +4,6 @@ Skill Loader - Ingests Skills into Synapse Knowledge Graph.
 """
 import os
 import json
-import grpc
 import sys
 
 # Synapse Imports
@@ -19,6 +18,7 @@ except ImportError:
     except ImportError:
         semantic_engine_pb2 = None
         semantic_engine_pb2_grpc = None
+from lib.synapse_connect import connect_synapse
 
 SWARM = "http://swarm.os/ontology/"
 RDF = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
@@ -32,8 +32,7 @@ def ingest_skills():
     grpc_port = int(os.getenv("SYNAPSE_GRPC_PORT", "50051"))
 
     try:
-        channel = grpc.insecure_channel(f"{grpc_host}:{grpc_port}")
-        stub = semantic_engine_pb2_grpc.SemanticEngineStub(channel)
+        stub = connect_synapse(grpc_host, grpc_port)
 
         # Load JSON
         data_path = os.path.join(SDK_PYTHON_PATH, "data", "skills.json")

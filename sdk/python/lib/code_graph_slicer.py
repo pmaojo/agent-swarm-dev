@@ -4,6 +4,7 @@ import json
 import re
 import logging
 from typing import List, Dict, Set, Any, Tuple
+from lib.synapse_connect import connect_synapse
 
 # Ensure proto modules can import each other
 proto_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'agents', 'proto'))
@@ -38,25 +39,14 @@ class CodeGraphSlicer:
         self.parser = CodeParser()
         self.grpc_host = os.getenv("SYNAPSE_GRPC_HOST", "localhost")
         self.grpc_port = int(os.getenv("SYNAPSE_GRPC_PORT", "50051"))
-        self.channel = None
-        self.stub = None
+        self.stub = connect_synapse(self.grpc_host, self.grpc_port)
 
     def connect(self):
-        if not semantic_engine_pb2_grpc:
-            logger.warning("Synapse gRPC modules not found. Slicing disabled.")
-            return False
-
-        try:
-            self.channel = grpc.insecure_channel(f"{self.grpc_host}:{self.grpc_port}")
-            self.stub = semantic_engine_pb2_grpc.SemanticEngineStub(self.channel)
-            return True
-        except Exception as e:
-            logger.error(f"Failed to connect to Synapse: {e}")
-            return False
+        self.stub = connect_synapse(self.grpc_host, self.grpc_port)
+        return self.stub is not None
 
     def close(self):
-        if self.channel:
-            self.channel.close()
+        pass
 
     def get_pruned_context(self, target_symbol_uri: str, max_depth: int = 2) -> Dict[str, Any]:
         """

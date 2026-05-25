@@ -6,7 +6,6 @@ import time
 import requests
 import sys
 import uuid
-import grpc
 from typing import Optional
 
 # Synapse Imports
@@ -21,6 +20,7 @@ except ImportError:
     except ImportError:
         semantic_engine_pb2 = None
         semantic_engine_pb2_grpc = None
+from lib.synapse_connect import connect_synapse
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -48,17 +48,7 @@ class ApiSandboxTool:
         # Synapse Connection
         self.grpc_host = os.getenv("SYNAPSE_GRPC_HOST", "localhost")
         self.grpc_port = int(os.getenv("SYNAPSE_GRPC_PORT", "50051"))
-        self.channel = None
-        self.stub = None
-        self.connect()
-
-    def connect(self):
-        if not semantic_engine_pb2_grpc: return
-        try:
-            self.channel = grpc.insecure_channel(f"{self.grpc_host}:{self.grpc_port}")
-            self.stub = semantic_engine_pb2_grpc.SemanticEngineStub(self.channel)
-        except Exception as e:
-            logger.warning(f"⚠️ Failed to connect to Synapse: {e}")
+        self.stub = connect_synapse(self.grpc_host, self.grpc_port)
 
     def ingest_lesson(self, failure_type: str, message: str):
         """Ingest failure as a Lesson Learned to block future attempts."""

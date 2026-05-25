@@ -6,7 +6,6 @@ import os
 import sys
 import subprocess
 import json
-import grpc
 
 # Synapse Imports
 SDK_PYTHON_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -20,6 +19,7 @@ except ImportError:
     except ImportError:
         semantic_engine_pb2 = None
         semantic_engine_pb2_grpc = None
+from lib.synapse_connect import connect_synapse
 
 SWARM = "http://swarm.os/ontology/"
 
@@ -27,17 +27,7 @@ class FogCartographer:
     def __init__(self):
         self.grpc_host = os.getenv("SYNAPSE_GRPC_HOST", "localhost")
         self.grpc_port = int(os.getenv("SYNAPSE_GRPC_PORT", "50051"))
-        self.channel = None
-        self.stub = None
-        self.connect()
-
-    def connect(self):
-        if not semantic_engine_pb2_grpc: return
-        try:
-            self.channel = grpc.insecure_channel(f"{self.grpc_host}:{self.grpc_port}")
-            self.stub = semantic_engine_pb2_grpc.SemanticEngineStub(self.channel)
-        except Exception as e:
-            print(f"⚠️ Failed to connect to Synapse: {e}")
+        self.stub = connect_synapse(self.grpc_host, self.grpc_port)
 
     def get_tracked_files(self) -> list:
         """Get list of files tracked by git."""
