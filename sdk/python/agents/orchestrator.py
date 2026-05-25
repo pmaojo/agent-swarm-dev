@@ -51,8 +51,8 @@ class OrchestratorAgent:
         # Load environment variables
         load_dotenv(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', '.env')))
         
-        self.model = os.getenv("LLM_MODEL", "gpt-4")
-        self.api_key = os.getenv("OPENAI_API_KEY")
+        self.model = os.getenv("LLM_MODEL", "gemini/gemini-3-flash-preview")
+        self.api_key = os.getenv("GEMINI_API_KEY") or os.getenv("OPENAI_API_KEY")
         self.grpc_host = os.getenv("SYNAPSE_GRPC_HOST", "localhost")
         self.grpc_port = int(os.getenv("SYNAPSE_GRPC_PORT", "50052"))
         self.channel = None
@@ -166,7 +166,7 @@ class OrchestratorAgent:
         except Exception as e:
             if "CANCELLED" in str(e) or "RST_STREAM" in str(e):
                 print("🔄 gRPC connection Reset detected (Orchestrator Ingest). Reconnecting...")
-                self.connect_synapse()
+                self.connect()
                 try: 
                     self.stub.IngestTriples(request)
                 except Exception: pass
@@ -177,7 +177,7 @@ class OrchestratorAgent:
         """Execute SPARQL query against Synapse"""
         if not self.stub:
             print("❌ Not connected to Synapse")
-            self.connect_synapse()
+            self.connect()
             if not self.stub: return []
 
         target_namespace = namespace if namespace else self.namespace
@@ -192,7 +192,7 @@ class OrchestratorAgent:
         except Exception as e:
             if "CANCELLED" in str(e) or "RST_STREAM" in str(e):
                 print("🔄 gRPC Connection Reset detected (Orchestrator Query). Reconnecting...")
-                self.connect_synapse()
+                self.connect()
                 try:
                     response = self.stub.QuerySparql(request)
                     return json.loads(response.results_json)
@@ -727,19 +727,56 @@ class OrchestratorAgent:
     def get_initial_task_type(self) -> str:
         return "FeatureImplementationTask"
 
+    def connect_orchestrator_service(self):
+        """Connect to the Rust Orchestrator microservice (port 50055)."""
+        self.orchestrator_engine_stub = None
+        try:
+            channel = grpc.insecure_channel("localhost:50055")
+            grpc.channel_ready_future(channel).result(timeout=1)
+            self.orchestrator_engine_stub = orchestrator_pb2_grpc.OrchestratorServiceStub(channel)
+            print("✅ Connected to Rust Orchestrator microservice")
+        except grpc.FutureTimeoutError:
+            print("⚠️  Rust Orchestrator not reachable — using built-in routing fallback")
+        except Exception as e:
+            print(f"⚠️  Orchestrator service error: {e} — using built-in routing fallback")
+
+    # Built-in routing tables used when the Rust microservice is unavailable
+    _TASK_ROUTING = {
+        "RequirementsTask":          "ProductManager",
+        "SystemDesignTask":          "Architect",
+        "FeatureImplementationTask": "Coder",
+        "CodeReviewTask":            "Reviewer",
+        "DeploymentTask":            "Deployer",
+    }
+    _STATE_MACHINE = {
+        "FeatureImplementationTask": "CodeReviewTask",
+        "CodeReviewTask":            "DeploymentTask",
+        "DeploymentTask":            None,
+    }
+
     def get_handler_for_task(self, task_type: str) -> str:
-        request = orchestrator_pb2.RouteTaskRequest(task_description=task_type)
-        response = self.orchestrator_engine_stub.RouteTask(request, timeout=1.0)
-        return response.agent_type
+        if self.orchestrator_engine_stub is not None:
+            try:
+                request = orchestrator_pb2.RouteTaskRequest(task_description=task_type)
+                response = self.orchestrator_engine_stub.RouteTask(request, timeout=1.0)
+                return response.agent_type
+            except Exception:
+                pass
+        return self._TASK_ROUTING.get(task_type, "Coder")
 
     def get_next_task(self, current_task_type: str, outcome: str) -> Optional[str]:
-        request = orchestrator_pb2.StateGraphRequest(current_state=current_task_type, action=outcome)
-        response = self.orchestrator_engine_stub.ManageStateGraph(request, timeout=1.0)
-        if response.next_state and response.next_state != "":
-            if response.next_state == "None":
+        if self.orchestrator_engine_stub is not None:
+            try:
+                request = orchestrator_pb2.StateGraphRequest(current_state=current_task_type, action=outcome)
+                response = self.orchestrator_engine_stub.ManageStateGraph(request, timeout=1.0)
+                if response.next_state not in ("", "None", None):
+                    return response.next_state
                 return None
-            return response.next_state
-        return None
+            except Exception:
+                pass
+        if outcome != "success":
+            return None
+        return self._STATE_MACHINE.get(current_task_type)
 
     def check_operational_status(self) -> str:
         query = f"""

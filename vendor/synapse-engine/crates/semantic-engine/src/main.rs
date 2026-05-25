@@ -1,7 +1,8 @@
 use std::env;
 use std::sync::Arc;
+use synapse_core::mcp::stdio::run_stdio_mcp_server;
 use synapse_core::server::{
-    proto::semantic_engine_server::SemanticEngineServer, run_mcp_stdio, MySemanticEngine,
+    proto::semantic_engine_server::SemanticEngineServer, MySemanticEngine,
 };
 use tonic::transport::Server;
 
@@ -27,7 +28,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if is_mcp {
         // MCP mode: no stdout messages, only JSON-RPC
         eprintln!("Synapse-MCP starting (stdio mode)...");
-        run_mcp_stdio(Arc::new(engine)).await?;
+        let store = engine.get_store("default").expect("Failed to open default store");
+        run_stdio_mcp_server(store).await;
     } else {
         println!(
             r#"

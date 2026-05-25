@@ -1,6 +1,5 @@
 pub mod extractor;
 pub mod ontology;
-pub mod processor;
 use crate::store::{IngestTriple, SynapseStore};
 use anyhow::Result;
 use std::path::Path;
