@@ -111,6 +111,8 @@ class LocalSynapseStub:
         for t in request.triples:
             try:
                 subj = self._term(t.subject)
+                if isinstance(subj, Literal):
+                    subj = URIRef(f"urn:swarm:{str(subj)}")
                 pred = self._term(t.predicate)
                 obj  = self._term(t.object)
                 g.add((subj, pred, obj))
