@@ -3,7 +3,6 @@ import os
 import sys
 import json
 import logging
-import grpc
 from dotenv import load_dotenv
 
 load_dotenv(override=True)
@@ -24,6 +23,7 @@ try:
     from synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
 except ImportError:
     from agents.synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
+from lib.synapse_connect import connect_synapse
 
 # Configuration
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -45,8 +45,7 @@ logging.basicConfig(
 
 class SynapseClient:
     def __init__(self):
-        self.channel = grpc.insecure_channel(f"{GRPC_HOST}:{GRPC_PORT}")
-        self.stub = semantic_engine_pb2_grpc.SemanticEngineStub(self.channel)
+        self.stub = connect_synapse(GRPC_HOST, GRPC_PORT)
         self.namespace = "default"
 
     def ingest(self, triples: List[Dict[str, str]]):

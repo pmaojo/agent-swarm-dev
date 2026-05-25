@@ -102,15 +102,8 @@ class LLMService:
         self.ensure_finance_node()
 
     def connect_synapse(self):
-        if not semantic_engine_pb2_grpc:
-            return
-        try:
-            self.channel = grpc.insecure_channel(f"{self.grpc_host}:{self.grpc_port}")
-            self.stub = semantic_engine_pb2_grpc.SemanticEngineStub(self.channel)
-            print(f"📡 Connected to Synapse at {self.grpc_host}:{self.grpc_port}")
-        except Exception as e:
-            logger.warning(f"⚠️  LLMService failed to connect to Synapse: {e}")
-            self.stub = None
+        from lib.synapse_connect import connect_synapse as _connect
+        self.stub = _connect(self.grpc_host, self.grpc_port)
 
     def ensure_finance_node(self):
         """Ensure the finance node exists with the max budget."""

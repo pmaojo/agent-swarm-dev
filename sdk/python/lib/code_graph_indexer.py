@@ -1,6 +1,5 @@
 import os
 import sys
-import grpc
 import json
 import logging
 import fnmatch
@@ -25,6 +24,7 @@ except ImportError:
             semantic_engine_pb2_grpc = None
 
 from lib.code_parser import CodeParser
+from lib.synapse_connect import connect_synapse
 
 # Ontology Namespaces
 SWARM = "http://swarm.os/ontology/"
@@ -44,25 +44,14 @@ class CodeGraphIndexer:
             self.parser = None
         self.grpc_host = os.getenv("SYNAPSE_GRPC_HOST", "localhost")
         self.grpc_port = int(os.getenv("SYNAPSE_GRPC_PORT", "50051"))
-        self.channel = None
-        self.stub = None
+        self.stub = connect_synapse(self.grpc_host, self.grpc_port)
 
     def connect(self):
-        if not semantic_engine_pb2_grpc:
-            logger.warning("Synapse gRPC modules not found. Indexing disabled.")
-            return False
-
-        try:
-            self.channel = grpc.insecure_channel(f"{self.grpc_host}:{self.grpc_port}")
-            self.stub = semantic_engine_pb2_grpc.SemanticEngineStub(self.channel)
-            return True
-        except Exception as e:
-            logger.error(f"Failed to connect to Synapse: {e}")
-            return False
+        self.stub = connect_synapse(self.grpc_host, self.grpc_port)
+        return self.stub is not None
 
     def close(self):
-        if self.channel:
-            self.channel.close()
+        pass
 
     def index_repository(self):
         """Scans the repository and indexes all supported files."""

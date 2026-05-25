@@ -10,6 +10,7 @@ import yaml
 import uuid
 from collections import defaultdict
 from typing import List, Dict, Any, Optional
+from lib.synapse_connect import connect_synapse
 
 # Add path to lib and agents
 SDK_PYTHON_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -42,10 +43,8 @@ class AnalystAgent:
         self.grpc_port = int(os.getenv("SYNAPSE_GRPC_PORT", "50051"))
         self.namespace = "default"
         self.llm = LLMService()
-        self.channel = None
         self.stub = None
         self.analyst_stub = None
-
 
         self.connect()
         self.connect_analyst_service()
@@ -61,17 +60,7 @@ class AnalystAgent:
         print("✅ Analyst connected to Rust microservice stub at localhost:50055")
 
     def connect(self):
-        try:
-            self.channel = grpc.insecure_channel(f"{self.grpc_host}:{self.grpc_port}")
-            self.stub = semantic_engine_pb2_grpc.SemanticEngineStub(self.channel)
-            # Check connection
-            try:
-                grpc.channel_ready_future(self.channel).result(timeout=2)
-                print(f"✅ Analyst connected to Synapse at {self.grpc_host}:{self.grpc_port}")
-            except grpc.FutureTimeoutError:
-                print("⚠️  Synapse not reachable. Is it running?")
-        except Exception as e:
-            print(f"❌ Failed to connect to Synapse: {e}")
+        self.stub = connect_synapse(self.grpc_host, self.grpc_port)
 
     def load_config(self):
         schema_path = os.path.join(os.path.dirname(__file__), '..', 'swarm_schema.yaml')

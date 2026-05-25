@@ -29,6 +29,7 @@ except ImportError:
     from agents.synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc, codegraph_pb2, codegraph_pb2_grpc
     from agents.synapse_proto import orchestrator_pb2, orchestrator_pb2_grpc
 
+from lib.synapse_connect import connect_synapse
 from llm import LLMService
 from product_manager import ProductManagerAgent
 from architect import ArchitectAgent
@@ -102,19 +103,7 @@ class OrchestratorAgent:
         }
 
     def connect(self):
-        try:
-            self.channel = grpc.insecure_channel(f"{self.grpc_host}:{self.grpc_port}")
-            # Simple ping/check if server is up
-            try:
-                grpc.channel_ready_future(self.channel).result(timeout=2)
-                self.stub = semantic_engine_pb2_grpc.SemanticEngineStub(self.channel)
-                print("✅ Connected to Synapse")
-            except grpc.FutureTimeoutError:
-                print("⚠️  Synapse not reachable. Is it running?")
-                self.stub = None
-        except Exception as e:
-            print(f"❌ Failed to connect to Synapse: {e}")
-            self.stub = None
+        self.stub = connect_synapse(self.grpc_host, self.grpc_port)
 
         # Connect to CodeGraph Engine Microservice
         try:
