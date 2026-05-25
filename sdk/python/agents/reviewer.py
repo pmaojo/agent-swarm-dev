@@ -6,7 +6,6 @@ Real implementation using Static Analysis + LLM + Synapse Memory + Neurosymbolic
 import os
 import json
 import requests
-import grpc
 import sys
 import time
 from typing import Dict, Any, List, Optional
@@ -21,6 +20,7 @@ try:
     from synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
 except ImportError:
     from agents.synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
+from lib.synapse_connect import connect_synapse
 
 from llm import LLMService
 from git_service import GitService
@@ -39,20 +39,10 @@ class ReviewerAgent:
         self.llm = LLMService()
         self.git = GitService()
         self.sandbox_tool = ApiSandboxTool()
-        self.channel = None
-        self.stub = None
-        self.connect()
-
-    def connect(self):
-        try:
-            self.channel = grpc.insecure_channel(f"{self.grpc_host}:{self.grpc_port}")
-            self.stub = semantic_engine_pb2_grpc.SemanticEngineStub(self.channel)
-        except Exception as e:
-            print(f"❌ [Reviewer] Failed to connect to Synapse: {e}")
+        self.stub = connect_synapse(self.grpc_host, self.grpc_port)
 
     def close(self):
-        if self.channel:
-            self.channel.close()
+        pass
 
     def _query(self, query: str) -> List[Dict]:
         if not self.stub: return []

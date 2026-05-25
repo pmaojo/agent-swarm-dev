@@ -5,7 +5,6 @@ Loads domain-specific ontologies/scenarios from the `scenarios/` directory into 
 import os
 import json
 import sys
-import grpc
 import rdflib
 
 # --- Synapse/Proto Imports ---

@@ -23,7 +23,7 @@ try:
     from synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
 except ImportError:
     from agents.synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
-import grpc
+from lib.synapse_connect import connect_synapse
 
 SWARM = "http://swarm.os/ontology/"
 
@@ -35,17 +35,7 @@ class ProductManagerAgent:
         # Synapse Connection
         self.grpc_host = os.getenv("SYNAPSE_GRPC_HOST", "localhost")
         self.grpc_port = int(os.getenv("SYNAPSE_GRPC_PORT", "50051"))
-        self.channel = None
-        self.stub = None
-        self.connect()
-
-    def connect(self):
-        try:
-            self.channel = grpc.insecure_channel(f"{self.grpc_host}:{self.grpc_port}")
-            grpc.channel_ready_future(self.channel).result(timeout=5)
-            self.stub = semantic_engine_pb2_grpc.SemanticEngineStub(self.channel)
-        except Exception as e:
-            print(f"⚠️ [Product Manager] Failed to connect to Synapse: {e}")
+        self.stub = connect_synapse(self.grpc_host, self.grpc_port)
 
     def ingest_spec_triple(self, card_id: str, file_path: str):
         """Link Trello Card to OpenSpec File in Synapse."""
