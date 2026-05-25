@@ -18,7 +18,7 @@ import grpc
 logger = logging.getLogger("SynapseConnect")
 
 
-def connect_synapse(host: str | None = None, port: int | str | None = None, timeout: float = 2.0):
+def connect_synapse(host: str | None = None, port: int | str | None = None, timeout: float = 0.3):
     """
     Try to connect to the Synapse gRPC server.  If the server is not
     reachable within *timeout* seconds, return a LocalSynapseStub instead.
