@@ -21,6 +21,7 @@ venv/
 
 # Data
 synapse-data/
+.synapse_data/
 data/graphs/
 .fastembed_cache/
 
