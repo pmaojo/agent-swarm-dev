@@ -55,7 +55,7 @@ class OrchestratorAgent:
         self.model = os.getenv("LLM_MODEL", "gemini/gemini-3-flash-preview")
         self.api_key = os.getenv("GEMINI_API_KEY") or os.getenv("OPENAI_API_KEY")
         self.grpc_host = os.getenv("SYNAPSE_GRPC_HOST", "localhost")
-        self.grpc_port = int(os.getenv("SYNAPSE_GRPC_PORT", "50052"))
+        self.grpc_port = int(os.getenv("SYNAPSE_GRPC_PORT", "50051"))
         self.channel = None
 
         # CodeGraph Microservice Configuration
@@ -81,6 +81,7 @@ class OrchestratorAgent:
         # Load Schema at startup
         self.load_schema()
         self.load_security_policy()
+        self.load_seed_ontology()
         self.load_consolidated_wisdom()
 
         # Instantiate Agents
@@ -202,6 +203,28 @@ class OrchestratorAgent:
                 self.ingest_triples(triples, namespace=self.namespace)
                 print(f"✅ Security Policy loaded ({len(triples)} triples)")
         except Exception as e: print(f"❌ Failed to load policy: {e}")
+
+    def load_seed_ontology(self):
+        """Load data/seed_ontology.ttl — stack taxonomy, task routing, skills, constraints."""
+        path = os.path.join(os.path.dirname(__file__), '..', 'data', 'seed_ontology.ttl')
+        if not os.path.exists(path):
+            return
+        try:
+            import rdflib
+            g = rdflib.Graph()
+            g.parse(path, format="turtle")
+            triples = []
+            for s, p, o in g:
+                if isinstance(o, rdflib.Literal):
+                    obj = f'"{str(o)}"'
+                else:
+                    obj = str(o)
+                triples.append({"subject": str(s), "predicate": str(p), "object": obj})
+            if triples:
+                self.ingest_triples(triples, namespace=self.namespace)
+                print(f"✅ Seed ontology loaded ({len(triples)} triples)")
+        except Exception as e:
+            print(f"❌ Failed to load seed ontology: {e}")
 
     def load_consolidated_wisdom(self):
         """Load consolidated_wisdom.ttl"""
@@ -367,7 +390,10 @@ class OrchestratorAgent:
 
     async def execute_sequence(self, task: str, stack: str):
         print("🏛️  Mode: COUNCIL (Table Order). Enforcing turn-taking.")
-        
+
+        # Phase 4: register requirements + branch lineage before any agent runs
+        self.ingest_task_spec(task, stack)
+
         current_task_type = self.get_initial_task_type()
         history = []
 
@@ -414,42 +440,97 @@ class OrchestratorAgent:
             current_task_type = self.get_next_task(current_task_type, outcome)
             if not current_task_type: break
 
-        return {"final_status": "success", "history": history}
+        result = {"final_status": "success", "history": history}
+        self.harvest_wisdom(task, stack, history)
+        return result
 
-    def fast_classify_stack(self, task: str) -> Optional[str]:
-        """Use V5 Fractal Search (64d prefix) for zero-LLM fast routing classification."""
-        # We search the graph for tech stacks that match this task semantically
-        req = semantic_engine_pb2.HybridSearchRequest(
-            query=f"Skill Nodo: {task}",
-            namespace="default",
-            vector_k=3,
-            graph_depth=0,
-            mode=semantic_engine_pb2.SearchMode.VECTOR_ONLY,
-            limit=3,
-            prefix_len=64  # V5 Coarse Search
+    def ingest_task_spec(self, task: str, stack: str) -> str:
+        """Phase 4 — extract requirements from the task and write the
+        branch -> task -> spec -> requirement lineage the Reviewer queries."""
+        task_id = str(uuid.uuid4())[:8]
+        task_uri = f"{SWARM}task/{task_id}"
+        spec_uri = f"{SWARM}spec/{task_id}"
+        stack_uri = f"http://swarm.os/stack/{stack}"
+
+        system_prompt = (
+            "Extract the concrete technical requirements implied by this task. "
+            'Return JSON: {"requirements": ["one sentence each", ...]}. '
+            "Give 2 to 5 requirements, each testable and specific."
         )
         try:
-            res = self.stub.HybridSearch(req)
-            if not res.results:
-                return None
-
-            # Check if any of the top results looks like a stack and meets the critical threshold
-            critical_threshold = 0.8  # Critical threshold for direct assignment
-
-            for r in res.results:
-                if r.score >= critical_threshold:
-                    uri = r.uri.lower()
-                    s = uri.split("/")[-1] if "/" in uri else uri
-                    for valid_s in ["python", "rust", "typescript", "javascript", "godot"]:
-                        if valid_s in uri or valid_s in r.content.lower():
-                            print(f"⚡ V5 Fast Route Zero-LLM direct assignment: {valid_s} (score: {r.score:.3f} >= {critical_threshold})")
-                            return valid_s
-                else:
-                    print(f"⚠️ V5 Vector Routing score {r.score:.3f} below threshold {critical_threshold}")
-
+            res = self.llm.get_structured_completion(task, system_prompt)
+            requirements = [r for r in res.get("requirements", []) if isinstance(r, str)][:5]
         except Exception as e:
-            print(f"⚠️ V5 Vector Routing failed: {e}")
-            
+            print(f"⚠️ Requirement extraction failed: {e}")
+            requirements = [task[:160]]
+
+        triples = [
+            {"subject": task_uri, "predicate": f"{RDF}type", "object": f"{SWARM}Task"},
+            {"subject": task_uri, "predicate": f"{SWARM}description", "object": f'"{task[:200]}"'},
+            {"subject": task_uri, "predicate": f"{SWARM}forStack", "object": stack_uri},
+            {"subject": task_uri, "predicate": f"{SWARM}hasSpec", "object": spec_uri},
+            {"subject": spec_uri, "predicate": f"{RDF}type", "object": f"{SWARM}Spec"},
+        ]
+        for i, req in enumerate(requirements):
+            safe = req.replace('"', "'")
+            triples.append({"subject": spec_uri, "predicate": f"{SWARM}requirement", "object": f'"{safe}"'})
+
+        try:
+            branch_name = self.git.get_current_branch()
+            branch_uri = f"{SWARM}branch/{branch_name}"
+            triples.append({"subject": branch_uri, "predicate": f"{SWARM}originatesFrom", "object": task_uri})
+        except Exception:
+            pass
+
+        self.ingest_triples(triples)
+        print(f"📋 Task spec ingested: {len(requirements)} requirements (task/{task_id})")
+        return task_uri
+
+    def harvest_wisdom(self, task: str, stack: str, history: List[Dict]):
+        """Phase 3 — after a run, persist what worked so future runs inherit it."""
+        successes = [h for h in history if h.get("outcome") == "success"]
+        if not successes:
+            return
+        wisdom_id = str(uuid.uuid4())[:8]
+        wisdom_uri = f"{SWARM}wisdom/{wisdom_id}"
+        stack_uri = f"http://swarm.os/stack/{stack}"
+        safe_task = task[:120].replace('"', "'")
+        roles = sorted({h.get("agent", "") for h in successes})
+
+        triples = [
+            {"subject": wisdom_uri, "predicate": f"{RDF}type", "object": f"{SWARM}Wisdom"},
+            {"subject": wisdom_uri, "predicate": f"{SWARM}fromTask", "object": f'"{safe_task}"'},
+            {"subject": wisdom_uri, "predicate": f"{SWARM}forStack", "object": stack_uri},
+            {"subject": wisdom_uri, "predicate": f"{SWARM}outcome", "object": '"success"'},
+            {"subject": wisdom_uri, "predicate": f"{PROV}generatedAtTime", "object": f'"{datetime.now().isoformat()}"'},
+        ]
+        for role in roles:
+            if role:
+                triples.append({"subject": f"{SWARM}agent/{role}", "predicate": f"{SWARM}learnedFrom", "object": wisdom_uri})
+        self.ingest_triples(triples)
+
+        wisdom_path = os.path.join(os.path.dirname(__file__), '..', 'consolidated_wisdom.ttl')
+        try:
+            line = f'<{stack_uri}> <{SWARM}successPattern> "Completed: {safe_task}" .\n'
+            with open(wisdom_path, 'a') as f:
+                f.write(line)
+            print(f"📚 Wisdom harvested for stack '{stack}' (roles: {', '.join(roles)})")
+        except Exception as e:
+            print(f"⚠️ Could not persist wisdom: {e}")
+
+    def fast_classify_stack(self, task: str) -> Optional[str]:
+        """Zero-LLM stack routing: match the task against stack names in the graph."""
+        query = f"""
+        PREFIX swarm: <{SWARM}>
+        SELECT ?name WHERE {{ ?stack a swarm:TechStack ; swarm:name ?name . }}
+        """
+        results = self.query_graph(query)
+        task_lower = task.lower()
+        for r in results:
+            name = (r.get("?name") or r.get("name") or "").strip('"')
+            if name and name.lower() in task_lower:
+                print(f"⚡ Graph Stack Route (Zero-LLM): '{name}' matched in task")
+                return name
         return None
 
     def decompose_task(self, task: str) -> List[Dict[str, str]]:
@@ -580,20 +661,15 @@ class OrchestratorAgent:
         query = f"""
         PREFIX swarm: <{SWARM}>
         PREFIX nist: <{NIST}>
-        ASK WHERE {{
+        SELECT ?lesson WHERE {{
             ?lesson a swarm:LessonLearned ;
                     nist:resultState "on_failure" ;
                     swarm:context "missing_binary" .
-        }}
+        }} LIMIT 1
         """
         try:
             res = self.query_graph(query)
-            # Handle ASK response format (boolean in result)
-            is_blocked = False
-            if isinstance(res, dict): is_blocked = res.get("boolean", False)
-            elif isinstance(res, list) and res: is_blocked = res[0].get("boolean", False)
-
-            if is_blocked:
+            if isinstance(res, list) and len(res) > 0:
                 return "CIRCUIT_BREAKER_ACTIVE: Apicentric binary missing. Sandbox operations suspended."
         except Exception: pass
         return None
@@ -740,6 +816,16 @@ class OrchestratorAgent:
                 return response.agent_type
             except Exception:
                 pass
+        query = f"""
+        PREFIX swarm: <{SWARM}>
+        SELECT ?role WHERE {{ <{SWARM}task/{task_type}> swarm:handledBy ?role . }}
+        """
+        results = self.query_graph(query)
+        if results:
+            role_uri = (results[0].get("?role") or results[0].get("role") or "").strip("<>")
+            role = role_uri.rstrip("/").split("/")[-1]
+            if role:
+                return role
         return self._TASK_ROUTING.get(task_type, "Coder")
 
     def get_next_task(self, current_task_type: str, outcome: str) -> Optional[str]:
@@ -760,14 +846,15 @@ class OrchestratorAgent:
         query = f"""
         PREFIX nist: <{NIST}>
         PREFIX prov: <{PROV}>
-        ASK WHERE {{
+        SELECT ?haltEvent WHERE {{
             ?haltEvent nist:newStatus "HALTED" ; prov:generatedAtTime ?haltTime .
             FILTER NOT EXISTS {{ ?resumeEvent nist:newStatus "OPERATIONAL" ; prov:generatedAtTime ?resumeTime . FILTER (?resumeTime > ?haltTime) }}
-        }}
+        }} LIMIT 1
         """
         try:
             res = self.stub.QuerySparql(semantic_engine_pb2.SparqlRequest(query=query, namespace="default"))
-            if json.loads(res.results_json).get("boolean", False): return "HALTED"
+            data = json.loads(res.results_json)
+            if isinstance(data, list) and len(data) > 0: return "HALTED"
         except Exception: pass
         return "OPERATIONAL"
 
