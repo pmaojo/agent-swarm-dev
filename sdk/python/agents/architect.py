@@ -18,8 +18,6 @@ sys.path.insert(0, os.path.join(SDK_PYTHON_PATH, "agents"))
 
 from llm import LLMService
 from trello_bridge import TrelloBridge
-from tools.api_sandbox import ApiSandboxTool
-
 # Add Synapse connectivity
 try:
     from synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
@@ -39,11 +37,10 @@ class ArchitectAgent:
         self.grpc_port = int(os.getenv("SYNAPSE_GRPC_PORT", "50051"))
         self.stub = connect_synapse(self.grpc_host, self.grpc_port)
 
-    def ingest_design_triple(self, entity_id: str, file_path: str, sandbox_url: str = None, is_trello_card: bool = True):
+    def ingest_design_triple(self, entity_id: str, file_path: str, is_trello_card: bool = True):
         """Link Trello Card or Task to Design File in Synapse."""
         if not self.stub: return
 
-        # <EntityID> <hasDesign> <FilePath>
         if is_trello_card:
             subject = f"{SWARM}trello/card/{entity_id}"
             triples = [
@@ -55,13 +52,6 @@ class ArchitectAgent:
             triples = [
                 {"subject": subject, "predicate": f"{SWARM}hasTechnicalDesign", "object": f'"{file_path}"'}
             ]
-
-        if sandbox_url:
-            triples.append({
-                "subject": f"{SWARM}file/{file_path}", # Attach sandbox to the design file
-                "predicate": f"{SWARM}hasApiSandbox",
-                "object": f'"{sandbox_url}"'
-            })
 
         pb_triples = []
         for t in triples:
@@ -158,27 +148,17 @@ class ArchitectAgent:
         except Exception as e:
             print(f"⚠️ [Architect] Failed to broadcast event: {e}")
 
-    def _deploy_design_to_sandbox(self, name: str, design_content: str) -> dict:
-        """
-        Parses OpenAPI spec from design, creates sandbox, saves spec file.
-        Returns: {
-            "sandbox_url": str | None,
-            "openapi_path": str | None
-        }
-        """
-        result = {"sandbox_url": None, "openapi_path": None}
+    def _extract_openapi_spec(self, name: str, design_content: str) -> dict:
+        """Extract and save OpenAPI spec from design content if present."""
+        result = {"openapi_path": None}
 
         if "```yaml" in design_content and "openapi:" in design_content:
             try:
-                # Extract YAML block
                 start = design_content.find("```yaml") + 7
                 end = design_content.find("```", start)
                 yaml_content = design_content[start:end].strip()
 
                 if "openapi" in yaml_content:
-                    print("🏗️ [Architect] Detected OpenAPI spec. Creating Sandbox...")
-
-                    # 1. Save OpenAPI File
                     safe_name = "".join([c if c.isalnum() else "-" for c in name.lower()])
                     spec_path = f"openspec/specs/{safe_name}/openapi.yaml"
                     os.makedirs(os.path.dirname(spec_path), exist_ok=True)
@@ -186,24 +166,9 @@ class ArchitectAgent:
                         f.write(yaml_content)
                     print(f"💾 [Architect] Saved OpenAPI spec to {spec_path}")
                     result["openapi_path"] = spec_path
-
-                    # 2. Broadcast Update to Godot
                     self.broadcast_building_update(safe_name)
-
-                    # 3. Create Sandbox
-                    tool = ApiSandboxTool()
-                    sandbox_res = tool.create_sandbox(yaml_content, safe_name)
-
-                    # Check for error in response
-                    if sandbox_res and (sandbox_res.startswith("Error") or "failed" in sandbox_res.lower()):
-                         print(f"⚠️ [Architect] Sandbox creation failed: {sandbox_res}")
-                         result["sandbox_url"] = None
-                    else:
-                         print(f"✅ [Architect] Sandbox created at: {sandbox_res}")
-                         result["sandbox_url"] = sandbox_res
-
             except Exception as e:
-                print(f"⚠️ [Architect] Failed to create sandbox or save spec: {e}")
+                print(f"⚠️ [Architect] Failed to save spec: {e}")
 
         return result
 
@@ -253,20 +218,16 @@ class ArchitectAgent:
         # 3. Save to Repo
         file_path = self.save_design_file(name, design_content)
 
-        # 4. Extract OpenAPI and Create Sandbox (Refactored)
-        deployment = self._deploy_design_to_sandbox(name, design_content)
-        sandbox_url = deployment.get("sandbox_url")
+        # 4. Extract OpenAPI spec if present
+        deployment = self._extract_openapi_spec(name, design_content)
 
         # 5. Update Trello
         comment = f"📐 **Technical Design Ready!**\n\nFile: `{file_path}`"
-        if sandbox_url:
-            comment += f"\n\n🧪 **Live API Sandbox:** `{sandbox_url}`"
-
         comment += f"\n\n---\n\n{design_content}"
         self.bridge.add_comment(card_id, comment)
 
         # 6. Ingest to Synapse
-        self.ingest_design_triple(card_id, file_path, sandbox_url, is_trello_card=True)
+        self.ingest_design_triple(card_id, file_path, is_trello_card=True)
 
         # 7. Move to DESIGN (Wait for Approval)
         self.bridge.move_card(card_id, "DESIGN")
@@ -286,22 +247,15 @@ class ArchitectAgent:
             safe_name = task[:20].strip().replace(" ", "-")
             file_path = self.save_design_file(safe_name, design_content)
 
-            # --- NEW LOGIC: Close the Gap ---
-            deployment = self._deploy_design_to_sandbox(safe_name, design_content)
-            sandbox_url = deployment.get("sandbox_url")
-
-            # Ingest here to link file to sandbox in Synapse
-            if sandbox_url:
-                 # Use a pseudo-ID for task tracking if needed, or just rely on file path triples
-                 task_id = f"task-{int(time.time())}"
-                 self.ingest_design_triple(task_id, file_path, sandbox_url, is_trello_card=False)
+            deployment = self._extract_openapi_spec(safe_name, design_content)
+            task_id = f"task-{int(time.time())}"
+            self.ingest_design_triple(task_id, file_path, is_trello_card=False)
 
             return {
-                "status": "success", 
-                "artifact": file_path, 
+                "status": "success",
+                "artifact": file_path,
                 "content": design_content,
                 "agent": "Architect",
-                "sandbox_url": sandbox_url,
                 "openapi_path": deployment.get("openapi_path")
             }
         return {"status": "failure", "error": "Design generation failed"}

@@ -25,7 +25,6 @@ from lib.synapse_connect import connect_synapse
 from llm import LLMService
 from git_service import GitService
 from agents.tools.shell import execute_command
-from agents.tools.api_sandbox import ApiSandboxTool
 
 SWARM = "http://swarm.os/ontology/"
 NIST = "http://nist.gov/caisi/"
@@ -38,7 +37,6 @@ class ReviewerAgent:
         self.namespace = "default"
         self.llm = LLMService()
         self.git = GitService()
-        self.sandbox_tool = ApiSandboxTool()
         self.stub = connect_synapse(self.grpc_host, self.grpc_port)
 
     def close(self):
@@ -189,93 +187,7 @@ class ReviewerAgent:
             pass
 
     def run_contract_tests(self, context: Dict) -> Dict[str, Any]:
-        """
-        Executes tests against the Apicentric Mock.
-        """
-        print("🛡️  Starting Contract Tests (Apicentric)...")
-
-        # 1. Identify OpenAPI Spec
-        spec_content = None
-        service_name = "unknown-service"
-
-        # Try to find openapi.yaml in the repo
-        potential_specs = [f for f in os.listdir(".") if f.endswith("openapi.yaml") or f.endswith("swagger.yaml")]
-        # Also check openspec/
-        if os.path.exists("openspec"):
-            potential_specs.extend([os.path.join("openspec", f) for f in os.listdir("openspec") if f.endswith(".yaml")])
-
-        if potential_specs:
-            # Pick the first one for now
-            fname = potential_specs[0]
-            try:
-                with open(fname, "r") as f:
-                    spec_content = f.read()
-                service_name = os.path.basename(fname).replace(".yaml", "").replace(".json", "")
-            except Exception as e:
-                print(f"⚠️ Failed to read spec {fname}: {e}")
-
-        if not spec_content:
-            print("⚠️  No OpenAPI spec found. Skipping Contract Tests.")
-            return {"status": "skipped", "reason": "No spec found"}
-
-        # 2. Start Sandbox
-        try:
-            mock_url = self.sandbox_tool.create_sandbox(spec_content, service_name)
-            if "Error" in mock_url:
-                raise Exception(mock_url)
-        except Exception as e:
-            print(f"❌ Failed to start sandbox: {e}")
-            return {"status": "error", "error": str(e)}
-
-        # 3. Run Tests with BASE_URL
-        print(f"🧪 Running tests against Mock: {mock_url}")
-
-        cmd = "pytest tests/ --maxfail=5" # Fail fast
-
-        try:
-            # Ensure receipt file is clean
-            receipt_path = os.path.join(os.getcwd(), "traffic_receipt.json")
-            if os.path.exists(receipt_path):
-                try: os.remove(receipt_path)
-                except: pass
-
-            result = execute_command(cmd, reason="Contract Testing", env={"BASE_URL": mock_url})
-
-            # Verify Traffic Receipt (Zero Trust)
-            traffic_verified = False
-            if os.path.exists(receipt_path):
-                try:
-                    with open(receipt_path, "r") as f:
-                        receipts = json.load(f)
-                    # Check if any request hit the mock_url
-                    relevant_traffic = [r for r in receipts if mock_url in r.get("url", "")]
-                    if relevant_traffic:
-                        print(f"✅ Traffic Verified: {len(relevant_traffic)} calls to Sandbox.")
-                        traffic_verified = True
-                    else:
-                        print(f"⚠️  No traffic recorded to {mock_url}. Tests may be hallucinating.")
-                except Exception as e:
-                    print(f"⚠️  Failed to read traffic receipt: {e}")
-            else:
-                print("⚠️  No traffic receipt found. Network interactions unverified.")
-
-            if result.get('status') == 'success':
-                if not traffic_verified:
-                     return {"status": "failure", "error": "Tests passed but NO TRAFFIC to sandbox detected (Hallucination Risk)."}
-
-                print("✅ Contract Tests Passed.")
-                return {"status": "success"}
-            else:
-                print("⛔ Contract Tests Failed!")
-                # Broadcast Hardening Event
-                self.broadcast_hardening_event("CONTRACT_FAILURE", f"Tests failed against {mock_url}", {"stdout": result.get('stdout'), "stderr": result.get('stderr')})
-                return {"status": "failure", "output": result.get('stdout')}
-        except Exception as e:
-             print(f"❌ Test execution error: {e}")
-             return {"status": "error", "error": str(e)}
-        finally:
-            # Ensure simulator is cleaned up
-            self.sandbox_tool.stop_simulator()
+        return {"status": "skipped", "reason": "Contract testing not available"}
 
     def get_files_to_review(self, context: Dict) -> List[str]:
         """Extract file paths from previous Coder output in history."""
@@ -344,17 +256,7 @@ class ReviewerAgent:
                  "violations": compliance.get("violations")
              }
 
-        # 2. Mandatory Contract Testing (Apicentric)
-        contract_results = self.run_contract_tests(context or {})
-        if contract_results.get("status") == "failure":
-             return {
-                 "status": "failure",
-                 "error": "CONTRACT_VIOLATION",
-                 "violations": ["Contract Tests Failed against Apicentric Mock"],
-                 "details": contract_results
-             }
-
-        # 3. Traditional Review (Files)
+        # 2. Traditional Review (Files)
         files = self.get_files_to_review(context or {})
         static_analysis_results = self.run_static_analysis(files)
 
