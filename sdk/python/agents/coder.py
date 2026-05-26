@@ -58,15 +58,15 @@ class CoderAgent:
         """Check if the agent has unlocked a specific skill in Synapse."""
         query = f"""
         PREFIX swarm: <{SWARM}>
-        ASK WHERE {{
+        SELECT ?skill WHERE {{
             <{SWARM}agent/Coder> swarm:hasSkill <{SWARM}{skill_id}> .
-        }}
+            BIND(<{SWARM}{skill_id}> AS ?skill)
+        }} LIMIT 1
         """
         try:
             res = self.stub.QuerySparql(semantic_engine_pb2.SparqlRequest(query=query, namespace="default"))
             data = json.loads(res.results_json)
-            if isinstance(data, dict): return data.get("boolean", False)
-            return False
+            return isinstance(data, list) and len(data) > 0
         except Exception:
             return False
 
