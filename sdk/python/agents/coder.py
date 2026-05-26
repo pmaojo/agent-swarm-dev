@@ -279,7 +279,7 @@ class CoderAgent:
             if review_result.get("status") == "success":
                 print("✅ [Coder] Reviewer Approved!")
                 return {"status": "success", "final_result": result, "review": review_result, "negotiations": negation_count + 1}
-            issues = review_result.get("issues", [])
+            issues = review_result.get("violations") or review_result.get("issues") or []
             print(f"🛑 [Coder] Reviewer Rejected: {issues}")
             task = f"{task}\n\nReviewer Feedback (Round {negation_count+1}):\n" + "\n".join(issues)
             negation_count += 1

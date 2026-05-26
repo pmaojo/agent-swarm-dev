@@ -335,15 +335,18 @@ class LLMService:
             return f"MOCK: {prompt[:80]}"
 
         # --- Try Rust LLM gateway ---
-        if orchestrator_pb2 is not None:
+        # The gateway only conveys a flat string, so it cannot carry tool_calls.
+        # Skip it when tools are requested or the caller passed the full message
+        # list (agentic loops) — those need the raw litellm message object back.
+        if orchestrator_pb2 is not None and not tools and not messages:
             try:
                 request = orchestrator_pb2.LlmCompletionRequest(
                     prompt=prompt,
                     model=self.model,
                     system_prompt=system_prompt,
                     json_mode=json_mode,
-                    tools_json=json.dumps(tools) if tools else "",
-                    messages_json=json.dumps(messages) if messages else ""
+                    tools_json="",
+                    messages_json=""
                 )
                 response = self.llm_gateway_stub.Complete(request, timeout=1.5)
                 return response.completion
@@ -360,9 +363,11 @@ class LLMService:
             ]
 
         cache_key = self._get_cache_key(messages, json_mode, tools, tool_choice)
-        cached = self._check_cache(cache_key)
-        if cached is not None:
-            return cached
+        # Tool-calling turns are stateful — never serve them from the text cache.
+        if not tools:
+            cached = self._check_cache(cache_key)
+            if cached is not None:
+                return cached
 
         kwargs: Dict[str, Any] = dict(
             model=self._resolve_model_name(self.model),
@@ -381,10 +386,17 @@ class LLMService:
 
         resp = litellm.completion(**kwargs)
         msg = resp.choices[0].message
-        result = msg.content if hasattr(msg, "content") else str(msg)
 
         if resp.usage:
             self.log_spend(resp.usage.prompt_tokens, resp.usage.completion_tokens)
+
+        # Agentic callers (tools) need the full message object so they can read
+        # msg.tool_calls; flattening to .content here silently drops every tool
+        # call and the agent loop terminates without doing any work.
+        if tools:
+            return msg
+
+        result = msg.content if hasattr(msg, "content") else str(msg)
 
         # Store in LRU cache
         self._cache[cache_key] = result
