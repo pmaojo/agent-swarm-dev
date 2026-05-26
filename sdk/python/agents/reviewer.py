@@ -66,7 +66,31 @@ class ReviewerAgent:
         except Exception as e:
             print(f"⚠️ Ingest failed: {e}")
 
-    def verify_pr_compliance(self, branch_name: str) -> Dict[str, Any]:
+    def _extract_generated_code(self, context: Optional[Dict]) -> str:
+        """Return the code the Coder produced in the latest negotiation round."""
+        if not context:
+            return ""
+        for entry in reversed(context.get("history", [])):
+            if entry.get("agent") != "Coder" or entry.get("outcome") != "success":
+                continue
+            result = entry.get("result", {})
+            saved = result.get("saved_files", [])
+            if saved:
+                parts = []
+                for path in saved[:8]:
+                    try:
+                        with open(path) as fh:
+                            parts.append(f"# {path}\n{fh.read()}")
+                    except Exception:
+                        pass
+                if parts:
+                    return "\n\n".join(parts)
+            text = result.get("result", "")
+            if text:
+                return str(text)
+        return ""
+
+    def verify_pr_compliance(self, branch_name: str, code: str = "") -> Dict[str, Any]:
         """
         Neurosymbolic Verification:
         1. Fetch semantics (Task -> Spec -> Requirements)
@@ -100,13 +124,11 @@ class ReviewerAgent:
         const_results = self._query(query_constraints)
         constraints = [r.get("?constraint") or r.get("constraint") for r in const_results]
 
-        # 3. Get Diff
-        diff = self.git.get_diff(branch_name)
-        if not diff:
-            print("⚠️ No diff found (or branch empty).")
-            # If no diff, technically compliant but suspicious?
-            # Let's verify file existence?
-            pass
+        # 3. Get code to review — prefer the Coder's direct output over a branch diff
+        if not code:
+            code = self.git.get_diff(branch_name, base_branch="HEAD~1")
+        if not code:
+            print("⚠️ No code to review.")
 
         # 4. LLM Reasoning
         if not requirements and not constraints:
@@ -132,8 +154,8 @@ class ReviewerAgent:
         Hard Constraints (NIST):
         {json.dumps(constraints, indent=2)}
 
-        Git Diff:
-        {diff[:5000]} (Truncated if too long)
+        Code to Review:
+        {code[:8000]}
         """
 
         try:
@@ -312,9 +334,10 @@ class ReviewerAgent:
         return results
 
     def run(self, task: str, context: Optional[Dict] = None) -> Dict[str, Any]:
-        # 1. Semantic Compliance (New Feature)
+        # 1. Semantic Compliance
         branch_name = self.git.get_current_branch()
-        compliance = self.verify_pr_compliance(branch_name)
+        generated_code = self._extract_generated_code(context)
+        compliance = self.verify_pr_compliance(branch_name, code=generated_code)
 
         if not compliance.get("compliant", True):
              return {
