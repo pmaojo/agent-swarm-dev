@@ -2,22 +2,16 @@
 Test de eficiencia de tokens para el sistema con Gemini API.
 Mide: tokens consumidos, cache hits, tamaño de prompts, y costo estimado.
 """
+import hashlib
+import json
 import os
 import sys
 import time
-import json
-import hashlib
 from collections import OrderedDict
-from typing import Any, Dict, List, Optional
-
-# Configurar la API key de Gemini (desde env o argumento CLI)
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or (sys.argv[1] if len(sys.argv) > 1 else "")
-if not GEMINI_API_KEY:
-    print("❌ GEMINI_API_KEY no configurada. Usa: GEMINI_API_KEY=<key> python test_gemini_token_efficiency.py")
-    sys.exit(1)
-os.environ["GEMINI_API_KEY"] = GEMINI_API_KEY
+from typing import Any, Dict, List
 
 import litellm
+
 litellm.telemetry = False
 litellm.set_verbose = False
 
@@ -270,9 +264,15 @@ Posibles mejoras de eficiencia:
 # ─── Main ────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    api_key = os.getenv("GEMINI_API_KEY") or (sys.argv[1] if len(sys.argv) > 1 else "")
+    if not api_key:
+        print("❌ GEMINI_API_KEY no configurada. Usa: GEMINI_API_KEY=<key> python test_gemini_token_efficiency.py")
+        sys.exit(1)
+    os.environ["GEMINI_API_KEY"] = api_key
+
     print("🚀 Iniciando prueba de eficiencia de tokens con Gemini API")
     print(f"   Modelo base: {MODEL}")
-    print(f"   API Key: {GEMINI_API_KEY[:8]}...")
+    print(f"   API Key: {api_key[:8]}...")
 
     test_prompt_length()
     test_lru_cache()
