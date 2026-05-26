@@ -1,18 +1,14 @@
 #!/bin/bash
-# Start Synapse with Remote Embeddings
-# Requires FastEmbed server running on port 11434
+# Start Synapse (RDF-only — memory is 100% explicit triples, no embeddings)
 
 set -e
 
 SYNAPSE_BINARY="${SYNAPSE_BINARY:-./synapse}"
-EMBEDDING_PROVIDER="${EMBEDDING_PROVIDER:-remote}"
-EMBEDDING_API_URL="${EMBEDDING_API_URL:-http://localhost:11434/api/embeddings}"
+GRAPH_STORAGE_PATH="${GRAPH_STORAGE_PATH:-data/graphs}"
 
-echo "🚀 Starting Synapse (Light Mode)"
-echo "   Embedding Provider: $EMBEDDING_PROVIDER"
-echo "   Embedding URL: $EMBEDDING_API_URL"
+echo "🚀 Starting Synapse"
+echo "   Storage Path: $GRAPH_STORAGE_PATH"
 
-export EMBEDDING_PROVIDER
-export EMBEDDING_API_URL
+export GRAPH_STORAGE_PATH
 
 $SYNAPSE_BINARY "$@"

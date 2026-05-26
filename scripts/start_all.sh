@@ -1,10 +1,9 @@
 #!/bin/bash
 # Start all services for agent-swarm-dev
 # 1. Ensure Synapse is built (Light Version)
-# 2. FastEmbed server (port 11434)
-# 3. Synapse (port 50051)
-# 4. Swarmd Gateway (port 18789)
-# 5. Swarm CLI (TUI)
+# 2. Synapse (port 50051)
+# 3. Swarmd Gateway (port 18789)
+# 4. Swarm CLI (TUI)
 
 set -e
 
@@ -30,22 +29,12 @@ if ! bash scripts/setup_synapse.sh; then
     exit 1
 fi
 
-# 2. Check for FastEmbed
-if ! curl -s http://localhost:11434/ >/dev/null 2>&1; then
-    echo "▶️  Starting FastEmbed server..."
-    python3 scripts/embeddings_server.py --port 11434 > /dev/null 2>&1 &
-    sleep 3
-else
-    echo "✅ FastEmbed already running"
-fi
-
-# 3. Check for Synapse
+# 2. Check for Synapse (RDF-only — no embeddings)
 SYNAPSE_PORT=${SYNAPSE_GRPC_PORT:-50051}
 if ! nc -z localhost $SYNAPSE_PORT 2>/dev/null; then
     echo "▶️  Starting Synapse (Port: $SYNAPSE_PORT)..."
     # Use local synapse-data (respect env var)
     export GRAPH_STORAGE_PATH="${GRAPH_STORAGE_PATH:-./synapse-data}"
-    export EMBEDDING_PROVIDER="${EMBEDDING_PROVIDER:-remote}"
 
     # Run synapse in background
     ./synapse > synapse.log 2>&1 &
@@ -87,7 +76,6 @@ else
 fi
 
 echo "🎉 All services ready!"
-echo "   - FastEmbed: http://localhost:11434"
 echo "   - Synapse: localhost:$SYNAPSE_PORT (Data: ./synapse-data)"
 echo "   - Swarm Gateway: http://localhost:18789"
 echo "   - Trello Bridge: Active (Logs: trello_bridge.log)"

@@ -94,14 +94,10 @@ impl SynapseStore {
             (HashMap::new(), HashMap::new(), 1)
         };
 
-        // Initialize vector store (optional, can fail gracefully)
-        let vector_store = match VectorStore::new(namespace) {
-            Ok(vs) => Some(Arc::new(vs)),
-            Err(e) => {
-                eprintln!("WARNING: Failed to initialize vector store for namespace '{}': {}", namespace, e);
-                None
-            }
-        };
+        // Memory is 100% explicit RDF triples — no probabilistic vector recall.
+        // The vector store / embedder is disabled so ingest never reaches out to an
+        // embedding backend (which made every IngestTriples fail when none was running).
+        let vector_store: Option<Arc<VectorStore>> = None;
 
         Ok(Self {
             store,

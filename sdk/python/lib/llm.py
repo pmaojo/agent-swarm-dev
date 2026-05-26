@@ -60,7 +60,7 @@ class LLMService:
 
         self.api_key = os.getenv("GEMINI_API_KEY") or os.getenv("OPENAI_API_KEY")
         self.kilo_key = os.getenv("KILO_GATEWAY_API_KEY")
-        self.model = os.getenv("LLM_MODEL", "gemini/gemini-3.5-flash")
+        self.model = os.getenv("LLM_MODEL", "gemini/gemini-3.1-flash-lite")
         # Fallbacks in preference order — all confirmed available via API
         self.fallback_models = [
             "gemini/gemini-3-flash-preview",
@@ -69,7 +69,6 @@ class LLMService:
         ]
         
         # Sense environment
-        # fastembed (11435) doesn't provide Ollama completion API - removing incorrect fallback
         if "OLLAMA_API_BASE" in os.environ:
              del os.environ["OLLAMA_API_BASE"]
 
