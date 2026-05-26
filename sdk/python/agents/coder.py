@@ -42,7 +42,7 @@ SWARM = "http://swarm.os/ontology/"
 class CoderAgent:
     def __init__(self):
         self.grpc_host = os.getenv("SYNAPSE_GRPC_HOST", "localhost")
-        self.grpc_port = int(os.getenv("SYNAPSE_GRPC_PORT", "50054"))
+        self.grpc_port = int(os.getenv("SYNAPSE_GRPC_PORT", "50051"))
         self.namespace = "default"
         self.llm = LLMService()
         self.stub = connect_synapse(self.grpc_host, self.grpc_port)
