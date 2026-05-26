@@ -57,7 +57,6 @@ class OrchestratorAgent:
         self.grpc_host = os.getenv("SYNAPSE_GRPC_HOST", "localhost")
         self.grpc_port = int(os.getenv("SYNAPSE_GRPC_PORT", "50052"))
         self.channel = None
-        self.stub = None
 
         # CodeGraph Microservice Configuration
         self.codegraph_host = os.getenv("CODEGRAPH_GRPC_HOST", "localhost")
@@ -135,8 +134,6 @@ class OrchestratorAgent:
 
     def ingest_triples(self, triples: List[Dict[str, str]], namespace: str = None):
         """Ingest triples helper"""
-        if not self.stub: return
-
         target_namespace = namespace if namespace else self.namespace
 
         pb_triples = []
@@ -164,11 +161,6 @@ class OrchestratorAgent:
 
     def query_graph(self, query: str, namespace: str = None) -> List[Dict]:
         """Execute SPARQL query against Synapse"""
-        if not self.stub:
-            print("❌ Not connected to Synapse")
-            self.connect()
-            if not self.stub: return []
-
         target_namespace = namespace if namespace else self.namespace
 
         request = semantic_engine_pb2.SparqlRequest(
@@ -426,9 +418,6 @@ class OrchestratorAgent:
 
     def fast_classify_stack(self, task: str) -> Optional[str]:
         """Use V5 Fractal Search (64d prefix) for zero-LLM fast routing classification."""
-        if not self.stub:
-            return None
-            
         # We search the graph for tech stacks that match this task semantically
         req = semantic_engine_pb2.HybridSearchRequest(
             query=f"Skill Nodo: {task}",
@@ -776,7 +765,6 @@ class OrchestratorAgent:
             FILTER NOT EXISTS {{ ?resumeEvent nist:newStatus "OPERATIONAL" ; prov:generatedAtTime ?resumeTime . FILTER (?resumeTime > ?haltTime) }}
         }}
         """
-        if not self.stub: return "OPERATIONAL"
         try:
             res = self.stub.QuerySparql(semantic_engine_pb2.SparqlRequest(query=query, namespace="default"))
             if json.loads(res.results_json).get("boolean", False): return "HALTED"

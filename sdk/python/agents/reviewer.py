@@ -45,7 +45,6 @@ class ReviewerAgent:
         pass
 
     def _query(self, query: str) -> List[Dict]:
-        if not self.stub: return []
         request = semantic_engine_pb2.SparqlRequest(query=query, namespace=self.namespace)
         try:
             response = self.stub.QuerySparql(request)
@@ -53,7 +52,6 @@ class ReviewerAgent:
         except Exception: return []
 
     def _ingest(self, triples: List[Dict[str, str]]):
-        if not self.stub: return
         pb_triples = []
         for t in triples:
             pb_triples.append(semantic_engine_pb2.Triple(

@@ -45,14 +45,6 @@ class MemoryAgent:
         self.stub = connect_synapse(host_part, port_part)
 
     def _ensure_stub(self) -> semantic_engine_pb2_grpc.SemanticEngineStub:
-        if self.stub is None:
-            self.connect()
-
-        if self.stub is None:
-            raise MemoryAgentError(
-                f"[MemoryAgent] Connection unavailable host={self.host} namespace={self.namespace}"
-            )
-
         return self.stub
 
     def add_triple(self, subject: str, predicate: str, object: str) -> bool:

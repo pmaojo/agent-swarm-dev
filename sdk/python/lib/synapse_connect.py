@@ -1,13 +1,9 @@
 """
-synapse_connect — single helper used by every agent to obtain a Synapse stub.
+synapse_connect — connects every agent to the Synapse gRPC server.
 
-Priority:
-  1. gRPC server at SYNAPSE_GRPC_HOST:SYNAPSE_GRPC_PORT (or the supplied host/port)
-  2. LocalSynapseStub (rdflib, no server required)
-
-Usage:
-    from lib.synapse_connect import connect_synapse
-    self.stub = connect_synapse(self.grpc_host, self.grpc_port)
+Reads SYNAPSE_GRPC_HOST / SYNAPSE_GRPC_PORT from the environment.
+If the server is not reachable the call raises so the agent fails loudly
+instead of silently degrading to an in-process stub.
 """
 
 import logging
@@ -17,29 +13,24 @@ import grpc
 
 logger = logging.getLogger("SynapseConnect")
 
+_DEFAULT_TIMEOUT = float(os.getenv("SYNAPSE_CONNECT_TIMEOUT", "5.0"))
 
-def connect_synapse(host: str | None = None, port: int | str | None = None, timeout: float = 0.3):
+
+def connect_synapse(host: str | None = None, port: int | str | None = None,
+                    timeout: float = _DEFAULT_TIMEOUT):
     """
-    Try to connect to the Synapse gRPC server.  If the server is not
-    reachable within *timeout* seconds, return a LocalSynapseStub instead.
+    Connect to the Synapse gRPC server and return a SemanticEngineStub.
 
-    Returns an object that implements IngestTriples / QuerySparql / HybridSearch
-    with the same call signature as SemanticEngineStub.
+    Raises RuntimeError if the server is not reachable within *timeout* seconds
+    so callers fail fast and visibly rather than silently falling back.
     """
     host = host or os.getenv("SYNAPSE_GRPC_HOST", "localhost")
     port = port or os.getenv("SYNAPSE_GRPC_PORT", "50051")
 
     try:
-        # Import stubs lazily to keep import order flexible
-        from agents.synapse_proto import (
-            semantic_engine_pb2_grpc,
-        )
+        from agents.synapse_proto import semantic_engine_pb2_grpc
     except ImportError:
-        try:
-            from synapse_proto import semantic_engine_pb2_grpc  # type: ignore
-        except ImportError:
-            logger.warning("Cannot import synapse_proto — using LocalSynapseStub")
-            return _local_stub()
+        from synapse_proto import semantic_engine_pb2_grpc  # type: ignore
 
     addr = f"{host}:{port}"
     channel = grpc.insecure_channel(addr)
@@ -49,15 +40,11 @@ def connect_synapse(host: str | None = None, port: int | str | None = None, time
         logger.info("✅ Connected to Synapse gRPC at %s", addr)
         return stub
     except grpc.FutureTimeoutError:
-        logger.warning("⚠️  Synapse gRPC not reachable at %s — using LocalSynapseStub", addr)
         channel.close()
-        return _local_stub()
+        raise RuntimeError(
+            f"Synapse gRPC not reachable at {addr} — is the server running? "
+            f"Start it with: cd vendor/synapse-engine && ./start_synapse.sh"
+        )
     except Exception as e:
-        logger.warning("⚠️  Synapse gRPC error (%s) — using LocalSynapseStub", e)
         channel.close()
-        return _local_stub()
-
-
-def _local_stub():
-    from lib.local_synapse import LocalSynapseStub  # type: ignore
-    return LocalSynapseStub()
+        raise RuntimeError(f"Synapse gRPC error at {addr}: {e}") from e

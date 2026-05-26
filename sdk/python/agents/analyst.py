@@ -43,7 +43,6 @@ class AnalystAgent:
         self.grpc_port = int(os.getenv("SYNAPSE_GRPC_PORT", "50051"))
         self.namespace = "default"
         self.llm = LLMService()
-        self.stub = None
         self.analyst_stub = None
 
         self.connect()
@@ -77,7 +76,6 @@ class AnalystAgent:
         return {}
 
     def query_graph(self, query: str) -> List[Dict]:
-        if not self.stub: return []
         request = semantic_engine_pb2.SparqlRequest(query=query, namespace=self.namespace)
         try:
             response = self.stub.QuerySparql(request)
@@ -87,7 +85,6 @@ class AnalystAgent:
             return []
 
     def ingest_triples(self, triples: List[Dict[str, str]]):
-        if not self.stub: return
         pb_triples = []
         for t in triples:
             pb_triples.append(semantic_engine_pb2.Triple(

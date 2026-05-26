@@ -56,7 +56,6 @@ class CoderAgent:
 
     def check_skill_unlocked(self, skill_id: str) -> bool:
         """Check if the agent has unlocked a specific skill in Synapse."""
-        if not self.stub: return True
         query = f"""
         PREFIX swarm: <{SWARM}>
         ASK WHERE {{
@@ -73,7 +72,6 @@ class CoderAgent:
 
     def record_artifact(self, filename: str, content: str = "Modified via Tool"):
         """Record the generated artifact in Synapse."""
-        if not self.stub: return
         subject = f"{SWARM}artifact/code/{int(time.time())}_{os.path.basename(filename)}"
         triples = [
             {"subject": subject, "predicate": f"{SWARM}type", "object": f"{SWARM}ArtifactType"},
@@ -88,7 +86,6 @@ class CoderAgent:
 
     def record_negotiation(self, reviewer_agent: Any, execution_uuid: str):
         """Record P2P negotiation triple."""
-        if not self.stub: return
         coder_uri = f"{SWARM}agent/Coder"
         reviewer_uri = f"{SWARM}agent/{reviewer_agent.__class__.__name__}" if reviewer_agent else f"{SWARM}agent/Reviewer"
         triples = [
