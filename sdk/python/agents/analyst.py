@@ -3,6 +3,7 @@
 Analyst Agent - Consolidates failure patterns into Golden Rules.
 """
 import os
+import re
 import sys
 import json
 import grpc
@@ -20,12 +21,8 @@ sys.path.insert(0, os.path.join(SDK_PYTHON_PATH, "agents"))
 
 try:
     from synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
-    from synapse_proto import orchestrator_pb2, orchestrator_pb2_grpc
-    from synapse_proto import orchestrator_pb2, orchestrator_pb2_grpc
 except ImportError:
     from agents.synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
-    from agents.synapse_proto import orchestrator_pb2, orchestrator_pb2_grpc
-    from agents.synapse_proto import orchestrator_pb2, orchestrator_pb2_grpc
 
 from llm import LLMService
 from orchestrator import OrchestratorAgent
@@ -43,20 +40,12 @@ class AnalystAgent:
         self.grpc_port = int(os.getenv("SYNAPSE_GRPC_PORT", "50051"))
         self.namespace = "default"
         self.llm = LLMService()
-        self.analyst_stub = None
 
         self.connect()
-        self.connect_analyst_service()
         self.config = self.load_config()
         self.threshold = self.config.get('memory_settings', {}).get('consolidation_threshold', 5)
         self.mock_llm = os.getenv("MOCK_LLM", "false").lower() == "true"
         self.sanity_suite = self.load_sanity_suite()
-
-    def connect_analyst_service(self):
-        """Connect to the new Rust-based Analyst microservice."""
-        self.analyst_channel = grpc.insecure_channel("localhost:50055")
-        self.analyst_stub = orchestrator_pb2_grpc.AnalystServiceStub(self.analyst_channel)
-        print("✅ Analyst connected to Rust microservice stub at localhost:50055")
 
     def connect(self):
         self.stub = connect_synapse(self.grpc_host, self.grpc_port)
@@ -120,27 +109,20 @@ class AnalystAgent:
         return self.query_graph(query)
 
     def cluster_failures(self, failures):
-        failure_infos = []
+        """Group unconsolidated failures by (role, note, stack) into execId lists."""
+        clusters = defaultdict(list)
         for f in failures:
-            exec_id = f.get("?execId", f.get("execId", ""))
-            note = f.get("?note", f.get("note", ""))
-            role = f.get("?role", f.get("role", ""))
-            stack = f.get("?stack", f.get("stack", "python"))
-
-            if isinstance(exec_id, dict): exec_id = exec_id.get('value', '')
-            if isinstance(note, dict): note = note.get('value', '')
-            if isinstance(role, dict): role = role.get('value', '')
-            if isinstance(stack, dict): stack = stack.get('value', 'python')
-
-            failure_infos.append(orchestrator_pb2.FailureInfo(
-                exec_id=str(exec_id), note=str(note), role=str(role), stack=str(stack)
-            ))
-
-        request = orchestrator_pb2.ClusterRequest(failures=failure_infos)
-        response = self.analyst_stub.ClusterFailures(request, timeout=2.0)
-        if response.json_clusters and response.json_clusters != "{}":
-            return json.loads(response.json_clusters)
-        return {}
+            def val(key, default=""):
+                v = f.get(f"?{key}", f.get(key, default))
+                if isinstance(v, dict):
+                    v = v.get("value", default)
+                return str(v)
+            exec_id = val("execId")
+            note = val("note")
+            role = val("role")
+            stack = val("stack", "python") or "python"
+            clusters[(role, note, stack)].append(exec_id)
+        return dict(clusters)
 
     def optimize_prompt(self, prompt: str) -> str:
         """
@@ -149,17 +131,30 @@ class AnalystAgent:
         corrupting code or stack traces.
         """
         # @synapse:rule Optimize prompts before LLM submission to conserve tokens while preserving code formatting.
-        request = orchestrator_pb2.OptimizePromptRequest(prompt=prompt)
-        response = self.analyst_stub.OptimizePrompt(request, timeout=1.0)
-        return response.optimized_prompt
+        out_lines = []
+        for line in prompt.split("\n"):
+            stripped = line.lstrip()
+            indent = line[: len(line) - len(stripped)]
+            out_lines.append(indent + re.sub(r"[ \t]{2,}", " ", stripped))
+        return re.sub(r"\n{3,}", "\n\n", "\n".join(out_lines)).strip()
 
     def generate_golden_rule(self, role, note, count, stack):
-        # Clean Role for Prompt (it's a URI)
         role_name = role.split('/')[-1]
-
-        request = orchestrator_pb2.RuleRequest(role=role_name, note=note, count=count, stack=stack)
-        response = self.analyst_stub.GenerateGoldenRules(request, timeout=3.0)
-        return response.rule
+        system_prompt = (
+            "You turn a recurring engineering failure into a single concise, "
+            "actionable rule. Reply with one imperative sentence, no preamble."
+        )
+        prompt = (
+            f"Role: {role_name}\nStack: {stack}\nObserved {count} times.\n"
+            f"Failure note: {note}\n\nWrite one golden rule that prevents this."
+        )
+        try:
+            rule = self.llm.completion(prompt, system_prompt)
+            rule = rule if isinstance(rule, str) else str(rule)
+            return rule.strip().strip('"')
+        except Exception as e:
+            print(f"⚠️  generate_golden_rule fallback failed: {e}")
+            return f"For {role_name} on {stack}, guard against: {note[:80]}"
 
     def validate_rule(self, rule_text: str, stack: str) -> bool:
         """Run sanity checks (dry-run) to validate the new rule."""

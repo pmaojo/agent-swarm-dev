@@ -3,6 +3,11 @@ name = "codegraph-engine"
 version = "0.1.0"
 edition = "2021"
 
+# Standalone workspace: the real semantic engine lives under vendor/, so the
+# root workspace's "synapse-engine/crates/*" member no longer resolves. This
+# self-contained service builds independently of that broken workspace.
+[workspace]
+
 [dependencies]
 tokio = { version = "1.37.0", features = ["macros", "rt-multi-thread"] }
 tokio-stream = "0.1.15"

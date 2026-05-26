@@ -31,13 +31,10 @@ if SDK_PYTHON_PATH not in sys.path:
 
 try:
     from agents.synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc
-    from agents.synapse_proto import orchestrator_pb2, orchestrator_pb2_grpc
 except ImportError:
     logger.warning("⚠️  Warning: Could not import Synapse protobufs. Budgeting disabled.")
     semantic_engine_pb2 = None
     semantic_engine_pb2_grpc = None
-    orchestrator_pb2 = None
-    orchestrator_pb2_grpc = None
 
 # --- Constants ---
 # Pricing per 1K tokens (approximate for GPT-4o)
@@ -89,7 +86,6 @@ class LLMService:
         self.grpc_host = os.getenv("SYNAPSE_GRPC_HOST", "localhost")
         self.grpc_port = int(os.getenv("SYNAPSE_GRPC_PORT", "50051"))
         self.max_daily_budget = float(os.getenv("MAX_DAILY_BUDGET", "10.0")) # Default $10
-        self.connect_llm_gateway_service()
         self.channel = None
         self.stub = None
         self.namespace = "default"
@@ -318,42 +314,16 @@ class LLMService:
             processed_fallbacks.append(fallback_dict)
         return processed_fallbacks
 
-    def connect_llm_gateway_service(self):
-        """Connect to the new Rust-based LLM Gateway microservice."""
-        self.llm_gateway_channel = grpc.insecure_channel("localhost:50056")
-        self.llm_gateway_stub = orchestrator_pb2_grpc.LlmGatewayServiceStub(self.llm_gateway_channel)
-        print("✅ Connected to Rust LLM Gateway microservice stub at localhost:50056")
-
     @retry(
         wait=wait_random_exponential(min=1, max=60),
         stop=stop_after_attempt(6),
         retry=retry_if_not_exception_type(BudgetExceededException)
     )
     def completion(self, prompt: str, system_prompt: str = "You are a helpful assistant.", json_mode: bool = False, tools: Optional[List[Dict]] = None, tool_choice: Any = None, messages: Optional[List[Dict]] = None) -> Any:
-        """Generate a completion. Tries Rust LLM gateway first, falls back to litellm."""
+        """Generate a completion via litellm (direct Gemini / OpenAI call)."""
         if self.mock_mode:
             return f"MOCK: {prompt[:80]}"
 
-        # --- Try Rust LLM gateway ---
-        # The gateway only conveys a flat string, so it cannot carry tool_calls.
-        # Skip it when tools are requested or the caller passed the full message
-        # list (agentic loops) — those need the raw litellm message object back.
-        if orchestrator_pb2 is not None and not tools and not messages:
-            try:
-                request = orchestrator_pb2.LlmCompletionRequest(
-                    prompt=prompt,
-                    model=self.model,
-                    system_prompt=system_prompt,
-                    json_mode=json_mode,
-                    tools_json="",
-                    messages_json=""
-                )
-                response = self.llm_gateway_stub.Complete(request, timeout=1.5)
-                return response.completion
-            except Exception as gw_err:
-                logger.debug(f"Rust LLM gateway unavailable ({gw_err}), falling back to litellm")
-
-        # --- litellm fallback (direct Gemini / OpenAI call) ---
         self.check_budget()
 
         if not messages:

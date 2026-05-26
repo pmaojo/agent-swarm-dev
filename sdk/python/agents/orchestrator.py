@@ -24,10 +24,8 @@ sys.path.insert(0, os.path.join(SDK_PYTHON_PATH, "agents"))
 
 try:
     from synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc, codegraph_pb2, codegraph_pb2_grpc
-    from synapse_proto import orchestrator_pb2, orchestrator_pb2_grpc
 except ImportError:
     from agents.synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc, codegraph_pb2, codegraph_pb2_grpc
-    from agents.synapse_proto import orchestrator_pb2, orchestrator_pb2_grpc
 
 from lib.synapse_connect import connect_synapse, literal_value
 from llm import LLMService
@@ -76,8 +74,7 @@ class OrchestratorAgent:
 
         # Connect to Synapse
         self.connect()
-        self.connect_orchestrator_service()
-        
+
         # Load Schema at startup
         self.load_schema()
         self.load_security_policy()
@@ -777,20 +774,9 @@ class OrchestratorAgent:
     def get_initial_task_type(self) -> str:
         return "FeatureImplementationTask"
 
-    def connect_orchestrator_service(self):
-        """Connect to the Rust Orchestrator microservice (port 50055)."""
-        self.orchestrator_engine_stub = None
-        try:
-            channel = grpc.insecure_channel("localhost:50055")
-            grpc.channel_ready_future(channel).result(timeout=1)
-            self.orchestrator_engine_stub = orchestrator_pb2_grpc.OrchestratorServiceStub(channel)
-            print("✅ Connected to Rust Orchestrator microservice")
-        except grpc.FutureTimeoutError:
-            print("⚠️  Rust Orchestrator not reachable — using built-in routing fallback")
-        except Exception as e:
-            print(f"⚠️  Orchestrator service error: {e} — using built-in routing fallback")
-
-    # Built-in routing tables used when the Rust microservice is unavailable
+    # Task -> role routing falls back to these tables when the graph has no
+    # swarm:handledBy triple for a task type; the state machine drives the
+    # council's turn order.
     _TASK_ROUTING = {
         "RequirementsTask":          "ProductManager",
         "SystemDesignTask":          "Architect",
@@ -805,13 +791,6 @@ class OrchestratorAgent:
     }
 
     def get_handler_for_task(self, task_type: str) -> str:
-        if self.orchestrator_engine_stub is not None:
-            try:
-                request = orchestrator_pb2.RouteTaskRequest(task_description=task_type)
-                response = self.orchestrator_engine_stub.RouteTask(request, timeout=1.0)
-                return response.agent_type
-            except Exception:
-                pass
         query = f"""
         PREFIX swarm: <{SWARM}>
         SELECT ?role WHERE {{ <{SWARM}task/{task_type}> swarm:handledBy ?role . }}
@@ -825,15 +804,6 @@ class OrchestratorAgent:
         return self._TASK_ROUTING.get(task_type, "Coder")
 
     def get_next_task(self, current_task_type: str, outcome: str) -> Optional[str]:
-        if self.orchestrator_engine_stub is not None:
-            try:
-                request = orchestrator_pb2.StateGraphRequest(current_state=current_task_type, action=outcome)
-                response = self.orchestrator_engine_stub.ManageStateGraph(request, timeout=1.0)
-                if response.next_state not in ("", "None", None):
-                    return response.next_state
-                return None
-            except Exception:
-                pass
         if outcome != "success":
             return None
         return self._STATE_MACHINE.get(current_task_type)
