@@ -26,7 +26,7 @@ except ImportError:
         semantic_engine_pb2 = None
         semantic_engine_pb2_grpc = None
         print("⚠️ Warning: Synapse protobufs not found. Guardrails disabled (Safe Mode only).")
-from lib.synapse_connect import connect_synapse
+from lib.synapse_connect import connect_synapse, literal_value
 
 # --- Constants ---
 NIST = "http://nist.gov/caisi/"
@@ -83,7 +83,8 @@ class CommandGuard:
             response = self.stub.QuerySparql(request)
             results = json.loads(response.results_json)
             if results:
-                return results[0].get("?status") or results[0].get("status")
+                raw = results[0].get("?status") or results[0].get("status")
+                return literal_value(raw)
         except Exception:
             pass
         return "PENDING"
@@ -148,26 +149,34 @@ def send_telegram_alert(message: str):
         print(f"❌ Telegram alert failed: {e}")
 
 def is_safe(command: str) -> bool:
-    # 1. Exact match safe commands
     parts = command.strip().split()
     if not parts: return False
     cmd = parts[0]
+    tokens = set(parts)
 
-    # 2. Check restricted patterns
+    # 1. Redirection is never safe (data exfiltration / overwrite).
+    if ">" in command:
+        return False
+
+    # 2. Check restricted patterns. Single-token patterns ("nc", "kill", "rm")
+    #    must match a whole argument token — a naive substring check flags
+    #    innocent commands like `python3 test_add_function.py` because
+    #    "function" contains "nc". Multi-word patterns ("git push", "pip
+    #    install") stay as substring checks.
     for p in RESTRICTED_PATTERNS:
-        if p in command: # Simple substring check is strict but safer
+        p_stripped = p.strip()
+        if not p_stripped:
+            continue
+        if " " in p_stripped:
+            if p_stripped in command:
+                return False
+        elif p_stripped in tokens:
             return False
 
-    # 3. Check explicitly safe list
+    # 3. Allow only explicitly safe executables.
     if cmd in SAFE_COMMANDS:
-        # Check for dangerous flags? grep is safe, but grep > file is not.
-        if ">" in command: return False
         return True
 
-    return False # Default deny if not in safe list? Or check if in Restricted?
-    # User said: "Safe: ... Restricted: ..."
-    # We default to restricted for anything else?
-    # Better to default to restricted.
     return False
 
 def run_shell_raw(command: str, env: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
