@@ -16,6 +16,25 @@ logger = logging.getLogger("SynapseConnect")
 _DEFAULT_TIMEOUT = float(os.getenv("SYNAPSE_CONNECT_TIMEOUT", "5.0"))
 
 
+def literal_value(val):
+    """Return the bare lexical value of a SPARQL result term.
+
+    Synapse serialises literals as '"5.0"', '"1786"^^<...#integer>' or '"hi"@en',
+    and IRIs as '<http://...>'. A plain ``.strip('"')`` leaves the ``^^<type>``
+    suffix attached, which then breaks ``float()``/``int()``. This strips the
+    quotes plus any datatype or language annotation.
+    """
+    if not isinstance(val, str):
+        return val
+    s = val.strip()
+    if s.startswith('"'):
+        close = s.rfind('"')
+        if close > 0:
+            return s[1:close]
+        return s.strip('"')
+    return s.strip('<>')
+
+
 def connect_synapse(host: str | None = None, port: int | str | None = None,
                     timeout: float = _DEFAULT_TIMEOUT):
     """

@@ -162,10 +162,9 @@ class LLMService:
         results = self._query(query)
         if not results: return 0.0
 
-        total = results[0].get("?total") or results[0].get("total")
+        from lib.synapse_connect import literal_value
+        total = literal_value(results[0].get("?total") or results[0].get("total"))
         try:
-            if isinstance(total, str):
-                total = total.strip('"')
             return float(total) if total else 0.0
         except (ValueError, TypeError):
             return 0.0

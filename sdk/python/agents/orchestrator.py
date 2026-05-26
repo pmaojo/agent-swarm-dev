@@ -29,7 +29,7 @@ except ImportError:
     from agents.synapse_proto import semantic_engine_pb2, semantic_engine_pb2_grpc, codegraph_pb2, codegraph_pb2_grpc
     from agents.synapse_proto import orchestrator_pb2, orchestrator_pb2_grpc
 
-from lib.synapse_connect import connect_synapse
+from lib.synapse_connect import connect_synapse, literal_value
 from llm import LLMService
 from product_manager import ProductManagerAgent
 from architect import ArchitectAgent
@@ -367,9 +367,7 @@ class OrchestratorAgent:
         """
         results = self.query_graph(query, namespace="default")
         if results:
-            val = results[0].get("?turn") or results[0].get("turn")
-            if val and isinstance(val, str):
-                val = val.strip('"')
+            val = literal_value(results[0].get("?turn") or results[0].get("turn"))
             return int(val) if val else 0
         return 0
 
@@ -683,9 +681,8 @@ class OrchestratorAgent:
             max_budget = 10.0 # Default
             b_res = self.query_graph(f'PREFIX swarm: <{SWARM}> SELECT ?max WHERE {{ <{SWARM}Finance> swarm:maxBudget ?max }} LIMIT 1')
             if b_res:
-                val = b_res[0].get('?max') or b_res[0].get('max')
-                if val: 
-                    if isinstance(val, str): val = val.strip('"')
+                val = literal_value(b_res[0].get('?max') or b_res[0].get('max'))
+                if val:
                     max_budget = float(val)
 
             # 2. Get Total Spend
@@ -696,9 +693,8 @@ class OrchestratorAgent:
             """)
             spent = 0.0
             if s_res:
-                val = s_res[0].get('?total') or s_res[0].get('total')
-                if val: 
-                    if isinstance(val, str): val = val.strip('"')
+                val = literal_value(s_res[0].get('?total') or s_res[0].get('total'))
+                if val:
                     spent = float(val)
 
             utilization = (spent / max_budget) if max_budget > 0 else 0.0
