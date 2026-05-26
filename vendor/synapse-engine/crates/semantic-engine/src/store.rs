@@ -352,7 +352,7 @@ impl SynapseStore {
     }
 
     /// Expand graph from a starting URI
-    fn expand_graph(&self, start_uri: &str, depth: u32) -> Result<Vec<String>> {
+    pub fn expand_graph(&self, start_uri: &str, depth: u32) -> Result<Vec<String>> {
         let mut expanded = Vec::new();
 
         if depth == 0 {

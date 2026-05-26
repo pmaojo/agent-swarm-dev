@@ -46,9 +46,6 @@ class ContextParser:
 
     def _query_synapse(self, sparql_query: str) -> List[Dict]:
         """Executes a SPARQL query against Synapse."""
-        if not self.stub:
-            return []
-
         try:
             request = semantic_engine_pb2.SparqlRequest(query=sparql_query, namespace="default")
             response = self.stub.QuerySparql(request)
@@ -59,7 +56,7 @@ class ContextParser:
 
     def _hybrid_search(self, query_text: str) -> str:
         """Fallback Hybrid Search for 'Intuition Mode'."""
-        if not self.stub or not semantic_engine_pb2:
+        if not semantic_engine_pb2:
             return ""
 
         try:
@@ -108,9 +105,6 @@ class ContextParser:
 
     def _get_file_knowledge(self, filename: str, context_text: str = "") -> str:
         """Fetches constraints and lessons learned for a file/stack."""
-        if not self.stub:
-            return ""
-
         # Determine stack/extension
         ext = os.path.splitext(filename)[1].replace('.', '')
         stack_uri = f"http://swarm.os/stack/{ext}"
@@ -207,9 +201,6 @@ class ContextParser:
 
     def _resolve_symbol_uri(self, symbol_name: str) -> str:
         """Finds a symbol URI by name suffix."""
-        if not self.stub:
-            return ""
-
         # Try exact match on qualified name suffix
         # URI format: .../symbol/{path}#{qname}
         # Regex filter might be slow, but for now ok.

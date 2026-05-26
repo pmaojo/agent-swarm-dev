@@ -39,8 +39,6 @@ class ProductManagerAgent:
 
     def ingest_spec_triple(self, card_id: str, file_path: str):
         """Link Trello Card to OpenSpec File in Synapse."""
-        if not self.stub: return
-
         # <CardID> <hasSpec> <FilePath>
         subject = f"{SWARM}trello/card/{card_id}"
         triples = [

@@ -377,8 +377,9 @@ pub async fn handle_tool_call(
                     let engine = IngestionEngine::new(store.clone());
                     let mut total_added = 0;
 
-                    for entry in WalkDir::new(dir_path).into_iter().filter_map(|e| e.ok()) {
-                        let path = entry.path();
+                    for entry in WalkDir::new(dir_path).into_iter().filter_map(|e: Result<walkdir::DirEntry, _>| e.ok()) {
+                        let path = entry.path().to_owned();
+                        let path = path.as_path();
                         if path.is_file() {
                             if let Some(ext) = path.extension() {
                                 if ext == "md" || ext == "markdown" {
