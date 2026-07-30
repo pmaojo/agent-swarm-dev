@@ -104,7 +104,7 @@ message SearchRequest {
     string query = 1;
     uint32 limit = 2;
     string namespace = 3;
-    int32 prefix_len = 4; // Optional: length of prefix for two-stage search (e.g. 64)
+    uint32 prefix_len = 4; // Optional: length of prefix for two-stage search (e.g. 64)
 }
 
 message SearchResponse {
